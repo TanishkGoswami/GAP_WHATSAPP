@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FLOWSAPP</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Facebook SDK for Meta Cloud API -->
+    <script>
+      window.fbAsyncInit = function() {
+        FB.init({
+          appId            : '%VITE_META_APP_ID%',
+          autoLogAppEvents : true,
+          xfbml            : true,
+          version          : 'v18.0' 
+        });
+      };
+    </script>
+    <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+/* Flow Builder Animations */
+@import './components/flow-builder/flow-animations.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
