@@ -22,7 +22,9 @@ export default function WhatsAppConnect() {
     const [manualStatus, setManualStatus] = useState('idle'); // idle | validating | saving | saved | error
     const [manualError, setManualError] = useState(null);
 
-    useEffect(() => { fetchAccounts(); }, [user]);
+    useEffect(() => {
+        if (session?.access_token) fetchAccounts();
+    }, [session]);
 
     useEffect(() => {
         if (!window.FB) return;
@@ -41,12 +43,23 @@ export default function WhatsAppConnect() {
         setLoadingAccounts(true);
         try {
             const res = await fetch(`${API_URL}/api/whatsapp/accounts`, {
-                headers: { ...getAuthHeader() }
+                headers: { 'Content-Type': 'application/json', ...getAuthHeader() }
             });
+            if (res.status === 401) {
+                console.error('Auth failed fetching accounts — session may have expired');
+                setAccounts([]);
+                return;
+            }
             const data = await res.json();
-            if (Array.isArray(data)) setAccounts(data);
+            if (Array.isArray(data)) {
+                setAccounts(data);
+            } else {
+                console.error('Failed to load accounts:', data?.error || data);
+                setAccounts([]);
+            }
         } catch (err) {
             console.error('Failed to fetch accounts:', err);
+            setAccounts([]);
         } finally {
             setLoadingAccounts(false);
         }

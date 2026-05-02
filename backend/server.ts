@@ -192,7 +192,7 @@ async function ensureDefaultOrganizationId(): Promise<string | null> {
 
             const { data: created, error: createErr } = await supabase
                 .from('organizations')
-                .insert({ name: 'Default' })
+                .insert({ name: 'Default', slug: 'default' })
                 .select('id')
                 .single();
 
@@ -634,7 +634,7 @@ app.post("/api/wa/connect/callback", async (req, res) => {
                     // Insert or Update in wa_accounts
                     const { data, error } = await supabase.from('w_wa_accounts').upsert({
                         organization_id: organization_id || DEFAULT_ORG_ID,
-                        waba_id: currentWabaId,
+                        whatsapp_business_account_id: currentWabaId,
                         phone_number_id,
                         display_phone_number,
                         access_token_encrypted: encryptToken(finalToken),
@@ -1324,7 +1324,7 @@ app.get("/api/conversations", async (req, res) => {
             .from('w_conversations')
             .select(`
                 *,
-                contact:contacts(id, name, custom_name, phone, wa_id, wa_key, created_at, tags)
+                contact:w_contacts(id, name, custom_name, phone, wa_id, wa_key, created_at, tags)
             `)
             .order("last_message_at", { ascending: false });
 
@@ -1936,8 +1936,8 @@ app.post('/api/conversations/:conversationId/send', async (req, res) => {
                 id,
                 organization_id,
                 wa_account_id,
-                contact:contacts(id, wa_id, name),
-                account:wa_accounts(id, phone_number_id, access_token_encrypted)
+                contact:w_contacts(id, wa_id, name),
+                account:w_wa_accounts(id, phone_number_id, access_token_encrypted)
             `)
             .eq('id', conversationId)
             .single();
@@ -2073,8 +2073,8 @@ app.post('/api/conversations/:conversationId/send-media', upload.single('file'),
                 id,
                 organization_id,
                 wa_account_id,
-                contact:contacts(id, wa_id, name, phone),
-                account:wa_accounts(id, phone_number_id, access_token_encrypted)
+                contact:w_contacts(id, wa_id, name, phone),
+                account:w_wa_accounts(id, phone_number_id, access_token_encrypted)
             `)
             .eq('id', conversationId)
             .single();
@@ -2240,8 +2240,8 @@ app.post('/api/messages/audio', upload.single('file'), async (req, res) => {
                 id,
                 organization_id,
                 wa_account_id,
-                contact:contacts(id, wa_id, name, phone),
-                account:wa_accounts(id, phone_number_id, access_token_encrypted)
+                contact:w_contacts(id, wa_id, name, phone),
+                account:w_wa_accounts(id, phone_number_id, access_token_encrypted)
             `)
             .eq('id', conversationId)
             .single();
@@ -2393,7 +2393,6 @@ app.post("/api/conversations/:id/read", async (req, res) => {
             const { error } = await supabase
                 .from('w_conversation_reads')
                 .upsert({
-                    organization_id: conv.organization_id,
                     conversation_id: id,
                     user_id: user_id,
                     last_read_at: new Date().toISOString()
@@ -2460,7 +2459,18 @@ app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
     }
 
     try {
-        if (!orgId) throw new Error('No organization found');
+        if (!orgId) throw new Error('No organization found. Make sure your Supabase is configured correctly.');
+
+        // Validate the token against Meta before saving
+        const verifyUrl = `https://graph.facebook.com/v21.0/${String(phone_number_id).trim()}?fields=id,display_phone_number,verified_name&access_token=${String(access_token).trim()}`;
+        const verifyRes = await fetch(verifyUrl);
+        const verifyData: any = await verifyRes.json();
+        if (verifyData.error) {
+            return res.status(400).json({ error: `Meta API error: ${verifyData.error.message}` });
+        }
+
+        const resolvedDisplayPhone = verifyData.display_phone_number || display_phone_number || null;
+        const resolvedName = verifyData.verified_name || name || 'WhatsApp Business API';
 
         // Upsert the account (token is AES-256 encrypted before storage)
         const { data, error } = await supabase
@@ -2470,15 +2480,17 @@ app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
                 phone_number_id: String(phone_number_id).trim(),
                 whatsapp_business_account_id: waba_id ? String(waba_id).trim() : null,
                 access_token_encrypted: encryptToken(String(access_token).trim()),
-                display_phone_number: display_phone_number ? String(display_phone_number).trim() : null,
-                name: name || 'WhatsApp Business API',
+                display_phone_number: resolvedDisplayPhone,
+                name: resolvedName,
                 status: 'connected'
             }, { onConflict: 'phone_number_id' })
             .select('*')
             .single();
 
-        if (error) throw error;
-
+        if (error) {
+            console.error('Supabase upsert error:', error);
+            throw new Error(error.message);
+        }
         res.json({ success: true, account: data });
     } catch (err: any) {
         console.error('Error saving Meta account:', err);
