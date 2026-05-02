@@ -88,7 +88,7 @@ export default function WhatsAppConnect() {
                 try {
                     const res = await fetch(`${API_URL}/api/wa/connect/callback`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
                         body: JSON.stringify({
                             code: response.authResponse.code,
                             organization_id: user?.user_metadata?.organization_id
@@ -133,7 +133,7 @@ export default function WhatsAppConnect() {
             setManualError(null);
             try {
                 const res = await fetch(
-                    `https://graph.facebook.com/v18.0/${businessAccountId}/phone_numbers?access_token=${encodeURIComponent(accessToken)}`
+                    `https://graph.facebook.com/v21.0/${businessAccountId}/phone_numbers?access_token=${encodeURIComponent(accessToken)}`
                 );
                 const data = await res.json();
                 if (data.error) throw new Error(data.error.message);

@@ -18,7 +18,7 @@ const socket = io(BACKEND_BASE, {
 const API_BASE = `${BACKEND_BASE}/api`;
 
 export default function LiveChat() {
-    const { user } = useAuth()
+    const { user, session } = useAuth()
     const [chats, setChats] = useState([])
     const chatsRef = useRef([])
     const [selectedChat, setSelectedChat] = useState(null)
@@ -393,7 +393,37 @@ export default function LiveChat() {
     useEffect(() => {
         fetchChats();
         fetchBots(); // Also fetch available bots
-    }, [user, selectedAccount, isConnected]); // Re-fetch when user loads/filters/connects
+        
+        // Fetch Meta Cloud API connected accounts from the database
+        const fetchMetaAccounts = async () => {
+            if (!session?.access_token) return;
+            try {
+                const res = await fetch(`${API_BASE}/whatsapp/accounts`, {
+                    headers: { 'Authorization': `Bearer ${session.access_token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        setIsConnected(true);
+                        setConnectedAccounts(prev => {
+                            const newAccounts = [...prev];
+                            data.forEach(acc => {
+                                // Meta API uses display_phone_number or phone_number_id
+                                const accId = acc.display_phone_number || acc.phone_number_id || acc.whatsapp_business_account_id;
+                                if (accId && !newAccounts.includes(accId)) {
+                                    newAccounts.push(accId);
+                                }
+                            });
+                            return newAccounts;
+                        });
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch meta accounts:", err);
+            }
+        };
+        fetchMetaAccounts();
+    }, [user, session, selectedAccount]); // Re-fetch when user loads/filters/connects
 
     useEffect(() => {
         if (!selectedChat) {

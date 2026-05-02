@@ -102,12 +102,15 @@ function decryptToken(stored: string): string {
 async function authMiddleware(req: any, res: any, next: any) {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return res.status(401).json({ error: 'Unauthorized â€” missing token' });
+    if (!token) return res.status(401).json({ error: 'Unauthorized - missing token' });
 
-    if (!supabase) return res.status(503).json({ error: 'Service unavailable â€” Supabase not configured' });
+    if (!supabase) return res.status(503).json({ error: 'Service unavailable - Supabase not configured' });
 
     const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) return res.status(401).json({ error: 'Unauthorized â€” invalid or expired token' });
+    if (error || !user) {
+        console.error("Supabase Auth Error:", error?.message || error);
+        return res.status(401).json({ error: 'Unauthorized - invalid or expired token' });
+    }
 
     req.user = user;
     req.organization_id = user.user_metadata?.organization_id || null;
@@ -862,14 +865,24 @@ async function upsertConversation(organization_id: string, wa_account_id: string
         status: 'open'
     };
 
-    const { data, error } = await supabase
-        .from('w_conversations')
-        .upsert(payload, { onConflict: 'organization_id,wa_account_id,contact_id' })
-        .select()
-        .single();
-
-    if (error) console.error("Conversation Upsert Error:", error);
-    return data;
+    if (existing) {
+        const { data, error } = await supabase
+            .from('w_conversations')
+            .update(payload)
+            .eq('id', existing.id)
+            .select()
+            .single();
+        if (error) console.error("Conversation Update Error:", error);
+        return data;
+    } else {
+        const { data, error } = await supabase
+            .from('w_conversations')
+            .insert(payload)
+            .select()
+            .single();
+        if (error) console.error("Conversation Insert Error:", error);
+        return data;
+    }
 }
 
 // ====== Helper: store message ======
