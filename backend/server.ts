@@ -1139,8 +1139,16 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
 
         let matchedFlow = null;
         for (const flow of activeFlows || []) {
-            const triggers = flow.triggers || [];
-            if (triggers.some((t: string) => normalized.includes(t.toLowerCase()))) {
+            // Check flow-level triggers AND startBotFlow node keywords
+            const flowTriggers = flow.triggers || [];
+            const nodes = flow.nodes || [];
+            const startNode = nodes.find((n: any) => n.type === 'startBotFlow');
+            const nodeTriggers = startNode?.data?.config?.keywords
+                ? String(startNode.data.config.keywords).split(',').map((k: string) => k.trim()).filter(Boolean)
+                : [];
+            const allTriggers = [...new Set([...flowTriggers, ...nodeTriggers])];
+
+            if (allTriggers.some((t: string) => normalized.includes(t.toLowerCase()))) {
                 matchedFlow = flow;
                 break;
             }
@@ -1186,15 +1194,35 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
         steps++;
         
         // If it's a message node, collect text
-        if (activeNode.type === 'textMessage' && activeNode.data?.config?.text) {
-            outputText.push(activeNode.data.config.text);
+        if (activeNode.type === 'textMessage') {
+            const msg = activeNode.data?.config?.message || activeNode.data?.config?.text || activeNode.data?.label;
+            if (msg) outputText.push(msg);
         } else if (activeNode.type === 'button') {
-            const body = activeNode.data?.config?.text || 'Options:';
-            const btns = (activeNode.data?.config?.buttons || []).map((b: any, i:number) => `${i+1}. ${b.text}`).join('\n');
-            outputText.push(`${body}\n${btns}`);
+            const body = activeNode.data?.config?.headerText || activeNode.data?.config?.text || 'Choose an option:';
+            const footer = activeNode.data?.config?.footerText ? `\n_${activeNode.data.config.footerText}_` : '';
+            const btns = (activeNode.data?.config?.buttons || [])
+                .filter((b: any) => b.text)
+                .map((b: any, i: number) => `${i + 1}. ${b.text}`)
+                .join('\n');
+            outputText.push(`${body}\n\n${btns}${footer}`);
             // Wait for user input
             await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
             return { consumed: true, output: outputText.join('\n\n') };
+        } else if (activeNode.type === 'template') {
+            const templateName = activeNode.data?.config?.templateName;
+            if (templateName) {
+                // Template message Meta API se bhejo
+                // For now log karo — template sending already sendTextMessage me handle hoti hai
+                outputText.push(`[Template: ${templateName}]`);
+            }
+        } else if (activeNode.type === 'image' || activeNode.type === 'video' || activeNode.type === 'audio' || activeNode.type === 'file') {
+            const url = activeNode.data?.config?.url || activeNode.data?.config?.customField;
+            const caption = activeNode.data?.config?.caption || '';
+            if (url) outputText.push(`[Media: ${url}${caption ? ' - ' + caption : ''}]`);
+        } else if (activeNode.type === 'location') {
+            const lat = activeNode.data?.config?.latitude;
+            const lng = activeNode.data?.config?.longitude;
+            if (lat && lng) outputText.push(`[Location: ${lat}, ${lng}]`);
         } else if (activeNode.type === 'userInput') {
             const q = activeNode.data?.config?.question || 'Please reply:';
             outputText.push(q);
@@ -2769,9 +2797,17 @@ app.post("/webhook", async (req, res) => {
     // Signature verify (recommended)
     if (APP_SECRET) {
         const ok = verifyMetaSignature(req);
-        if (!ok) return res.sendStatus(403);
+        if (!ok) {
+            console.log("❌ Webhook Signature Verification Failed!");
+            return res.sendStatus(403);
+        }
     }
     res.sendStatus(200); // Ack immediately
+
+    console.log("==========================================");
+    console.log("📥 WEBHOOK EVENT RECEIVED!");
+    console.log(JSON.stringify(req.body, null, 2));
+    console.log("==========================================");
 
     try {
         const body = req.body;

@@ -2,6 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import axios from 'axios'
+
+// Configure Axios globally to bypass Ngrok's anti-abuse warning
+axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true';
 
 // Global fetch interceptor to bypass Ngrok's anti-abuse warning screen for all API requests
 const originalFetch = window.fetch;
