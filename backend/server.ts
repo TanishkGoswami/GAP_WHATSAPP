@@ -2475,6 +2475,7 @@ app.get('/api/whatsapp/accounts', authMiddleware, async (req, res) => {
             .from('w_wa_accounts')
             .select('*')
             .eq('organization_id', orgId)
+            .neq('status', 'disconnected')
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -2546,7 +2547,7 @@ app.delete('/api/whatsapp/accounts/:id', authMiddleware, async (req, res) => {
     try {
         const { error } = await supabase
             .from('w_wa_accounts')
-            .delete()
+            .update({ status: 'disconnected', access_token_encrypted: null })
             .eq('id', id)
             .eq('organization_id', orgId); // Ensure user can only delete their own accounts
             
