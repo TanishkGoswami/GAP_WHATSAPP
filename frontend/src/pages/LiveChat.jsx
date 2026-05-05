@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ArrowDown, FileText, Mic, Pencil, Bot } from 'lucide-react'
+import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ArrowDown, FileText, Mic, Pencil, Bot, User } from 'lucide-react'
 import { format, isToday, isYesterday } from 'date-fns'
 import { io } from "socket.io-client";
 import QRCode from 'react-qr-code'
@@ -52,6 +52,9 @@ export default function LiveChat() {
     const [isConnected, setIsConnected] = useState(false);
     const [qrCode, setQrCode] = useState('');
     const [connectionStatus, setConnectionStatus] = useState('Connecting...');
+
+    // Team members for assignment
+    const [teamMembers, setTeamMembers] = useState([])
 
     useEffect(() => {
         chatsRef.current = chats
@@ -236,8 +239,8 @@ export default function LiveChat() {
         setIsEmojiOpen(false)
     }
 
-    // Fetch Chats (Conversations)
     const fetchChats = async () => {
+        if (!session?.access_token) return;
         try {
             // Pass current WA Account filter if selected
             let url = `${API_BASE}/conversations`;
@@ -246,7 +249,9 @@ export default function LiveChat() {
                 url += `${url.includes('?') ? '&' : '?'}wa_account_id=${selectedAccount}`; // In real app, pass ID not name
             }
 
-            const res = await fetch(url);
+            const res = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${session.access_token}` }
+            });
             if (res.ok) {
                 const data = await res.json();
                 const formatted = data.map(conv => ({
@@ -265,6 +270,7 @@ export default function LiveChat() {
                     userHasRead: (Number.isFinite(Number(conv.unread_for_user)) ? Number(conv.unread_for_user) : (Number(conv.unread_count) || 0)) === 0,
                     status: conv.status,
                     tags: conv.labels || [],
+                    assigned_to: conv.assigned_to,
                     type: 'text'
                 }));
                 // Sort by time (newest first)
@@ -285,8 +291,11 @@ export default function LiveChat() {
 
     // Fetch available bot agents
     const fetchBots = async () => {
+        if (!session?.access_token) return;
         try {
-            const res = await fetch(`${API_BASE}/agents`);
+            const res = await fetch(`${API_BASE}/agents`, {
+                headers: { 'Authorization': `Bearer ${session.access_token}` }
+            });
             if (res.ok) {
                 const data = await res.json();
                 setAvailableBots(data.filter(bot => bot.is_active));
@@ -298,8 +307,11 @@ export default function LiveChat() {
 
     // Fetch bot status for current conversation
     const fetchConversationBotStatus = async (conversationId) => {
+        if (!session?.access_token) return;
         try {
-            const res = await fetch(`${API_BASE}/conversations`);
+            const res = await fetch(`${API_BASE}/conversations`, {
+                headers: { 'Authorization': `Bearer ${session.access_token}` }
+            });
             if (res.ok) {
                 const data = await res.json();
                 const conv = data.find(c => c.id === conversationId);
@@ -315,12 +327,15 @@ export default function LiveChat() {
 
     // Toggle bot for current conversation
     const toggleBotForConversation = async (enabled, botId = null) => {
-        if (!selectedChat) return;
+        if (!selectedChat || !session?.access_token) return;
         
         try {
             const res = await fetch(`${API_BASE}/conversations/${selectedChat.id}/bot`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
                 body: JSON.stringify({ 
                     bot_enabled: enabled,
                     assigned_bot_id: botId
@@ -337,8 +352,60 @@ export default function LiveChat() {
         }
     };
 
+    const fetchTeamMembers = async () => {
+        if (!session?.access_token) return;
+        try {
+            const res = await fetch(`${API_BASE}/team/members`, {
+                headers: { 'Authorization': `Bearer ${session.access_token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setTeamMembers(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch team members:", err);
+        }
+    };
+
+    const assignAgent = async (conversationId, agentId) => {
+        if (!session?.access_token) return;
+        try {
+            const res = await fetch(`${API_BASE}/conversations/${conversationId}/assign`, {
+                method: 'PATCH',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({ agent_id: agentId || null })
+            });
+            if (res.ok) {
+                setChats(prev => prev.map(c => 
+                    c.id === conversationId ? { ...c, assigned_to: agentId } : c
+                ));
+                if (selectedChat?.id === conversationId) {
+                    setSelectedChat(prev => ({ ...prev, assigned_to: agentId }));
+                }
+            }
+        } catch (err) {
+            console.error("Failed to assign agent:", err);
+        }
+    };
+
+    const getAgentName = (agentId) => {
+        if (!agentId) return 'Unassigned';
+        const member = teamMembers.find(m => m.user_id === agentId);
+        return member ? member.name : 'Unknown Agent';
+    };
+
+    useEffect(() => {
+        if (session?.access_token) {
+            fetchTeamMembers();
+        }
+    }, [session]);
+
+
     const fetchMessages = async (chat, opts = {}) => {
-        if (!chat) return
+        if (!chat || !session?.access_token) return
         try {
             const limit = opts.limit || 50
             const before = opts.before || null
@@ -346,7 +413,9 @@ export default function LiveChat() {
             url.searchParams.set('limit', String(limit))
             if (before) url.searchParams.set('before', before)
 
-            const res = await fetch(url.toString())
+            const res = await fetch(url.toString(), {
+                headers: { 'Authorization': `Bearer ${session.access_token}` }
+            })
             if (!res.ok) {
                 const body = await res.text().catch(() => '')
                 console.error('Failed to fetch messages:', res.status, body)
@@ -439,10 +508,14 @@ export default function LiveChat() {
         setChats(prev => prev.map(c => c.id === selectedChat.id ? { ...c, userHasRead: true, unread: 0 } : c))
 
         const t = setTimeout(() => {
+            if (!session?.access_token) return;
             const payload = user?.id ? { user_id: user.id } : {}
             fetch(`${API_BASE}/conversations/${selectedChat.id}/read`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
                 body: JSON.stringify(payload)
             }).catch(() => undefined)
         }, 300)
@@ -518,6 +591,7 @@ export default function LiveChat() {
                             userHasRead: false,
                             status: 'open',
                             tags: [],
+                            assigned_to: msg?.assigned_to || null,
                             type: 'text'
                         }
 
@@ -601,11 +675,14 @@ export default function LiveChat() {
                     const nearBottom = isNearBottom()
 
                     // Only mark read when the user is actually looking at the latest messages.
-                    if (user?.id && nearBottom && pageFocused) {
+                    if (user?.id && nearBottom && pageFocused && session?.access_token) {
                         setTimeout(() => {
                             fetch(`${API_BASE}/conversations/${activeChat.id}/read`, {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
+                                headers: { 
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${session.access_token}`
+                                },
                                 body: JSON.stringify({ user_id: user.id })
                             }).catch(() => undefined)
                         }, 250)
@@ -834,6 +911,7 @@ export default function LiveChat() {
 
                 const res = await fetch(`${API_BASE}/messages/audio`, {
                     method: 'POST',
+                    headers: { 'Authorization': `Bearer ${session?.access_token}` },
                     body: form,
                 })
 
@@ -887,6 +965,7 @@ export default function LiveChat() {
 
                 const res = await fetch(`${API_BASE}/conversations/${selectedChat.id}/send-media`, {
                     method: 'POST',
+                    headers: { 'Authorization': `Bearer ${session?.access_token}` },
                     body: form,
                 })
 
@@ -923,7 +1002,10 @@ export default function LiveChat() {
             const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session'
             const res = await fetch(`${API_BASE}/conversations/${selectedChat.id}/send`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token}`
+                },
                 body: JSON.stringify({ text: textToSend, session_id: sessionId })
             })
 
@@ -1172,6 +1254,12 @@ export default function LiveChat() {
                                                 {tag}
                                             </span>
                                         ))}
+                                        {chat.assigned_to && (
+                                            <div className="flex items-center gap-1 text-[10px] text-indigo-600 font-medium bg-indigo-50 px-1.5 py-0.5 rounded" title={`Assigned to ${getAgentName(chat.assigned_to)}`}>
+                                                <User className="h-3 w-3" />
+                                                {getAgentName(chat.assigned_to).split(' ')[0]}
+                                            </div>
+                                        )}
                                         {chat.unread > 0 && (
                                             <div className="ml-auto bg-green-500 text-white text-[10px] font-bold h-4 w-4 rounded-full flex items-center justify-center shadow-sm">
                                                 {chat.unread}
@@ -1224,9 +1312,24 @@ export default function LiveChat() {
                                     </p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                                {/* Bot Toggle Button */}
-                                <div className="relative" data-bot-menu>
+                                <div className="flex items-center gap-3">
+                                    {/* Assign Agent Dropdown */}
+                                    <div className="flex items-center gap-2">
+                                        <User className="h-4 w-4 text-gray-400" />
+                                        <select
+                                            value={selectedChat?.assigned_to || ''}
+                                            onChange={(e) => assignAgent(selectedChat.id, e.target.value)}
+                                            className="text-xs border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
+                                        >
+                                            <option value="">Unassigned</option>
+                                            {teamMembers.map(m => (
+                                                <option key={m.user_id} value={m.user_id}>{m.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Bot Toggle Button */}
+                                    <div className="relative" data-bot-menu>
                                     <button
                                         onClick={() => setShowBotMenu(!showBotMenu)}
                                         className={`p-2 rounded-lg transition-colors flex items-center gap-1.5 ${

@@ -113,7 +113,17 @@ async function authMiddleware(req: any, res: any, next: any) {
     }
 
     req.user = user;
-    req.organization_id = user.user_metadata?.organization_id || null;
+    
+    // Fetch member role and org
+    const { data: member } = await supabase
+        .from('organization_members')
+        .select('role, organization_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+    
+    req.role = member?.role || 'owner';
+    req.organization_id = member?.organization_id || user.user_metadata?.organization_id || null;
+    
     next();
 }
 
@@ -551,6 +561,59 @@ async function sendTextMessage(to: string, body: string, phone_number_id: string
     const data = await r.json();
     if (!r.ok) {
         throw new Error(`Send failed: ${JSON.stringify(data)}`);
+    }
+    return data;
+}
+
+async function sendInteractiveButtons(to: string, body: string, buttons: any[], footer: string = '', phone_number_id: string | null = null) {
+    let token = ACCESS_TOKEN;
+    let fromId = PHONE_NUMBER_ID;
+
+    if (phone_number_id && supabase) {
+        const { data } = await supabase.from('w_wa_accounts').select('access_token_encrypted').eq('phone_number_id', phone_number_id).single();
+        if (data?.access_token_encrypted) {
+            token = decryptToken(data.access_token_encrypted);
+            fromId = phone_number_id;
+        }
+    }
+
+    if (!fromId || !token) throw new Error("Missing WA creds for send");
+
+    const url = `https://graph.facebook.com/v21.0/${fromId}/messages`;
+
+    const payload = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "interactive",
+        interactive: {
+            type: "button",
+            body: { text: body },
+            footer: footer ? { text: footer } : undefined,
+            action: {
+                buttons: buttons.map(b => ({
+                    type: "reply",
+                    reply: {
+                        id: b.id,
+                        title: b.text.substring(0, 20) // WhatsApp limit
+                    }
+                }))
+            }
+        }
+    };
+
+    const r = await fetch(url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+    });
+
+    const data = await r.json();
+    if (!r.ok) {
+        throw new Error(`Interactive send failed: ${JSON.stringify(data)}`);
     }
     return data;
 }
@@ -1105,7 +1168,7 @@ async function getBotAgentReply(params: {
 }
 
 // ====== Helper: Process Flow Engine ======
-async function processFlowEngine(organization_id: string, contact_id: string, conversation_id: string, text: string): Promise<{consumed: boolean, output: string | null}> {
+async function processFlowEngine(organization_id: string, contact_id: string, conversation_id: string, text: string): Promise<{consumed: boolean, output: string | null, interactive?: any}> {
     const normalized = text.toLowerCase().trim();
 
     // 0. Respect Bot Toggle
@@ -1198,14 +1261,36 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             const msg = activeNode.data?.config?.message || activeNode.data?.config?.text || activeNode.data?.label;
             if (msg) outputText.push(msg);
         } else if (activeNode.type === 'button') {
-            const body = activeNode.data?.config?.headerText || activeNode.data?.config?.text || 'Choose an option:';
-            const footer = activeNode.data?.config?.footerText ? `\n_${activeNode.data.config.footerText}_` : '';
+            const body = activeNode.data?.config?.text || activeNode.data?.config?.headerText || 'Choose an option:';
+            const footer = activeNode.data?.config?.footerText || '';
+            const buttons = (activeNode.data?.config?.buttons || [])
+                .filter((b: any) => b.text)
+                .slice(0, 3); // WhatsApp limit
+            
+            // If we have buttons, return them as interactive content
+            if (buttons.length > 0) {
+                await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
+                return { 
+                    consumed: true, 
+                    output: outputText.length > 0 ? outputText.join('\n\n') : null,
+                    interactive: {
+                        type: 'button',
+                        body,
+                        footer,
+                        buttons: buttons.map((b: any) => ({
+                            id: b.id || b.text,
+                            text: b.text
+                        }))
+                    }
+                };
+            }
+            
+            // Fallback to text if no buttons or too many
             const btns = (activeNode.data?.config?.buttons || [])
                 .filter((b: any) => b.text)
                 .map((b: any, i: number) => `${i + 1}. ${b.text}`)
                 .join('\n');
-            outputText.push(`${body}\n\n${btns}${footer}`);
-            // Wait for user input
+            outputText.push(`${body}\n\n${btns}${footer ? '\n_' + footer + '_' : ''}`);
             await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
             return { consumed: true, output: outputText.join('\n\n') };
         } else if (activeNode.type === 'template') {
@@ -1263,9 +1348,9 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
 
 // ====== API Endpoints ======
 
-app.get("/api/dashboard-stats", async (req, res) => {
+app.get("/api/dashboard-stats", authMiddleware, async (req: any, res) => {
     try {
-        const organization_id = await ensureDefaultOrganizationId();
+        const organization_id = req.organization_id;
         
         // 1. Total Messages (lifetime)
         const { count: totalMessages, error: e1 } = await supabase
@@ -1348,20 +1433,22 @@ app.delete("/api/flow-sessions/:id", async (req, res) => {
         res.json({ success: true });
     } catch(err: any) { res.status(500).json({ error: err.message }); }
 });
-app.get("/api/conversations", async (req, res) => {
+
+app.get("/api/conversations", authMiddleware, async (req: any, res) => {
     // In a real app, use the authenticated user's organization_id
     const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+    const organization_id = req.organization_id || requestedOrgId || (await ensureDefaultOrganizationId());
     const wa_account_id = req.query.wa_account_id as string; // Optional filter
-    const user_id = req.query.user_id as string; // Current agent's ID
+    const user_id = req.user.id;
+    const user_role = req.role;
 
     // If still missing, fall back to returning conversations across orgs (dev mode).
     if (!organization_id) {
-        console.warn("âš ï¸ No organization_id resolved; returning conversations without org filter (dev mode)");
+        console.warn("âš ï¸  No organization_id resolved; returning conversations without org filter (dev mode)");
     }
 
     try {
-        const baseQuery = supabase
+        let query = supabase
             .from('w_conversations')
             .select(`
                 *,
@@ -1369,14 +1456,17 @@ app.get("/api/conversations", async (req, res) => {
             `)
             .order("last_message_at", { ascending: false });
 
-        let query = baseQuery;
-
         // Only hard-filter by organization_id when the client explicitly asked for it.
         // Using a stale DEFAULT_ORG_ID is a common dev misconfig and makes the UI look empty.
         if (requestedOrgId) {
             query = query.eq("organization_id", requestedOrgId);
         } else if (organization_id) {
             query = query.eq("organization_id", organization_id);
+        }
+
+        // ROLE BASED FILTERING (Step 2G)
+        if (user_role === 'agent') {
+            query = query.eq('assigned_to', user_id);
         }
 
         if (wa_account_id && wa_account_id !== 'All') {
@@ -1510,9 +1600,9 @@ app.get("/api/conversations", async (req, res) => {
     }
 });
 
-app.get('/api/contacts', async (req, res) => {
+app.get('/api/contacts', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
     const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
     const includeGroups = req.query.include_groups === 'true';
     try {
         let baseQuery = supabase
@@ -1562,10 +1652,9 @@ app.get('/api/contacts', async (req, res) => {
     }
 });
 
-app.patch('/api/contacts/:id', async (req, res) => {
+app.patch('/api/contacts/:id', authMiddleware, async (req: any, res) => {
     const contactId = req.params.id;
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || resolvedOrgId;
+    const organization_id = req.organization_id;
 
     try {
         if (!organization_id) {
@@ -1610,6 +1699,179 @@ app.patch('/api/contacts/:id', async (req, res) => {
     } catch (err: any) {
         console.error('Error updating contact:', err);
         res.status(500).json({ error: err.message || 'Failed to update contact' });
+    }
+});
+
+// ====== Team Management APIs ======
+
+// 2A. GET /api/team/members — All team members fetch karo
+app.get('/api/team/members', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    try {
+        const { data, error } = await supabase
+            .from('organization_members')
+            .select('*')
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: true });
+        
+        if (error) throw error;
+        res.json(data || []);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2B. POST /api/team/invite — Naya agent invite karo
+app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { email, name, role } = req.body;
+
+    if (!email || !name) return res.status(400).json({ error: 'Email and name are required' });
+
+    try {
+        // 1. Check if user already member
+        const { data: existing } = await supabase
+            .from('organization_members')
+            .select('id')
+            .eq('organization_id', orgId)
+            .eq('email', email)
+            .maybeSingle();
+
+        if (existing) return res.status(400).json({ error: 'Member already exists' });
+
+        // 2. Invite via Supabase Admin (Requires service_role key)
+        let userId: string;
+        const { data: inviteData, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(email, {
+            data: { organization_id: orgId, role, name },
+            redirectTo: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/signup`
+        });
+
+        if (inviteErr) {
+            // If user already exists, we might get an error. Try to find the user instead.
+            if (inviteErr.message.includes('already been registered') || inviteErr.status === 422) {
+                const { data: users, error: listErr } = await supabase.auth.admin.listUsers();
+                if (listErr) throw listErr;
+                const existingUser = users.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+                if (!existingUser) throw new Error('User already registered but could not be found');
+                userId = existingUser.id;
+            } else {
+                throw inviteErr;
+            }
+        } else {
+            userId = inviteData.user.id;
+        }
+
+        // 3. Insert into organization_members
+        const { error: insertErr } = await supabase
+            .from('organization_members')
+            .insert({
+                organization_id: orgId,
+                user_id: userId,
+                email,
+                name,
+                role: role || 'agent',
+                is_active: true,
+                invited_at: new Date().toISOString()
+            });
+
+        if (insertErr) throw insertErr;
+
+        res.json({ success: true, message: 'Invite sent' });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2C. PATCH /api/team/members/:id — Role/Status update karo
+app.patch('/api/team/members/:id', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+    const { role, is_active, name } = req.body;
+
+    try {
+        const { error } = await supabase
+            .from('organization_members')
+            .update({ role, is_active, name })
+            .eq('id', id)
+            .eq('organization_id', orgId);
+
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2D. DELETE /api/team/members/:id — Member remove karo
+app.delete('/api/team/members/:id', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const { error } = await supabase
+            .from('organization_members')
+            .delete()
+            .eq('id', id)
+            .eq('organization_id', orgId);
+
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2E. GET /api/team/my-profile — Current agent ka profile
+app.get('/api/team/my-profile', authMiddleware, async (req: any, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('organization_members')
+            .select('*')
+            .eq('user_id', req.user.id)
+            .maybeSingle();
+
+        if (error) throw error;
+        res.json(data);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2F. PATCH /api/conversations/:id/assign — Chat assign karo agent ko
+app.patch('/api/conversations/:id/assign', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+    const { agent_id } = req.body;
+
+    try {
+        const { data: updated, error } = await supabase
+            .from('w_conversations')
+            .update({ 
+                assigned_to: agent_id,
+                assigned_agent_id: agent_id
+            })
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .select('id, assigned_to')
+            .single();
+
+        if (error) throw error;
+
+        io.emit('conversation_assigned', { conversation_id: id, assigned_to: agent_id });
+        res.json({ success: true, conversation: updated });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get("/api/dashboard-stats", authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+    try {
+        const { data, error } = await supabase.rpc('get_dashboard_stats', { p_organization_id: organization_id });
+        if (error) throw error;
+        res.json(data);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -3022,9 +3284,9 @@ app.post("/webhook", async (req, res) => {
                     if (flowResult?.consumed) {
                         flowConsumedMessage = true;
                         
-                        // Send output if flow generated one
+                        // 1. Send preceding text output if present
                         if (flowResult.output) {
-                            console.log(`ðŸŒŠ Flow Engine replied to: "${text.substring(0, 50)}..."`);
+                            console.log(`🌊 Flow Engine replied with text to: "${text.substring(0, 50)}..."`);
                             const sendResult = await sendTextMessage(from, flowResult.output, phone_number_id);
                             const botWaMessageId = sendResult?.messages?.[0]?.id || null;
 
@@ -3040,10 +3302,35 @@ app.post("/webhook", async (req, res) => {
                                 wa_message_id: botWaMessageId, created_at: storedBotReply?.created_at || new Date().toISOString(),
                                 connectedAccount: metadata?.display_phone_number, type: 'text', is_bot_reply: true,
                             });
-
-                            // Update conversation preview
-                            await supabase.from('w_conversations').update({ last_message_at: new Date().toISOString(), last_message_preview: flowResult.output.substring(0, 100) }).eq('id', conv.id);
                         }
+
+                        // 2. Send interactive buttons if present
+                        if (flowResult.interactive?.type === 'button') {
+                            console.log(`🔘 Flow Engine sending real buttons to: "${text.substring(0, 50)}..."`);
+                            const { body, buttons, footer } = flowResult.interactive;
+                            const sendResult = await sendInteractiveButtons(from, body, buttons, footer, phone_number_id);
+                            const botWaMessageId = sendResult?.messages?.[0]?.id || null;
+
+                            const storedBotReply = await storeMessage({
+                                organization_id, contact_id: contact.id, conversation_id: conv.id,
+                                wa_message_id: botWaMessageId, direction: "outbound", type: "interactive",
+                                content: { text: body, interactive: flowResult.interactive, is_flow: true }, status: "sent",
+                            } as any);
+
+                            io.emit("new_message", {
+                                from: metadata?.display_phone_number || phone_number_id, phone: from, text: body,
+                                sender: 'agent', conversation_id: conv.id, contact_id: contact.id, message_id: storedBotReply?.id || null,
+                                wa_message_id: botWaMessageId, created_at: storedBotReply?.created_at || new Date().toISOString(),
+                                connectedAccount: metadata?.display_phone_number, type: 'interactive', is_bot_reply: true,
+                            });
+                        }
+
+                        // Update conversation preview
+                        const lastPreview = flowResult.interactive?.body || flowResult.output || "";
+                        await supabase.from('w_conversations').update({ 
+                            last_message_at: new Date().toISOString(), 
+                            last_message_preview: lastPreview.substring(0, 100) 
+                        }).eq('id', conv.id);
                     }
                 }
 

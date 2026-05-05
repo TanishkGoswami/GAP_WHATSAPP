@@ -9,6 +9,23 @@ export function AuthProvider({ children }) {
     const [user, setUser] = useState(null)
     const [session, setSession] = useState(null)
     const [loading, setLoading] = useState(true)
+    const [userRole, setUserRole] = useState(null)
+    const [memberProfile, setMemberProfile] = useState(null)
+
+    const fetchMemberProfile = async (token) => {
+        try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/my-profile`, {
+                headers: { Authorization: `Bearer ${token}` }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                setUserRole(data?.role || 'owner')
+                setMemberProfile(data)
+            }
+        } catch (e) {
+            console.error("Failed to fetch member profile", e)
+        }
+    }
 
     useEffect(() => {
         // Check active sessions and sets the user
@@ -28,6 +45,15 @@ export function AuthProvider({ children }) {
         return () => subscription.unsubscribe()
     }, [])
 
+    useEffect(() => {
+        if (session?.access_token) {
+            fetchMemberProfile(session.access_token)
+        } else {
+            setUserRole(null)
+            setMemberProfile(null)
+        }
+    }, [session])
+
     const value = {
         signUp: (data) => supabase.auth.signUp(data),
         signIn: (data) => supabase.auth.signInWithPassword(data),
@@ -37,9 +63,15 @@ export function AuthProvider({ children }) {
                 redirectTo: `${window.location.origin}/dashboard`
             }
         }),
-        signOut: () => supabase.auth.signOut(),
+        signOut: () => {
+            setUserRole(null)
+            setMemberProfile(null)
+            return supabase.auth.signOut()
+        },
         user,
         session,
+        userRole,
+        memberProfile
     }
 
     return (

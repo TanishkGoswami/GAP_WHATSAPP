@@ -76,8 +76,10 @@ export default function Templates() {
     }
 
     useEffect(() => {
-        fetchData();
-    }, [])
+        if (session?.access_token) {
+            fetchData();
+        }
+    }, [session])
 
     const handleDelete = async (name, isDemo) => {
         if(isDemo) {

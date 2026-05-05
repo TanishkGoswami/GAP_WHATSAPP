@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 import clsx from 'clsx'
+import { useAuth } from '../context/AuthContext'
 
 const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -27,10 +28,22 @@ const navigation = [
 
 export default function Sidebar() {
     const location = useLocation()
+    const { userRole } = useAuth()
+
+    const isAdmin = userRole === 'admin' || userRole === 'owner'
+
+    // Restrict access for agents
+    const filteredNavigation = navigation.filter(item => {
+        if (!isAdmin) {
+            // Agents only see Dashboard, Shared Inbox, Contacts
+            return ['Dashboard', 'Shared Inbox', 'Contacts'].includes(item.name)
+        }
+        return true
+    })
 
     return (
         <div className="flex h-full w-64 flex-col bg-white border-r border-gray-200">
-            <div className="flex h-16 items-center px-6 border-b border-gray-200">
+            <div className="h-16 flex items-center px-6 border-b border-gray-200">
                 <div className="flex items-center gap-2 text-[#25D366]">
                     <MessageCircle className="h-8 w-8" />
                     <span className="text-xl font-bold">FLOWSAPP</span>
@@ -38,7 +51,7 @@ export default function Sidebar() {
             </div>
 
             <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-                {navigation.map((item) => {
+                {filteredNavigation.map((item) => {
                     const isActive = location.pathname.startsWith(item.href)
                     return (
                         <Link

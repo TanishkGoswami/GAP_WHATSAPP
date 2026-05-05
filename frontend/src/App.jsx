@@ -14,7 +14,17 @@ import LiveChat from './pages/LiveChat'
 import BotAgents from './pages/BotAgents'
 import Settings from './pages/Settings'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5,    // 5 min tak cache fresh rahega
+      gcTime: 1000 * 60 * 10,      // 10 min tak memory mein rahega
+      refetchOnWindowFocus: false,  // Window focus pe refetch nahi
+      refetchOnMount: false,        // Baar baar mount pe refetch nahi
+      retry: 1,                     // Sirf 1 baar retry
+    },
+  },
+})
 
 export default function App() {
   return (
