@@ -2889,8 +2889,35 @@ app.post("/webhook", async (req, res) => {
                 preview: text
             });
 
+            // Quoted/Reply context extract karo
+            let quotedMessage: any = null;
+            if (msg.context?.id) {
+                // DB mein quoted message dhundo
+                const { data: quotedMsg } = await supabase
+                    .from('w_messages')
+                    .select('id, text_body, type, content, wa_message_id, direction')
+                    .eq('wa_message_id', msg.context.id)
+                    .maybeSingle();
+
+                quotedMessage = {
+                    wa_message_id: msg.context.id,
+                    from: msg.context.from || null,
+                    // Agar DB mein mila toh uska text use karo
+                    text: quotedMsg?.text_body 
+                          || quotedMsg?.content?.text 
+                          || null,
+                    type: quotedMsg?.type || 'text',
+                    direction: quotedMsg?.direction || null,
+                    found: !!quotedMsg,
+                };
+            }
+
             // PRE-DEFINE CONTENT (Media will update this row later)
-            const enrichedContent: any = { text, raw: msg };
+            const enrichedContent: any = { 
+                text, 
+                raw: msg,
+                quoted: quotedMessage
+            };
 
             // C. Insert Message
             const storedInbound = await storeMessage({
@@ -2914,7 +2941,8 @@ app.post("/webhook", async (req, res) => {
                     from,
                     sender: 'user',
                     timestamp: storedInbound?.created_at || new Date(),
-                    conversation_id: conv.id
+                    conversation_id: conv.id,
+                    quoted: quotedMessage || null
                 }
             });
 
@@ -2923,6 +2951,7 @@ app.post("/webhook", async (req, res) => {
                 from,
                 phone: from,
                 text,
+                quoted: quotedMessage || null,
                 sender: 'user',
                 conversation_id: conv.id,
                 contact_id: contact.id,
