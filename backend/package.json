@@ -6,7 +6,7 @@
     "main": "server.ts",
     "scripts": {
         "predev": "node scripts/kill-port.mjs",
-        "dev": "tsx server.ts",
+        "dev": "tsx watch server.ts",
         "start": "tsx server.ts",
         "kill-port": "node scripts/kill-port.mjs"
     },

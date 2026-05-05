@@ -3992,6 +3992,315 @@ httpServer.on('error', (err: any) => {
     process.exit(1);
 });
 
+// ====== Broadcast APIs ======
+
+// GET /api/broadcast/tags
+app.get('/api/broadcast/tags', authMiddleware, async (req, res) => {
+    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    try {
+        const { data: contacts, error: fetchErr } = await supabase
+            .from('w_contacts')
+            .select('tags')
+            .eq('organization_id', orgId);
+            
+        if (fetchErr) throw fetchErr;
+        
+        const tagsSet = new Set<string>();
+        contacts?.forEach((c: any) => {
+            if (Array.isArray(c.tags)) {
+                c.tags.forEach((t: string) => tagsSet.add(t));
+            }
+        });
+        
+        res.json({ tags: Array.from(tagsSet) });
+    } catch (err: any) {
+        console.error('Fetch Tags Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+async function processCampaign(campaign: any) {
+    try {
+        await supabase.from('w_campaigns').update({ status: 'processing' }).eq('id', campaign.id);
+        
+        const orgId = campaign.organization_id;
+        const wa_account_id = campaign.wa_account_id;
+        
+        const { data: account, error: accErr } = await supabase
+            .from('w_wa_accounts')
+            .select('id, phone_number_id, whatsapp_business_account_id, access_token_encrypted')
+            .eq('id', wa_account_id)
+            .single();
+
+        if (accErr || !account) throw new Error('WhatsApp account not found');
+        const token = decryptToken(account.access_token_encrypted);
+        const phone_number_id = account.phone_number_id;
+
+        let contactsToProcess = [];
+        if (campaign.csv_data && Array.isArray(campaign.csv_data)) {
+            contactsToProcess = campaign.csv_data;
+        } else {
+            let query = supabase
+                .from('w_contacts')
+                .select('id, name, custom_name, phone, wa_id, tags')
+                .eq('organization_id', orgId)
+                .eq('contact_type', 'individual');
+                
+            if (campaign.audience_tag) {
+                query = query.contains('tags', [campaign.audience_tag]);
+            }
+            
+            const { data: contacts, error: contactsErr } = await query;
+            if (contactsErr) throw contactsErr;
+            contactsToProcess = contacts || [];
+        }
+        
+        if (contactsToProcess.length === 0) {
+            await supabase.from('w_campaigns').update({ status: 'completed', total_contacts: 0 }).eq('id', campaign.id);
+            return;
+        }
+
+        let sent = 0;
+        let failed = 0;
+        const results = [];
+
+        for (const contact of contactsToProcess) {
+            const recipient = contact.phone || contact.wa_id;
+            if (!recipient) {
+                failed++;
+                results.push({ phone: null, name: contact.name || 'Unknown', status: 'failed', error: 'Missing phone number' });
+                continue;
+            }
+
+            const components = [];
+            const mapping = campaign.variable_mapping || {};
+            
+            let renderedText = mapping._template_body || `[Broadcast Template: ${campaign.template_name}]`;
+            const parameters = [];
+
+            const sortedKeys = Object.keys(mapping).filter(k => k !== '_template_body').sort((a, b) => parseInt(a) - parseInt(b));
+            
+            for (const num of sortedKeys) {
+                const field = mapping[num];
+                let text = '';
+                if (field === 'name') text = contact.custom_name || contact.name || '';
+                else if (field === 'phone') text = contact.phone || '';
+                else text = field || ''; 
+                
+                renderedText = renderedText.replace(`{{${num}}}`, text);
+                parameters.push({ type: 'text', text: text || ' ' });
+            }
+
+            if (parameters.length > 0) {
+                components.push({ type: 'body', parameters });
+            }
+
+            const payload = {
+                messaging_product: 'whatsapp',
+                to: recipient,
+                type: 'template',
+                template: {
+                    name: campaign.template_name,
+                    language: { code: campaign.template_language },
+                    components: components
+                }
+            };
+
+            try {
+                const response = await fetch(`https://graph.facebook.com/v21.0/${phone_number_id}/messages`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    sent++;
+                    results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'sent' });
+
+                    const wa_message_id = data.messages?.[0]?.id;
+                    const realWaId = data.contacts?.[0]?.wa_id || recipient;
+                    
+                    let currentContactId = contact.id;
+
+                    if (!currentContactId) {
+                        // First check if contact exists by real WhatsApp ID or the passed phone
+                        const { data: existingContacts } = await supabase
+                            .from('w_contacts')
+                            .select('id')
+                            .eq('organization_id', orgId)
+                            .or(`wa_id.eq.${realWaId},phone.eq.${recipient}`)
+                            .limit(1);
+
+                        if (existingContacts && existingContacts.length > 0) {
+                            currentContactId = existingContacts[0].id;
+                        } else {
+                            const { data: newContact, error: insertErr } = await supabase
+                                .from('w_contacts')
+                                .insert({
+                                    organization_id: orgId,
+                                    wa_account_id: wa_account_id,
+                                    name: contact.name || contact.custom_name || recipient,
+                                    phone: recipient,
+                                    wa_id: realWaId,
+                                    contact_type: 'individual'
+                                })
+                                .select('id')
+                                .single();
+                                
+                            if (newContact) {
+                                currentContactId = newContact.id;
+                            }
+                        }
+                    }
+
+                    if (currentContactId) {
+                        const conv = await upsertConversation(orgId, wa_account_id, currentContactId, {
+                            lastMessagePreview: `[Broadcast] ${campaign.template_name}`
+                        });
+                        
+                        if (conv && conv.id) {
+                            await storeMessage({
+                                organization_id: orgId,
+                                conversation_id: conv.id,
+                                contact_id: currentContactId,
+                                wa_message_id: wa_message_id || `broadcast-${Date.now()}`,
+                                direction: 'outbound',
+                                type: 'text',
+                                status: 'sent',
+                                content: { text: renderedText }
+                            });
+                        }
+                    }
+                } else {
+                    failed++;
+                    results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'failed', error: data.error?.message || 'API Error' });
+                }
+            } catch (e: any) {
+                failed++;
+                results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'failed', error: e.message || 'Network/Unknown Error' });
+            }
+            
+            await new Promise(r => setTimeout(r, 300));
+        }
+
+        await supabase.from('w_campaigns').update({ 
+            status: 'completed', 
+            total_contacts: contactsToProcess.length,
+            sent_count: sent,
+            failed_count: failed,
+            results: results
+        }).eq('id', campaign.id);
+
+    } catch (err) {
+        console.error('Error processing campaign:', campaign.id, err);
+        await supabase.from('w_campaigns').update({ status: 'failed' }).eq('id', campaign.id);
+    }
+}
+
+// Background scheduler
+setInterval(async () => {
+    try {
+        const { data: campaigns, error } = await supabase
+            .from('w_campaigns')
+            .select('*')
+            .eq('status', 'scheduled')
+            .lte('scheduled_at', new Date().toISOString());
+
+        if (error || !campaigns) return;
+        
+        for (const camp of campaigns) {
+            processCampaign(camp); // runs asynchronously
+        }
+    } catch (e) {
+        // ignore
+    }
+}, 60000); // Check every minute
+
+// POST /api/broadcast/send
+app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
+    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const { name, wa_account_id, audience_tag, csv_data, template_name, template_language, variable_mapping, scheduled_at } = req.body;
+    
+    try {
+        if (!wa_account_id || !template_name || !template_language) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        const isScheduled = scheduled_at && new Date(scheduled_at) > new Date();
+
+        const { data: campaign, error: insertErr } = await supabase
+            .from('w_campaigns')
+            .insert({
+                organization_id: orgId,
+                wa_account_id,
+                name: name || 'Untitled Campaign',
+                audience_tag: audience_tag || null,
+                csv_data: csv_data || null,
+                template_name,
+                template_language,
+                variable_mapping,
+                scheduled_at: scheduled_at || null,
+                status: isScheduled ? 'scheduled' : 'processing'
+            })
+            .select()
+            .single();
+
+        if (insertErr) {
+            console.error("Campaign insert error:", insertErr);
+            throw new Error('Database Error: Have you run the w_campaigns SQL script in Supabase?');
+        }
+
+        if (!isScheduled) {
+            // Process asynchronously without blocking response
+            processCampaign(campaign);
+            res.json({ message: "Campaign processing started", campaign, status: 'processing' });
+        } else {
+            res.json({ message: "Campaign scheduled successfully", campaign, status: 'scheduled' });
+        }
+
+    } catch (err: any) {
+        console.error('Broadcast Send Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/broadcast/campaigns
+app.get('/api/broadcast/campaigns', authMiddleware, async (req, res) => {
+    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    try {
+        const { data, error } = await supabase
+            .from('w_campaigns')
+            .select('*')
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: false });
+            
+        if (error) throw error;
+        res.json({ campaigns: data });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/broadcast/campaigns/:id
+app.delete('/api/broadcast/campaigns/:id', authMiddleware, async (req, res) => {
+    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    try {
+        const { error } = await supabase
+            .from('w_campaigns')
+            .delete()
+            .eq('id', req.params.id)
+            .eq('organization_id', orgId)
+            .eq('status', 'scheduled'); // Only allow deleting scheduled campaigns
+            
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 httpServer.listen(PORT, () => {
     console.log(`âœ… Server running on port ${PORT}`);
     // Check missing dirs
