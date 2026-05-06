@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
 export default function Settings() {
-    const { session, userRole } = useAuth()
+    const { session, userRole, loginType } = useAuth()
     const [activeTab, setActiveTab] = useState('knowledge_base')
     const [documents, setDocuments] = useState([
         { id: 1, name: 'Refund_Policy_v2.pdf', size: '2.4 MB', status: 'INDEXED', date: '2023-11-01' },
@@ -112,7 +112,7 @@ export default function Settings() {
         }
     }
 
-    const isAdmin = userRole === 'admin' || userRole === 'owner'
+    const isAdmin = loginType === 'owner' || userRole === 'admin' || userRole === 'owner'
 
     return (
         <div className="max-w-6xl mx-auto flex gap-8">

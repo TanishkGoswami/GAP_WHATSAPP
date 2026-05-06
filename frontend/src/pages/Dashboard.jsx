@@ -57,7 +57,10 @@ export default function Dashboard() {
         queryFn: async () => {
             if (!session?.access_token) return null;
             const res = await fetch(`${API_BASE}/dashboard-stats`, {
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
+                headers: { 
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'X-Auth-Portal': 'owner'
+                }
             })
             if (!res.ok) throw new Error('Failed to fetch dashboard stats')
             return res.json()

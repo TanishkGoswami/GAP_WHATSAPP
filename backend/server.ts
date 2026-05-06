@@ -107,25 +107,108 @@ async function authMiddleware(req: any, res: any, next: any) {
 
     if (!supabase) return res.status(503).json({ error: 'Service unavailable - Supabase not configured' });
 
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) {
-        console.error("Supabase Auth Error:", error?.message || error);
-        return res.status(401).json({ error: 'Unauthorized - invalid or expired token' });
-    }
+    try {
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+        if (error || !user) {
+            console.error("Supabase Auth Error:", error?.message || error);
+            return res.status(401).json({ error: 'Unauthorized - invalid or expired token' });
+        }
 
-    req.user = user;
-    
-    // Fetch member role and org
-    const { data: member } = await supabase
-        .from('organization_members')
-        .select('role, organization_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-    
-    req.role = member?.role || 'owner';
-    req.organization_id = member?.organization_id || user.user_metadata?.organization_id || null;
-    
-    next();
+        req.user = user;
+        
+        // Fetch member role and org
+        const { data: member } = await supabase
+            .from('organization_members')
+            .select('role, organization_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        
+        // Resolve role and portal context
+
+        const portal = req.headers['x-auth-portal'] || 'owner';
+        const dbRole = member?.role;
+
+        if (portal === 'owner') {
+            // Force owner role if logging into owner portal (unless they are admin)
+            req.role = dbRole === 'admin' ? 'admin' : 'owner';
+        } else if (portal === 'agent') {
+            // Force agent role if logging into agent portal
+            req.role = 'agent';
+        } else {
+            // Fallback to database role or default to owner if no portal header
+            req.role = dbRole || 'owner';
+        }
+
+        let orgId = member?.organization_id || user.user_metadata?.organization_id || null;
+
+        // AUTO-PROVISION: If no orgId found and user is an owner (or logging into owner portal)
+        if (!orgId && req.role !== 'agent') {
+            console.log(`[Auth] Auto-provisioning organization for: ${user.email}`);
+            try {
+                // Re-check for race condition
+                const { data: checkAgain } = await supabase
+                    .from('organization_members')
+                    .select('organization_id')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+
+                if (checkAgain?.organization_id) {
+                    orgId = checkAgain.organization_id;
+                } else {
+                    // 1. Create Organization
+                    const orgName = `${user.email.split('@')[0]}'s Workspace`;
+                    const { data: newOrg, error: orgErr } = await supabase
+                        .from('organizations')
+                        .insert({ 
+                            name: orgName,
+                            plan_id: 'starter',
+                            plan_status: 'trial',
+                            is_active: true
+                        })
+                        .select()
+                        .single();
+
+                    if (orgErr) throw orgErr;
+
+                    // 2. Create Member
+                    const { error: memberErr } = await supabase
+                        .from('organization_members')
+                        .insert({
+                            user_id: user.id,
+                            organization_id: newOrg.id,
+                            role: 'owner',
+                            name: user.user_metadata?.full_name || user.email.split('@')[0],
+                            email: user.email
+                        });
+
+                    if (memberErr) throw memberErr;
+
+                    // 3. Update User Metadata (Optional but helps)
+                    await supabase.auth.admin.updateUserById(user.id, {
+                        user_metadata: { ...user.user_metadata, organization_id: newOrg.id }
+                    });
+
+                    orgId = newOrg.id;
+                    console.log(`[Auth] Successfully provisioned org ${orgId} for ${user.email}`);
+                }
+            } catch (err: any) {
+                console.error(`[Auth] Provisioning failed for ${user.email}:`, err.message);
+                // Continue, might still fail 403 below
+            }
+        }
+        
+        if (!orgId) {
+            console.warn(`⚠️ User ${user.email} (${user.id}) has no organization_id.`);
+            return res.status(403).json({ error: 'Forbidden - User does not belong to any organization' });
+        }
+        
+        req.organization_id = orgId;
+        
+        next();
+    } catch (err: any) {
+        console.error("Auth Middleware Exception:", err.message);
+        return res.status(500).json({ error: 'Internal server error during authentication' });
+    }
 }
 
 function decodeSupabaseJwtRole(token: string | null | undefined): string | null {
@@ -162,72 +245,13 @@ function isAllZeroUuid(value: string) {
     return String(value).toLowerCase() === '00000000-0000-0000-0000-000000000000';
 }
 
-// For multi-org setup you should pass orgId from frontend/user auth.
-// In dev, DEFAULT_ORG_ID can be omitted and we auto-create an org named "Default".
-// If DEFAULT_ORG_ID is set to an invalid UUID or the all-zero placeholder, ignore it.
-const RAW_DEFAULT_ORG_ID = process.env.DEFAULT_ORG_ID || null;
-const DEFAULT_ORG_ID =
-    RAW_DEFAULT_ORG_ID && isUuid(RAW_DEFAULT_ORG_ID) && !isAllZeroUuid(RAW_DEFAULT_ORG_ID)
-        ? RAW_DEFAULT_ORG_ID
-        : null;
-
-if (RAW_DEFAULT_ORG_ID && !DEFAULT_ORG_ID) {
-    console.warn(
-        `âš ï¸ DEFAULT_ORG_ID is set but invalid/placeholder ('${RAW_DEFAULT_ORG_ID}'). ` +
-        `Ignoring it and using/creating the "Default" organization.`
-    );
-}
-
-// Runtime org fallback (dev convenience). If DEFAULT_ORG_ID isn't provided,
-// we auto-create (or reuse) an organization named "Default".
-let resolvedOrgId: string | null = DEFAULT_ORG_ID;
-let resolvingOrgPromise: Promise<string | null> | null = null;
+// ====== Global / Shared Constants ======
+const DEFAULT_ORG_ID = null;
+let resolvedOrgId: string | null = null;
 
 async function ensureDefaultOrganizationId(): Promise<string | null> {
-    if (resolvedOrgId) return resolvedOrgId;
-    if (!supabase) return null;
-    if (resolvingOrgPromise) return resolvingOrgPromise;
-
-    resolvingOrgPromise = (async () => {
-        try {
-            const { data: existing, error: findErr } = await supabase
-                .from('organizations')
-                .select('id')
-                .eq('name', 'Default')
-                .order('created_at', { ascending: true })
-                .limit(1)
-                .maybeSingle();
-
-            if (findErr) throw findErr;
-            if (existing?.id) {
-                resolvedOrgId = existing.id;
-                return resolvedOrgId;
-            }
-
-            const { data: created, error: createErr } = await supabase
-                .from('organizations')
-                .insert({ name: 'Default', slug: 'default' })
-                .select('id')
-                .single();
-
-            if (createErr) throw createErr;
-
-            resolvedOrgId = created?.id || null;
-            console.log('âœ… Created default organization:', resolvedOrgId);
-            return resolvedOrgId;
-        } catch (err) {
-            console.error('âŒ Failed to ensure default organization:', err);
-            return null;
-        } finally {
-            resolvingOrgPromise = null;
-        }
-    })();
-
-    return resolvingOrgPromise;
+    return null;
 }
-
-// Fire-and-forget bootstrap on startup
-ensureDefaultOrganizationId().catch(() => undefined);
 
 function normalizeWaIdToPhone(value: string | null | undefined): string | null {
     if (!value) return null;
@@ -863,7 +887,7 @@ async function upsertContact(organization_id: string, wa_account_id: string, wa_
             }
         }
 
-        io.emit('contact_updated', { contact: updated });
+        io.to(`org:${organization_id}`).emit('contact_updated', { contact: updated });
         return updated;
     }
 
@@ -889,8 +913,101 @@ async function upsertContact(organization_id: string, wa_account_id: string, wa_
         .single();
 
     if (insErr) throw insErr;
-    io.emit('contact_updated', { contact: inserted });
+    io.to(`org:${organization_id}`).emit('contact_updated', { contact: inserted });
     return inserted;
+}
+
+// ====== Helper: Auto Assign Conversation ======
+async function performAutoAssignment(organization_id: string, conversation_id: string) {
+    try {
+        // 1. Fetch organization settings
+        const { data: org, error: orgErr } = await supabase
+            .from('organizations')
+            .select('settings')
+            .eq('id', organization_id)
+            .single();
+
+        if (orgErr || !org?.settings?.auto_assign?.enabled) return;
+
+        const config = org.settings.auto_assign;
+        const batchSize = Math.max(1, config.batch_size || 1);
+        const pausedAgents = config.paused_agents || [];
+        let state = config.state || { last_agent_id: null, current_batch_count: 0 };
+
+        // 2. Fetch eligible agents
+        const { data: members, error: memErr } = await supabase
+            .from('organization_members')
+            .select('user_id')
+            .eq('organization_id', organization_id)
+            .in('role', ['agent', 'owner', 'admin'])
+            .eq('is_active', true);
+        
+        if (memErr || !members || members.length === 0) return;
+
+        const eligibleAgents = members
+            .map((m: any) => m.user_id)
+            .filter((id: string) => !pausedAgents.includes(id));
+
+        if (eligibleAgents.length === 0) return;
+
+        // 3. Determine next agent
+        let nextAgentId = eligibleAgents[0];
+        let newBatchCount = 1;
+
+        if (state.last_agent_id && eligibleAgents.includes(state.last_agent_id)) {
+            if (state.current_batch_count < batchSize) {
+                // Keep assigning to the same agent
+                nextAgentId = state.last_agent_id;
+                newBatchCount = state.current_batch_count + 1;
+            } else {
+                // Move to next agent
+                const currentIndex = eligibleAgents.indexOf(state.last_agent_id);
+                const nextIndex = (currentIndex + 1) % eligibleAgents.length;
+                nextAgentId = eligibleAgents[nextIndex];
+                newBatchCount = 1;
+            }
+        } else {
+            // Last agent not found or no state, start fresh with first eligible
+            nextAgentId = eligibleAgents[0];
+            newBatchCount = 1;
+        }
+
+        // 4. Update the conversation
+        const { data: updatedConv, error: updErr } = await supabase
+            .from('w_conversations')
+            .update({ assigned_agent_id: nextAgentId })
+            .eq('id', conversation_id)
+            .select('assigned_agent_id')
+            .single();
+        
+        if (updErr) throw updErr;
+
+        // Fetch agent name
+        const { data: agentData } = await supabase.from('organization_members').select('name').eq('user_id', nextAgentId).single();
+
+        // Broadcast update
+        io.to(`org:${organization_id}`).emit('conversation_updated', {
+            id: conversation_id,
+            assigned_agent_id: nextAgentId,
+            assigned_agent_name: agentData?.name || null
+        });
+
+        // 5. Update state in organization settings
+        const newAutoAssign = {
+            ...config,
+            state: { last_agent_id: nextAgentId, current_batch_count: newBatchCount }
+        };
+
+        await supabase
+            .from('organizations')
+            .update({ settings: { ...org.settings, auto_assign: newAutoAssign } })
+            .eq('id', organization_id);
+
+        console.log(`[Auto Assign] Assigned conversation ${conversation_id} to agent ${nextAgentId} (Count: ${newBatchCount}/${batchSize})`);
+
+    } catch (e) {
+        console.error('[Auto Assign Error]', e);
+    }
 }
 
 // ====== Helper: upsert conversation ======
@@ -937,6 +1054,12 @@ async function upsertConversation(organization_id: string, wa_account_id: string
             .select()
             .single();
         if (error) console.error("Conversation Update Error:", error);
+
+        if (data && !data.assigned_agent_id && lastMessageOpts.direction === 'inbound') {
+            // Run asynchronously to avoid blocking
+            performAutoAssignment(organization_id, data.id).catch(console.error);
+        }
+
         return data;
     } else {
         const { data, error } = await supabase
@@ -945,6 +1068,11 @@ async function upsertConversation(organization_id: string, wa_account_id: string
             .select()
             .single();
         if (error) console.error("Conversation Insert Error:", error);
+
+        if (data && lastMessageOpts.direction === 'inbound') {
+            performAutoAssignment(organization_id, data.id).catch(console.error);
+        }
+
         return data;
     }
 }
@@ -1553,16 +1681,13 @@ app.delete("/api/flow-sessions/:id", async (req, res) => {
 });
 
 app.get("/api/conversations", authMiddleware, async (req: any, res) => {
-    // In a real app, use the authenticated user's organization_id
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = req.organization_id || requestedOrgId || (await ensureDefaultOrganizationId());
+    const organization_id = req.organization_id;
     const wa_account_id = req.query.wa_account_id as string; // Optional filter
     const user_id = req.user.id;
     const user_role = req.role;
 
-    // If still missing, fall back to returning conversations across orgs (dev mode).
     if (!organization_id) {
-        console.warn("⚠️ No organization_id resolved; returning conversations without org filter (dev mode)");
+        return res.status(403).json({ error: 'No organization linked to this account' });
     }
 
     try {
@@ -1572,15 +1697,8 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
                 *,
                 contact:w_contacts(id, name, custom_name, phone, wa_id, wa_key, created_at, tags)
             `)
+            .eq("organization_id", organization_id)
             .order("last_message_at", { ascending: false });
-
-        // Only hard-filter by organization_id when the client explicitly asked for it.
-        // Using a stale DEFAULT_ORG_ID is a common dev misconfig and makes the UI look empty.
-        if (requestedOrgId) {
-            query = query.eq("organization_id", requestedOrgId);
-        } else if (organization_id) {
-            query = query.eq("organization_id", organization_id);
-        }
 
         // ROLE BASED FILTERING (Step 2G)
         if (user_role === 'agent') {
@@ -1633,18 +1751,6 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
 
         let { data: conversations, error } = await query;
         if (error) throw error;
-
-        // Dev safety: if we filtered by resolvedOrgId (not explicitly requested) and got nothing,
-        // retry without org filter so chats stored under a different org still show up.
-        if (!requestedOrgId && organization_id && (conversations?.length || 0) === 0) {
-            console.warn(
-                `⚠️ No conversations found for organization_id=${organization_id}. ` +
-                `Retrying without org filter (dev mode).`
-            );
-            const retry = await baseQuery;
-            conversations = retry.data;
-            if (retry.error) throw retry.error;
-        }
 
         // Fetch Read States for this user
         let readStatesMap = new Map();
@@ -1720,34 +1826,25 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
 
 app.get('/api/contacts', authMiddleware, async (req: any, res) => {
     const organization_id = req.organization_id;
-    const requestedOrgId = req.query.organization_id as string | undefined;
     const includeGroups = req.query.include_groups === 'true';
+    
+    if (!organization_id) {
+        return res.status(403).json({ error: 'No organization linked to this account' });
+    }
+
     try {
-        let baseQuery = supabase
+        let query = supabase
             .from('w_contacts')
             .select('id, name, custom_name, phone, wa_id, wa_key, tags, created_at, last_active, contact_type')
+            .eq('organization_id', organization_id)
             .order('created_at', { ascending: false });
 
         // By default, only show individual w_contacts (not groups/channels)
         if (!includeGroups) {
-            baseQuery = baseQuery.or('contact_type.eq.individual,contact_type.is.null');
-
+            query = query.or('contact_type.eq.individual,contact_type.is.null');
         }
-
-        let query = baseQuery;
-        if (requestedOrgId) query = query.eq('organization_id', requestedOrgId);
-        else if (organization_id) query = query.eq('organization_id', organization_id);
 
         let { data, error } = await query;
-        if (!requestedOrgId && organization_id && !error && (data?.length || 0) === 0) {
-            console.warn(
-                `⚠️ No contacts found for organization_id=${organization_id}. ` +
-                `Retrying without org filter (dev mode).`
-            );
-            const retry = await baseQuery;
-            data = retry.data;
-            error = retry.error;
-        }
         if (error) throw error;
 
         const rows = (data || []).map((c: any) => {
@@ -1908,7 +2005,9 @@ app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
 
         // 4. Send custom invitation email
         try {
-            const loginLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`;
+            // Fix: Only use FRONTEND_URL or localhost for frontend links, NOT the backend's PUBLIC_BASE_URL
+            const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+            const loginLink = `${baseUrl}/agent-login`;
             await sendEmail(
                 email,
                 `Invitation to join FlowsApp Team`,
@@ -1972,6 +2071,19 @@ app.delete('/api/team/members/:id', authMiddleware, async (req: any, res) => {
     const { id } = req.params;
 
     try {
+        // Find the user_id of the member to delete their auth account
+        const { data: member } = await supabase
+            .from('organization_members')
+            .select('user_id')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .single();
+
+        if (member && member.user_id) {
+            // Delete user from auth to completely revoke access
+            await supabase.auth.admin.deleteUser(member.user_id);
+        }
+
         const { error } = await supabase
             .from('organization_members')
             .delete()
@@ -2021,7 +2133,7 @@ app.patch('/api/conversations/:id/assign', authMiddleware, async (req: any, res)
 
         if (error) throw error;
 
-        io.emit('conversation_assigned', { conversation_id: id, assigned_to: agent_id });
+        io.to(`org:${orgId}`).emit('conversation_assigned', { conversation_id: id, assigned_to: agent_id });
         res.json({ success: true, conversation: updated });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
@@ -2079,9 +2191,8 @@ app.delete('/api/flows/:id', async (req, res) => {
 
 // ====== Bot Agents API ======
 // Get all bot agents for an organization
-app.get('/api/agents', async (req, res) => {
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+app.get('/api/agents', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
 
     try {
         let query = supabase
@@ -2113,9 +2224,8 @@ app.get('/api/agents', async (req, res) => {
 });
 
 // Create a new bot agent
-app.post('/api/agents', async (req, res) => {
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+app.post('/api/agents', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
 
     try {
         if (!organization_id) {
@@ -2174,10 +2284,9 @@ app.post('/api/agents', async (req, res) => {
 });
 
 // Update a bot agent
-app.patch('/api/agents/:id', async (req, res) => {
+app.patch('/api/agents/:id', authMiddleware, async (req: any, res) => {
     const { id } = req.params;
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+    const organization_id = req.organization_id;
 
     try {
         const updateData: any = {};
@@ -2211,10 +2320,9 @@ app.patch('/api/agents/:id', async (req, res) => {
 });
 
 // Delete a bot agent
-app.delete('/api/agents/:id', async (req, res) => {
+app.delete('/api/agents/:id', authMiddleware, async (req: any, res) => {
     const { id } = req.params;
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+    const organization_id = req.organization_id;
 
     try {
         let query = supabase
@@ -2272,7 +2380,7 @@ app.patch('/api/conversations/:id/bot', async (req, res) => {
 // Get OpenAI settings
 app.get('/api/settings/openai', async (req, res) => {
     const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+    const organization_id = req.organization_id;
 
     try {
         const { data, error } = await supabase
@@ -2328,8 +2436,95 @@ app.post('/api/settings/openai', async (req, res) => {
     }
 });
 
-app.get("/api/messages/:conversationId", async (req, res) => {
+// Get Auto Assign settings
+app.get('/api/settings/auto-assign', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+
+    try {
+        const { data, error } = await supabase
+            .from('organizations')
+            .select('settings')
+            .eq('id', organization_id)
+            .single();
+
+        if (error) throw error;
+
+        const autoAssignSettings = data?.settings?.auto_assign || {
+            enabled: false,
+            batch_size: 1,
+            paused_agents: [],
+            state: { last_agent_id: null, current_batch_count: 0 }
+        };
+
+        res.json(autoAssignSettings);
+    } catch (err: any) {
+        console.error('Error fetching auto assign settings:', err);
+        res.status(500).json({ error: err.message || 'Failed to fetch settings' });
+    }
+});
+
+// Update Auto Assign settings
+app.post('/api/settings/auto-assign', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+    const { enabled, batch_size, paused_agents } = req.body;
+
+    try {
+        const { data: orgData, error: fetchErr } = await supabase
+            .from('organizations')
+            .select('settings')
+            .eq('id', organization_id)
+            .single();
+
+        if (fetchErr) throw fetchErr;
+
+        const currentSettings = orgData?.settings || {};
+        const currentAutoAssign = currentSettings.auto_assign || {};
+
+        const newAutoAssign = {
+            ...currentAutoAssign,
+            enabled: enabled !== undefined ? enabled : currentAutoAssign.enabled || false,
+            batch_size: batch_size !== undefined ? Math.max(1, batch_size) : currentAutoAssign.batch_size || 1,
+            paused_agents: paused_agents !== undefined ? paused_agents : currentAutoAssign.paused_agents || []
+        };
+
+        const { data, error } = await supabase
+            .from('organizations')
+            .update({ settings: { ...currentSettings, auto_assign: newAutoAssign } })
+            .eq('id', organization_id)
+            .select('settings')
+            .single();
+
+        if (error) throw error;
+
+        res.json(data.settings.auto_assign);
+    } catch (err: any) {
+        console.error('Error updating auto assign settings:', err);
+        res.status(500).json({ error: err.message || 'Failed to update settings' });
+    }
+});
+
+// Get organization agents for the UI
+app.get('/api/team/agents', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+
+    try {
+        const { data, error } = await supabase
+            .from('organization_members')
+            .select('user_id, name, email, role, is_active')
+            .eq('organization_id', organization_id)
+            .in('role', ['agent', 'owner', 'admin']); // typically agents, but others might take chats
+
+        if (error) throw error;
+        res.json(data || []);
+    } catch (err: any) {
+        console.error('Error fetching agents for auto assign:', err);
+        res.status(500).json({ error: err.message || 'Failed to fetch agents' });
+    }
+});
+
+app.get("/api/messages/:conversationId", authMiddleware, async (req: any, res) => {
     const { conversationId } = req.params;
+    const orgId = req.organization_id;
     try {
         const rawLimit = Number(req.query.limit || 50);
         const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, rawLimit)) : 50;
@@ -2340,6 +2535,7 @@ app.get("/api/messages/:conversationId", async (req, res) => {
             .from('w_messages')
             .select("*")
             .eq("conversation_id", conversationId)
+            .eq("organization_id", orgId)
             .order("created_at", { ascending: false })
             .limit(limit);
 
@@ -2360,8 +2556,9 @@ app.get("/api/messages/:conversationId", async (req, res) => {
 });
 
 // Alias for required route shape
-app.get('/api/conversations/:id/messages', async (req, res) => {
+app.get('/api/conversations/:id/messages', authMiddleware, async (req: any, res) => {
     const conversationId = req.params.id;
+    const orgId = req.organization_id;
     try {
         const rawLimit = Number(req.query.limit || 50);
         const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, rawLimit)) : 50;
@@ -2371,6 +2568,7 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
             .from('w_messages')
             .select('*')
             .eq('conversation_id', conversationId)
+            .eq('organization_id', orgId)
             .order('created_at', { ascending: false })
             .limit(limit);
 
@@ -2390,8 +2588,9 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
 });
 
 // Send Message (Outbound) - used by LiveChat UI
-app.post('/api/conversations/:conversationId/send', async (req, res) => {
+app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: any, res) => {
     const { conversationId } = req.params;
+    const orgId = req.organization_id;
     const { text, session_id } = req.body as { text?: string; session_id?: string };
 
     if (!text || !text.trim()) return res.status(400).json({ error: 'Text required' });
@@ -2407,13 +2606,14 @@ app.post('/api/conversations/:conversationId/send', async (req, res) => {
                 account:w_wa_accounts(id, phone_number_id, access_token_encrypted)
             `)
             .eq('id', conversationId)
+            .eq('organization_id', orgId)
             .single();
 
         if (convErr) throw convErr;
         if (!conv?.contact?.wa_id) throw new Error('Conversation contact missing wa_id');
         if (!conv?.account?.phone_number_id) throw new Error('Conversation account missing phone_number_id');
 
-        const orgId = conv.organization_id || (await ensureDefaultOrganizationId());
+        const orgId = conv.organization_id;
         if (!orgId) throw new Error('Organization not configured');
 
         const toPhone = String(conv.contact.wa_id);
@@ -2550,7 +2750,7 @@ app.post('/api/conversations/:conversationId/send-media', upload.single('file'),
         if (!conv?.contact?.wa_id) throw new Error('Conversation contact missing wa_id');
         if (!conv?.account?.phone_number_id) throw new Error('Conversation account missing phone_number_id');
 
-        const orgId = conv.organization_id || (await ensureDefaultOrganizationId());
+        const orgId = conv.organization_id;
         if (!orgId) throw new Error('Organization not configured');
 
         const mimeType = file.mimetype || 'application/octet-stream';
@@ -2717,7 +2917,7 @@ app.post('/api/messages/audio', upload.single('file'), async (req, res) => {
         if (!conv?.contact?.wa_id) throw new Error('Conversation contact missing wa_id');
         if (!conv?.account?.phone_number_id) throw new Error('Conversation account missing phone_number_id');
 
-        const orgId = conv.organization_id || (await ensureDefaultOrganizationId());
+        const orgId = conv.organization_id;
         if (!orgId) throw new Error('Organization not configured');
 
         const mimeType = file.mimetype || 'audio/ogg';
@@ -2892,7 +3092,7 @@ app.post("/api/conversations/:id/read", async (req, res) => {
 
 // Get list of connected accounts
 app.get('/api/whatsapp/accounts', authMiddleware, async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
 
     try {
         if (!orgId) throw new Error('No organization found');
@@ -2920,7 +3120,7 @@ app.get('/api/whatsapp/accounts', authMiddleware, async (req, res) => {
 // Add/Update Meta API Account
 app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
     const { phone_number_id, waba_id, access_token, display_phone_number, name } = req.body;
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
 
     if (!phone_number_id || !access_token) {
         return res.status(400).json({ error: 'phone_number_id and access_token are required' });
@@ -2969,7 +3169,7 @@ app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
 // Delete account
 app.delete('/api/whatsapp/accounts/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     try {
         const { error } = await supabase
             .from('w_wa_accounts')
@@ -2988,7 +3188,7 @@ app.delete('/api/whatsapp/accounts/:id', authMiddleware, async (req, res) => {
 
 // Get list of templates
 app.get('/api/whatsapp/templates', authMiddleware, async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     
     try {
         if (!orgId) throw new Error('No organization found');
@@ -3025,7 +3225,7 @@ app.get('/api/whatsapp/templates', authMiddleware, async (req, res) => {
 
 // Create Template
 app.post('/api/whatsapp/templates', authMiddleware, upload.single('file'), async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     const { name, category, language, components } = req.body;
     const file = req.file;
 
@@ -3110,7 +3310,7 @@ app.post('/api/whatsapp/templates', authMiddleware, upload.single('file'), async
 
 // Delete Template
 app.delete('/api/whatsapp/templates/:name', authMiddleware, async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     const { name } = req.params;
 
     try {
@@ -3247,7 +3447,7 @@ app.post("/webhook", async (req, res) => {
 
         // 1. Identify Organization & Account
         const phone_number_id = metadata?.phone_number_id;
-        let organization_id = resolvedOrgId;
+        let organization_id = null;
         let wa_account_id = null;
 
         if (phone_number_id && supabase) {
@@ -3260,17 +3460,11 @@ app.post("/webhook", async (req, res) => {
             if (acc) {
                 organization_id = acc.organization_id;
                 wa_account_id = acc.id;
-            } else {
-                console.warn(`⚠️ Phone ID ${phone_number_id} not found in wa_accounts. Using DEFAULT_ORG_ID.`);
             }
         }
 
         if (!organization_id) {
-            organization_id = await ensureDefaultOrganizationId();
-        }
-
-        if (!organization_id) {
-            console.error("❌ No Organization ID found for incoming webhook.");
+            console.error(`❌ Webhook Error: Phone ID ${phone_number_id} not mapped to any organization.`);
             return;
         }
 
@@ -3376,21 +3570,7 @@ app.post("/webhook", async (req, res) => {
 
             // D. Emit Realtime
             // Emit to org room
-            io.emit(`org:${organization_id}`, {
-                type: 'new_message',
-                message: {
-                    id: storedInbound?.id || crypto.randomUUID(),
-                    text,
-                    from,
-                    sender: 'user',
-                    timestamp: storedInbound?.created_at || new Date(),
-                    conversation_id: conv.id,
-                    quoted: quotedMessage || null
-                }
-            });
-
-            // Legacy emit for current frontend compatibility
-            io.emit("new_message", {
+            io.to(`org:${organization_id}`).emit('new_message', {
                 from,
                 phone: from,
                 text,
@@ -3401,7 +3581,9 @@ app.post("/webhook", async (req, res) => {
                 message_id: storedInbound?.id || null,
                 wa_message_id,
                 created_at: storedInbound?.created_at || new Date().toISOString(),
-                connectedAccount: metadata?.display_phone_number, // pass this if available
+                status: 'delivered',
+                name: profileName,
+                connectedAccount: metadata?.display_phone_number,
                 type,
                 ...(enrichedContent?.media_url ? { media_url: enrichedContent.media_url } : {}),
                 ...(enrichedContent?.mime_type ? { mime_type: enrichedContent.mime_type } : {}),
@@ -3587,7 +3769,7 @@ app.post("/webhook", async (req, res) => {
 
 // ====== Baileys Implementation ======
 
-async function setupBaileys(sessionId: string, socket: any) {
+async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: string | null = null) {
     // CRITICAL FIX: Check concurrency lock
     if (initializingSessions.has(sessionId)) {
         console.log(`â³ Session ${sessionId} is already initializing. Skipping duplicate request.`);
@@ -3614,10 +3796,33 @@ async function setupBaileys(sessionId: string, socket: any) {
 
     try {
         const sessionDir = `baileys_auth_info/${sessionId}`;
+        const orgFile = `${sessionDir}/org_id.txt`;
 
         // Create dir if needed
         if (!fs.existsSync(sessionDir)) {
             fs.mkdirSync(sessionDir, { recursive: true });
+        }
+
+        // Persist/Resolve Organization ID
+        let organization_id = orgIdFromRequest;
+        if (!organization_id && fs.existsSync(orgFile)) {
+            organization_id = fs.readFileSync(orgFile, 'utf8').trim();
+        }
+
+        if (organization_id) {
+            fs.writeFileSync(orgFile, organization_id);
+        } else {
+            // Check if we can find it in socket data
+            organization_id = socket?.data?.organization_id || null;
+            if (organization_id) {
+                fs.writeFileSync(orgFile, organization_id);
+            }
+        }
+
+        if (!organization_id) {
+            console.warn(`⚠️ Cannot initialize Baileys session ${sessionId} - No Organization ID provided or persisted.`);
+            initializingSessions.delete(sessionId);
+            return;
         }
 
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
@@ -3678,15 +3883,12 @@ async function setupBaileys(sessionId: string, socket: any) {
 
         sock.ev.on("creds.update", saveCreds);
 
-        // Keep a small cache for org/account ids for this socket.
-        let cachedOrgId: string | null = null;
+        // Keep a small cache for account id for this socket.
         let cachedWaAccountId: string | null = null;
         const resolveOrgAndAccount = async () => {
-            if (cachedOrgId && cachedWaAccountId) return { orgId: cachedOrgId, waAccountId: cachedWaAccountId };
+            if (cachedWaAccountId) return { orgId: organization_id!, waAccountId: cachedWaAccountId };
 
-            const orgId = cachedOrgId || (await ensureDefaultOrganizationId());
-            if (!orgId) return { orgId: null as any, waAccountId: null as any };
-            cachedOrgId = orgId;
+            const orgId = organization_id!;
 
             const myJid = sock.user?.id || "";
             const myPhone = myJid.split(':')[0];
@@ -4327,7 +4529,15 @@ process.on('unhandledRejection', (reason: any, promise) => {
 });
 
 io.on("connection", (socket) => {
-    console.log("âœ… Frontend connected:", socket.id);
+    console.log("✅ Frontend connected:", socket.id);
+
+    // Join organization-specific room for multi-tenancy
+    socket.on("join_org", (orgId: string) => {
+        if (orgId) {
+            console.log(`👤 Client ${socket.id} joining room: org:${orgId}`);
+            socket.join(`org:${orgId}`);
+        }
+    });
 
     // Track explicit QR requests per socket.
     socket.data = socket.data || {};
@@ -4381,8 +4591,8 @@ io.on("connection", (socket) => {
     });
 
     // NEW: Explicit QR generation request
-    socket.on("request_qr", async (sessionId: string) => {
-        console.log(`ðŸ”” QR generation requested for session ${sessionId}`);
+    socket.on("request_qr", async (sessionId: string, orgId?: string) => {
+        console.log(`🔔 QR generation requested for session ${sessionId} (Org: ${orgId || 'None'})`);
 
         // Kill any existing session to ensure a clean slate for fresh QR
         const existing = sessions.get(sessionId);
@@ -4406,7 +4616,7 @@ io.on("connection", (socket) => {
         }
 
         // Create new Baileys session
-        await setupBaileys(sessionId, socket);
+        await setupBaileys(sessionId, socket, orgId || socket.data.organization_id);
     });
 
     // NEW: Explicit Logout request
@@ -4479,7 +4689,7 @@ httpServer.on('error', (err: any) => {
 
 // GET /api/broadcast/tags
 app.get('/api/broadcast/tags', authMiddleware, async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     try {
         const { data: contacts, error: fetchErr } = await supabase
             .from('w_contacts')
@@ -4703,7 +4913,7 @@ setInterval(async () => {
 
 // POST /api/broadcast/send
 app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     const { name, wa_account_id, audience_tag, csv_data, template_name, template_language, variable_mapping, scheduled_at } = req.body;
     
     try {
@@ -4751,7 +4961,7 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
 
 // GET /api/broadcast/campaigns
 app.get('/api/broadcast/campaigns', authMiddleware, async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     try {
         const { data, error } = await supabase
             .from('w_campaigns')
@@ -4768,7 +4978,7 @@ app.get('/api/broadcast/campaigns', authMiddleware, async (req, res) => {
 
 // DELETE /api/broadcast/campaigns/:id
 app.delete('/api/broadcast/campaigns/:id', authMiddleware, async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     try {
         const { error } = await supabase
             .from('w_campaigns')

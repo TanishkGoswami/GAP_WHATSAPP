@@ -28,10 +28,10 @@ const navigation = [
 
 export default function Sidebar() {
     const location = useLocation()
-    const { userRole } = useAuth()
-    console.log("Sidebar User Role:", userRole)
+    const { userRole, loginType } = useAuth()
+    console.log("Sidebar User Role:", userRole, "Login Type:", loginType)
 
-    const isAdmin = userRole === 'admin' || userRole === 'owner'
+    const isAdmin = loginType === 'owner' || userRole === 'admin' || userRole === 'owner'
 
     // Restrict access for agents
     const filteredNavigation = navigation.filter(item => {

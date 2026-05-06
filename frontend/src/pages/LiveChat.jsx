@@ -18,7 +18,11 @@ const socket = io(BACKEND_BASE, {
 const API_BASE = `${BACKEND_BASE}/api`;
 
 export default function LiveChat() {
-    const { user, session } = useAuth()
+    const { user, session, loginType, memberProfile } = useAuth()
+    const authHeaders = useMemo(() => ({
+        'Authorization': `Bearer ${session?.access_token}`,
+        'X-Auth-Portal': loginType || 'owner'
+    }), [session, loginType]);
     const [chats, setChats] = useState([])
     const chatsRef = useRef([])
     const [selectedChat, setSelectedChat] = useState(null)
@@ -52,6 +56,17 @@ export default function LiveChat() {
     const [isConnected, setIsConnected] = useState(false);
     const [qrCode, setQrCode] = useState('');
     const [connectionStatus, setConnectionStatus] = useState('Connecting...');
+
+    // Auto Assign State
+    const [isAutoAssignMenuOpen, setIsAutoAssignMenuOpen] = useState(false);
+    const [isAutoAssignModalOpen, setIsAutoAssignModalOpen] = useState(false);
+    const [isAgentStatusModalOpen, setIsAgentStatusModalOpen] = useState(false);
+    const [autoAssignSettings, setAutoAssignSettings] = useState({ enabled: false, batch_size: 1, paused_agents: [] });
+    const [orgAgents, setOrgAgents] = useState([]);
+
+    // Draft states for modals
+    const [draftAutoAssignSettings, setDraftAutoAssignSettings] = useState({ enabled: false, batch_size: 1 });
+    const [draftPausedAgents, setDraftPausedAgents] = useState([]);
 
     // Team members for assignment
     const [teamMembers, setTeamMembers] = useState([])
@@ -239,6 +254,66 @@ export default function LiveChat() {
         setIsEmojiOpen(false)
     }
 
+    const fetchAutoAssignSettings = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/settings/auto-assign`, { headers: authHeaders });
+            if (res.ok) {
+                const data = await res.json();
+                setAutoAssignSettings(data);
+            }
+        } catch (e) { console.error('Error fetching auto assign:', e); }
+    };
+
+    const fetchOrgAgents = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/team/agents`, { headers: authHeaders });
+            if (res.ok) {
+                const data = await res.json();
+                setOrgAgents(data);
+            }
+        } catch (e) { console.error('Error fetching org agents:', e); }
+    };
+
+    const saveAutoAssignSettings = async (updates) => {
+        try {
+            const res = await fetch(`${API_BASE}/settings/auto-assign`, {
+                method: 'POST',
+                headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates)
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setAutoAssignSettings(data);
+            }
+        } catch (e) { console.error('Error saving auto assign:', e); }
+    };
+
+    const toggleDraftAgentPause = (agentId) => {
+        const isPaused = draftPausedAgents.includes(agentId);
+        let newPaused = [...draftPausedAgents];
+        if (isPaused) {
+            newPaused = newPaused.filter(id => id !== agentId);
+        } else {
+            newPaused.push(agentId);
+        }
+        setDraftPausedAgents(newPaused);
+    };
+
+    const handleSaveAutoAssignRules = async () => {
+        await saveAutoAssignSettings({ 
+            enabled: draftAutoAssignSettings.enabled, 
+            batch_size: draftAutoAssignSettings.batch_size 
+        });
+        setIsAutoAssignModalOpen(false);
+    };
+
+    const handleSaveAgentStatus = async () => {
+        await saveAutoAssignSettings({ 
+            paused_agents: draftPausedAgents 
+        });
+        setIsAgentStatusModalOpen(false);
+    };
+
     const fetchChats = async () => {
         if (!session?.access_token) return;
         try {
@@ -250,7 +325,7 @@ export default function LiveChat() {
             }
 
             const res = await fetch(url, {
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
+                headers: authHeaders
             });
             if (res.ok) {
                 const data = await res.json();
@@ -294,7 +369,7 @@ export default function LiveChat() {
         if (!session?.access_token) return;
         try {
             const res = await fetch(`${API_BASE}/agents`, {
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
+                headers: authHeaders
             });
             if (res.ok) {
                 const data = await res.json();
@@ -310,7 +385,7 @@ export default function LiveChat() {
         if (!session?.access_token) return;
         try {
             const res = await fetch(`${API_BASE}/conversations`, {
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
+                headers: authHeaders
             });
             if (res.ok) {
                 const data = await res.json();
@@ -356,7 +431,7 @@ export default function LiveChat() {
         if (!session?.access_token) return;
         try {
             const res = await fetch(`${API_BASE}/team/members`, {
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
+                headers: authHeaders
             });
             if (res.ok) {
                 const data = await res.json();
@@ -414,7 +489,7 @@ export default function LiveChat() {
             if (before) url.searchParams.set('before', before)
 
             const res = await fetch(url.toString(), {
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
+                headers: authHeaders
             })
             if (!res.ok) {
                 const body = await res.text().catch(() => '')
@@ -462,13 +537,18 @@ export default function LiveChat() {
     useEffect(() => {
         fetchChats();
         fetchBots(); // Also fetch available bots
+        if (session?.access_token) {
+            fetchAutoAssignSettings();
+            fetchOrgAgents();
+        }
+
         
         // Fetch Meta Cloud API connected accounts from the database
         const fetchMetaAccounts = async () => {
             if (!session?.access_token) return;
             try {
                 const res = await fetch(`${API_BASE}/whatsapp/accounts`, {
-                    headers: { 'Authorization': `Bearer ${session.access_token}` }
+                    headers: authHeaders
                 });
                 if (res.ok) {
                     const data = await res.json();
@@ -545,10 +625,22 @@ export default function LiveChat() {
         const handleConnect = () => {
             // Socket transport is separate from WA connection state; keep logs minimal.
             console.log('[socket] connected', socket.id)
+            
+            // Re-join org room on reconnect if profile is available
+            if (memberProfile?.organization_id) {
+                console.log('[socket] joining org room:', memberProfile.organization_id)
+                socket.emit('join_org', memberProfile.organization_id)
+            }
         }
 
         const handleConnectError = (err) => {
             console.error('[socket] connect_error', err?.message || err)
+        }
+
+        // Join org room immediately if connected and profile just loaded
+        if (socket.connected && memberProfile?.organization_id) {
+            console.log('[socket] joining org room (manual):', memberProfile.organization_id)
+            socket.emit('join_org', memberProfile.organization_id)
         }
 
         const handleNewMessage = (msg) => {
@@ -826,7 +918,7 @@ export default function LiveChat() {
             socket.off('status');
             socket.off('session_not_found');
         };
-    }, []);
+    }, [memberProfile]);
 
     const renderReactionsPill = (msg) => {
         const list = Array.isArray(msg?.reactions) ? msg.reactions : []
@@ -1003,8 +1095,8 @@ export default function LiveChat() {
             const res = await fetch(`${API_BASE}/conversations/${selectedChat.id}/send`, {
                 method: 'POST',
                 headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session?.access_token}`
+                    ...authHeaders,
+                    'Content-Type': 'application/json' 
                 },
                 body: JSON.stringify({ text: textToSend, session_id: sessionId })
             })
@@ -1457,9 +1549,40 @@ export default function LiveChat() {
                                 >
                                     <Info className="h-5 w-5" />
                                 </button>
-                                <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
-                                    <MoreVertical className="h-5 w-5" />
-                                </button>
+                                <div className="relative">
+                                    <button 
+                                        onClick={() => setIsAutoAssignMenuOpen(!isAutoAssignMenuOpen)}
+                                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                                    >
+                                        <MoreVertical className="h-5 w-5" />
+                                    </button>
+                                    {isAutoAssignMenuOpen && (
+                                        <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 overflow-hidden">
+                                            <button
+                                                onClick={() => { 
+                                                    setDraftAutoAssignSettings({ enabled: autoAssignSettings.enabled, batch_size: autoAssignSettings.batch_size });
+                                                    setIsAutoAssignModalOpen(true); 
+                                                    setIsAutoAssignMenuOpen(false); 
+                                                }}
+                                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                            >
+                                                <Bot className="h-4 w-4 text-green-500" />
+                                                Auto Assign Rules
+                                            </button>
+                                            <button
+                                                onClick={() => { 
+                                                    setDraftPausedAgents([...autoAssignSettings.paused_agents]);
+                                                    setIsAgentStatusModalOpen(true); 
+                                                    setIsAutoAssignMenuOpen(false); 
+                                                }}
+                                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                            >
+                                                <User className="h-4 w-4 text-blue-500" />
+                                                Agent Status (Pause)
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -1715,6 +1838,135 @@ export default function LiveChat() {
                     })
                 }}
             />
+            {/* Auto Assign Modal */}
+            {isAutoAssignModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden">
+                        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                                <Bot className="h-5 w-5 text-green-500" /> Auto Assign Rules
+                            </h3>
+                            <button onClick={() => setIsAutoAssignModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+                                <ChevronLeft className="h-5 w-5 rotate-180" />
+                            </button>
+                        </div>
+                        <div className="p-5 space-y-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="font-semibold text-gray-800 text-sm">Enable Auto Assignment</p>
+                                    <p className="text-xs text-gray-500 mt-1">Automatically distribute new chats equally to available agents.</p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        className="sr-only peer" 
+                                        checked={draftAutoAssignSettings.enabled}
+                                        onChange={(e) => setDraftAutoAssignSettings(prev => ({ ...prev, enabled: e.target.checked }))}
+                                    />
+                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                                </label>
+                            </div>
+                            
+                            {draftAutoAssignSettings.enabled && (
+                                <div className="space-y-3 pt-4 border-t border-gray-100">
+                                    <div>
+                                        <p className="font-semibold text-gray-800 text-sm">Chats per Agent (Batch Size)</p>
+                                        <p className="text-xs text-gray-500 mt-1">Number of consecutive chats assigned to an agent before rotating to the next one.</p>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <input 
+                                            type="number" 
+                                            min="1" 
+                                            max="100"
+                                            value={draftAutoAssignSettings.batch_size}
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value);
+                                                if (val > 0) setDraftAutoAssignSettings(prev => ({ ...prev, batch_size: val }));
+                                            }}
+                                            className="w-20 px-3 py-2 border border-gray-200 rounded-lg text-center text-sm font-semibold focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                                        />
+                                        <span className="text-sm text-gray-500 font-medium">chats at a time</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50">
+                            <button 
+                                onClick={() => setIsAutoAssignModalOpen(false)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={handleSaveAutoAssignRules}
+                                className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+                            >
+                                Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Agent Status Modal */}
+            {isAgentStatusModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden flex flex-col max-h-[80vh]">
+                        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+                            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                                <User className="h-5 w-5 text-blue-500" /> Agent Status Control
+                            </h3>
+                            <button onClick={() => setIsAgentStatusModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+                                <ChevronLeft className="h-5 w-5 rotate-180" />
+                            </button>
+                        </div>
+                        <div className="p-4 border-b border-gray-50 shrink-0">
+                            <p className="text-xs text-gray-500">Pause an agent to temporarily stop them from receiving new auto-assigned chats (e.g., if they are absent today).</p>
+                        </div>
+                        <div className="overflow-y-auto p-4 space-y-3 flex-1 custom-scrollbar">
+                            {orgAgents.length === 0 ? (
+                                <p className="text-center text-sm text-gray-500 py-4">No agents found in this organization.</p>
+                            ) : (
+                                orgAgents.map((agent) => {
+                                    const isPaused = draftPausedAgents.includes(agent.user_id);
+                                    return (
+                                        <div key={agent.user_id} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-white shadow-sm">
+                                            <div>
+                                                <p className="font-semibold text-sm text-gray-800">{agent.name || 'Unnamed Agent'}</p>
+                                                <p className="text-xs text-gray-500">{agent.email}</p>
+                                            </div>
+                                            <button
+                                                onClick={() => toggleDraftAgentPause(agent.user_id)}
+                                                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors border ${
+                                                    isPaused 
+                                                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' 
+                                                    : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                                                }`}
+                                            >
+                                                {isPaused ? 'Paused' : 'Active'}
+                                            </button>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+                        <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50 shrink-0">
+                            <button 
+                                onClick={() => setIsAgentStatusModalOpen(false)}
+                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                onClick={handleSaveAgentStatus}
+                                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                            >
+                                Save Status
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
         </AudioPlayerProvider>
     )

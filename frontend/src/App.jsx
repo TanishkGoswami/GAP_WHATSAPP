@@ -6,6 +6,7 @@ import Contacts from './pages/Contacts'
 import WhatsAppConnect from './pages/WhatsAppConnect'
 import FlowBuilder from './pages/FlowBuilder'
 import Login from './pages/Login'
+import AgentLogin from './pages/AgentLogin'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import Templates from './pages/Templates'
@@ -33,6 +34,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/agent-login" element={<AgentLogin />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/" element={<Layout />}>
               <Route index element={<Navigate to="/dashboard" replace />} />

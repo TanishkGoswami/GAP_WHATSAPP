@@ -356,6 +356,8 @@ export default function WhatsAppConnect() {
 
                             <input
                                 type="text"
+                                name="wa_business_account_id_input_disable_autofill"
+                                autoComplete="off"
                                 placeholder="WhatsApp Business Account ID"
                                 value={manualCreds.businessAccountId}
                                 onChange={e => setManualCreds(p => ({ ...p, businessAccountId: e.target.value }))}
@@ -363,7 +365,9 @@ export default function WhatsAppConnect() {
                                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400 transition-all"
                             />
                             <input
-                                type="password"
+                                type="text"
+                                name="wa_access_token_input_disable_autofill"
+                                autoComplete="new-password"
                                 placeholder="Access Token"
                                 value={manualCreds.accessToken}
                                 onChange={e => setManualCreds(p => ({ ...p, accessToken: e.target.value }))}

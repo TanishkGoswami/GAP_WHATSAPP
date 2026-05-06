@@ -16,7 +16,7 @@ export default function Login() {
         setLoading(true)
         setError('')
         try {
-            const { error } = await signIn({ email, password })
+            const { error } = await signIn({ email, password }, 'owner')
             if (error) throw error
             navigate('/')
         } catch (err) {
