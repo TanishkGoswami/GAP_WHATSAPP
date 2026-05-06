@@ -1842,9 +1842,9 @@ app.get('/api/team/members', authMiddleware, async (req: any, res) => {
 // 2B. POST /api/team/invite — Naya agent invite karo
 app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
     const orgId = req.organization_id;
-    const { email, name, role } = req.body;
+    const { email, name, role, password } = req.body;
 
-    if (!email || !name) return res.status(400).json({ error: 'Email and name are required' });
+    if (!email || !name || !password) return res.status(400).json({ error: 'Email, name and password are required' });
 
     try {
         // 1. Check if user already member
@@ -1857,11 +1857,13 @@ app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
 
         if (existing) return res.status(400).json({ error: 'Member already exists' });
 
-        // 2. Invite via Supabase Admin (Requires service_role key)
+        // 2. Create user via Supabase Admin (Requires service_role key)
         let userId: string;
-        const { data: inviteData, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(email, {
-            data: { organization_id: orgId, role, name },
-            redirectTo: `${process.env.FRONTEND_URL || 'http://localhost:5173'}/signup`
+        const { data: inviteData, error: inviteErr } = await supabase.auth.admin.createUser({
+            email,
+            password,
+            email_confirm: true,
+            user_metadata: { organization_id: orgId, role, name }
         });
 
         if (inviteErr) {
@@ -1899,28 +1901,35 @@ app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
                 email,
                 name,
                 role: role || 'agent',
-                is_active: true,
-                invited_at: new Date().toISOString()
+                is_active: true
             });
 
         if (insertErr) throw insertErr;
 
         // 4. Send custom invitation email
         try {
-            const signupLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/signup?email=${encodeURIComponent(email)}`;
+            const loginLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/login`;
             await sendEmail(
                 email,
                 `Invitation to join FlowsApp Team`,
                 `
-                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; rounded: 8px;">
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
                     <h2 style="color: #25D366;">You've been invited!</h2>
                     <p>Hello <strong>${name}</strong>,</p>
                     <p>You have been invited to join the <strong>FlowsApp</strong> team as an <strong>${role || 'agent'}</strong>.</p>
                     <p>As a team member, you'll be able to manage WhatsApp chats and help automate customer interactions.</p>
-                    <div style="margin: 30px 0;">
-                        <a href="${signupLink}" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Accept Invitation & Signup</a>
+                    
+                    <div style="background-color: #f9f9f9; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                        <h3 style="margin-top: 0;">Your Login Credentials:</h3>
+                        <p><strong>Login URL:</strong> <a href="${loginLink}">${loginLink}</a></p>
+                        <p><strong>Email ID:</strong> ${email}</p>
+                        <p><strong>Password:</strong> ${password}</p>
                     </div>
-                    <p style="color: #666; font-size: 14px;">If you already have an account, you can simply login to access your new organization.</p>
+
+                    <div style="margin: 30px 0;">
+                        <a href="${loginLink}" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Go to Login Page</a>
+                    </div>
+                    <p style="color: #666; font-size: 14px;">If you already have an account, your existing password will continue to work.</p>
                     <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
                     <p style="color: #999; font-size: 12px;">This invitation was sent from the FlowsApp Dashboard.</p>
                 </div>

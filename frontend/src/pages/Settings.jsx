@@ -70,7 +70,7 @@ export default function Settings() {
             })
             if (res.ok) {
                 setIsInviteOpen(false)
-                setInviteForm({ name: '', email: '', role: 'agent' })
+                setInviteForm({ name: '', email: '', password: '', role: 'agent' })
                 fetchMembers()
             } else {
                 const err = await res.json()
@@ -306,6 +306,17 @@ export default function Settings() {
                                                 value={inviteForm.email}
                                                 onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
                                                 placeholder="john@example.com"
+                                                className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Login Password</label>
+                                            <input
+                                                type="text"
+                                                required
+                                                value={inviteForm.password || ''}
+                                                onChange={(e) => setInviteForm({ ...inviteForm, password: e.target.value })}
+                                                placeholder="Set a password for the agent"
                                                 className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
                                             />
                                         </div>
