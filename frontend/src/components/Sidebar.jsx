@@ -29,6 +29,7 @@ const navigation = [
 export default function Sidebar() {
     const location = useLocation()
     const { userRole } = useAuth()
+    console.log("Sidebar User Role:", userRole)
 
     const isAdmin = userRole === 'admin' || userRole === 'owner'
 

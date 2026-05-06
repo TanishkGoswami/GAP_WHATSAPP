@@ -18,6 +18,7 @@ import makeWASocket, {
     proto,
 } from "@whiskeysockets/baileys";
 import * as fs from "fs";
+import { sendEmail } from "./email";
 import pino from "pino";
 
 const app = express();
@@ -1187,11 +1188,13 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
     let currentFlowId = null;
     let currentNodeId = null;
     let session_id = null;
+    let isResuming = false;
 
     if (session) {
         currentFlowId = session.flow_id;
         currentNodeId = session.current_node_id;
         session_id = session.id;
+        isResuming = true;
     } else {
         // 2. Check for trigger matches in active flows
         const { data: activeFlows } = await supabase
@@ -1227,51 +1230,136 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
 
         currentNodeId = startNode.id;
 
-        // Create new session
+        // Create or find active session
         const { data: newSession, error: sessErr } = await supabase
             .from('w_flow_sessions')
-            .upsert({
-                organization_id, contact_id, flow_id: currentFlowId,
-                current_node_id: currentNodeId, status: 'active'
-            }, { onConflict: 'organization_id,contact_id' })
-            .select().single();
-            
-        if (!sessErr && newSession) session_id = newSession.id;
+            .insert({
+                organization_id,
+                contact_id,
+                flow_id: currentFlowId,
+                current_node_id: currentNodeId,
+                status: 'active',
+                state_data: {}
+            })
+            .select()
+            .single();
+
+        if (sessErr) {
+            console.error('Session create error:', sessErr);
+            // Agar duplicate error hai toh existing session use karo
+            if (sessErr.code === '23505') {
+                const { data: existingSession } = await supabase
+                    .from('w_flow_sessions')
+                    .select('*')
+                    .eq('organization_id', organization_id)
+                    .eq('contact_id', contact_id)
+                    .eq('status', 'active')
+                    .maybeSingle();
+                if (existingSession) {
+                    currentFlowId = existingSession.flow_id;
+                    currentNodeId = existingSession.current_node_id;
+                    session_id = existingSession.id;
+                    isResuming = true;
+                }
+            }
+        } else if (newSession) {
+            session_id = newSession.id;
+        }
+
+        console.log(`🆕 New flow session created: ${session_id}, starting at node: ${currentNodeId}`);
     }
 
-    if (!currentFlowId || !currentNodeId) return { consumed: false, output: null };
+    if (!currentFlowId || !currentNodeId || !session_id) {
+        return { consumed: false, output: null };
+    }
 
-    // Execute Flow steps
-    const { data: flow } = await supabase.from('w_flows').select('nodes, edges').eq('id', currentFlowId).single();
-    if (!flow) return { consumed: true, output: null };
+    // Flow data load karo
+    const { data: flowData } = await supabase
+        .from('w_flows')
+        .select('nodes, edges')
+        .eq('id', currentFlowId)
+        .single();
 
-    const nodes = flow.nodes || [];
-    const edges = flow.edges || [];
+    if (!flowData) return { consumed: true, output: null };
 
+    const nodes: any[] = flowData.nodes || [];
+    const edges: any[] = flowData.edges || [];
+
+    // ----------------------------------------------------------------
+    // RESUMING: User ne button click kiya ya kuch type kiya
+    // Pehle current node ke edges check karo aur next node pe jao
+    // ----------------------------------------------------------------
+    if (isResuming) {
+        const currentNode = nodes.find((n: any) => n.id === currentNodeId);
+
+        if (currentNode?.type === 'button' || currentNode?.type === 'userInput') {
+            // User ka response match karo outgoing edges se
+            const outEdges = edges.filter((e: any) => e.source === currentNodeId);
+            let nextEdge: any = null;
+
+            if (outEdges.length === 1) {
+                nextEdge = outEdges[0];
+            } else if (outEdges.length > 1) {
+                // Button ID, title, ya label se match karo
+                nextEdge = outEdges.find((e: any) => {
+                    const handle = (e.sourceHandle || '').toLowerCase();
+                    const label = (e.label || '').toLowerCase();
+                    return handle === normalized || label === normalized || normalized.includes(handle);
+                }) || outEdges.find((e: any) => {
+                    // Fallback to sourceHandle comparison if label fails
+                    return e.sourceHandle && normalized.includes(e.sourceHandle.toLowerCase());
+                }) || outEdges[0]; // fallback: pehla edge
+            }
+
+            if (nextEdge) {
+                currentNodeId = nextEdge.target;
+                await supabase
+                    .from('w_flow_sessions')
+                    .update({ current_node_id: currentNodeId })
+                    .eq('id', session_id);
+                console.log(`➡️ Advancing to node: ${currentNodeId}`);
+            } else {
+                // Koi edge nahi — flow complete
+                await supabase.from('w_flow_sessions').update({ status: 'completed' }).eq('id', session_id);
+                return { consumed: true, output: null };
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // Node execution loop — current node se chalo
+    // ----------------------------------------------------------------
     let activeNode = nodes.find((n: any) => n.id === currentNodeId);
-    let outputText = [];
-    
-    // Safety break for loop
+    const outputText: string[] = [];
     let steps = 0;
-    while (activeNode && steps < 10) {
+
+    while (activeNode && steps < 15) {
         steps++;
-        
-        // If it's a message node, collect text
-        if (activeNode.type === 'textMessage') {
-            const msg = activeNode.data?.config?.message || activeNode.data?.config?.text || activeNode.data?.label;
+        const nodeType = activeNode.type;
+        const config = activeNode.data?.config || {};
+
+        console.log(`⚙️ Executing node: ${nodeType} (${activeNode.id})`);
+
+        // --- TEXT MESSAGE ---
+        if (nodeType === 'textMessage') {
+            const msg = config.message || config.text || activeNode.data?.label || '';
             if (msg) outputText.push(msg);
-        } else if (activeNode.type === 'button') {
-            const body = activeNode.data?.config?.text || activeNode.data?.config?.headerText || 'Choose an option:';
-            const footer = activeNode.data?.config?.footerText || '';
-            const buttons = (activeNode.data?.config?.buttons || [])
+        }
+
+        // --- BUTTON NODE ---
+        else if (nodeType === 'button') {
+            const body = config.text || config.headerText || 'Choose an option:';
+            const footer = config.footerText || '';
+            const buttons = (config.buttons || [])
                 .filter((b: any) => b.text)
-                .slice(0, 3); // WhatsApp limit
-            
-            // If we have buttons, return them as interactive content
+                .slice(0, 3);
+
+            // Session mein current_node_id save karo — next message yahan se resume hoga
+            await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
+
             if (buttons.length > 0) {
-                await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
-                return { 
-                    consumed: true, 
+                return {
+                    consumed: true,
                     output: outputText.length > 0 ? outputText.join('\n\n') : null,
                     interactive: {
                         type: 'button',
@@ -1283,66 +1371,96 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
                         }))
                     }
                 };
-            }
-            
-            // Fallback to text if no buttons or too many
-            const btns = (activeNode.data?.config?.buttons || [])
-                .filter((b: any) => b.text)
-                .map((b: any, i: number) => `${i + 1}. ${b.text}`)
-                .join('\n');
-            outputText.push(`${body}\n\n${btns}${footer ? '\n_' + footer + '_' : ''}`);
-            await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
-            return { consumed: true, output: outputText.join('\n\n') };
-        } else if (activeNode.type === 'template') {
-            const templateName = activeNode.data?.config?.templateName;
-            if (templateName) {
-                // Template message Meta API se bhejo
-                // For now log karo — template sending already sendTextMessage me handle hoti hai
-                outputText.push(`[Template: ${templateName}]`);
-            }
-        } else if (activeNode.type === 'image' || activeNode.type === 'video' || activeNode.type === 'audio' || activeNode.type === 'file') {
-            const url = activeNode.data?.config?.url || activeNode.data?.config?.customField;
-            const caption = activeNode.data?.config?.caption || '';
-            if (url) outputText.push(`[Media: ${url}${caption ? ' - ' + caption : ''}]`);
-        } else if (activeNode.type === 'location') {
-            const lat = activeNode.data?.config?.latitude;
-            const lng = activeNode.data?.config?.longitude;
-            if (lat && lng) outputText.push(`[Location: ${lat}, ${lng}]`);
-        } else if (activeNode.type === 'userInput') {
-            const q = activeNode.data?.config?.question || 'Please reply:';
-            outputText.push(q);
-            await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
-            return { consumed: true, output: outputText.join('\n\n') };
-        }
-
-        // Advance to next node
-        let nextEdge = null;
-        if (session && steps === 1) {
-            // Evaluated response from user
-            const outEdges = edges.filter((e: any) => e.source === activeNode.id);
-            if (outEdges.length === 1) {
-                nextEdge = outEdges[0];
             } else {
-                nextEdge = outEdges.find((e: any) => e.sourceHandle === normalized || e.label?.toLowerCase() === normalized) || outEdges[0];
+                // Buttons nahi hain toh text fallback
+                outputText.push(body);
+                return { consumed: true, output: outputText.join('\n\n') };
             }
-        } else {
-            // Automatic advance without user input
-            nextEdge = edges.find((e: any) => e.source === activeNode.id);
         }
 
+        // --- USER INPUT NODE ---
+        else if (nodeType === 'userInput') {
+            const question = config.question || config.text || 'Please reply:';
+            outputText.push(question);
+            // Session save karo
+            await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
+            return { consumed: true, output: outputText.join('\n\n') };
+        }
+
+        // --- CONDITION NODE ---
+        else if (nodeType === 'condition') {
+            const variable = (config.variable || '').toLowerCase();
+            const operator = config.operator || 'contains';
+            const value = (config.value || '').toLowerCase();
+
+            let conditionMet = false;
+            if (operator === 'contains') conditionMet = normalized.includes(value);
+            else if (operator === 'equals') conditionMet = normalized === value;
+            else if (operator === 'starts_with') conditionMet = normalized.startsWith(value);
+            else if (operator === 'ends_with') conditionMet = normalized.endsWith(value);
+            else conditionMet = true;
+
+            // Condition ke hisaab se sahi edge dhundo
+            const outEdges = edges.filter((e: any) => e.source === activeNode.id);
+            const matchEdge = outEdges.find((e: any) => {
+                const h = (e.sourceHandle || '').toLowerCase();
+                return conditionMet ? (h === 'yes' || h === 'true') : (h === 'no' || h === 'false');
+            }) || outEdges[0];
+
+            if (matchEdge) {
+                activeNode = nodes.find((n: any) => n.id === matchEdge.target);
+                continue;
+            } else {
+                break;
+            }
+        }
+
+        // --- MEDIA NODES (image, video, audio, file) ---
+        else if (['image', 'video', 'audio', 'file'].includes(nodeType)) {
+            const url = config.url || config.mediaUrl || '';
+            const caption = config.caption || '';
+            if (url) {
+                outputText.push(caption ? `${caption}\n${url}` : url);
+            }
+        }
+
+        // --- LOCATION NODE ---
+        else if (nodeType === 'location') {
+            const lat = config.latitude;
+            const lng = config.longitude;
+            const name = config.name || '';
+            if (lat && lng) {
+                outputText.push(`📍 ${name}\nhttps://maps.google.com/?q=${lat},${lng}`);
+            }
+        }
+
+        // --- TEMPLATE NODE ---
+        else if (nodeType === 'template') {
+            const tplName = config.templateName;
+            if (tplName) outputText.push(`[Template: ${tplName}]`);
+        }
+
+        // --- AI NODE (basic fallback) ---
+        else if (nodeType === 'ai') {
+            const prompt = config.prompt || config.systemPrompt || '';
+            if (prompt) outputText.push(`[AI: ${prompt.substring(0, 50)}...]`);
+        }
+
+        // Automatic advance — next edge dhundo
+        const nextEdge = edges.find((e: any) => e.source === activeNode.id);
         if (nextEdge) {
             activeNode = nodes.find((n: any) => n.id === nextEdge.target);
-            // If we just traversed into a new Wait node dynamically, don't execute it, let the next while loop iteration execute it and pause
         } else {
-            // End of flow
+            // Flow khatam
             await supabase.from('w_flow_sessions').update({ status: 'completed' }).eq('id', session_id);
+            console.log(`✅ Flow completed for session ${session_id}`);
             activeNode = null;
         }
     }
 
-    return { 
-        consumed: true, 
-        output: outputText.length > 0 ? outputText.join('\n\n') : null 
+    return {
+        consumed: true,
+        output: outputText.length > 0 ? outputText.join('\n\n') : null
     };
 }
 
@@ -1444,7 +1562,7 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
 
     // If still missing, fall back to returning conversations across orgs (dev mode).
     if (!organization_id) {
-        console.warn("âš ï¸  No organization_id resolved; returning conversations without org filter (dev mode)");
+        console.warn("⚠️ No organization_id resolved; returning conversations without org filter (dev mode)");
     }
 
     try {
@@ -1506,7 +1624,7 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
                     // Dev-friendly behavior: conversations may exist even if wa_accounts was never bootstrapped.
                     // In that case, don't blank the inbox; just skip the account filter.
                     console.warn(
-                        `âš ï¸ wa_account_id filter '${wa_account_id}' could not be resolved to a wa_accounts.id. ` +
+                        `⚠️ wa_account_id filter '${wa_account_id}' could not be resolved to a wa_accounts.id. ` +
                         `Skipping account filter (dev mode).`
                     );
                 }
@@ -1520,7 +1638,7 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
         // retry without org filter so chats stored under a different org still show up.
         if (!requestedOrgId && organization_id && (conversations?.length || 0) === 0) {
             console.warn(
-                `âš ï¸ No conversations found for organization_id=${organization_id}. ` +
+                `⚠️ No conversations found for organization_id=${organization_id}. ` +
                 `Retrying without org filter (dev mode).`
             );
             const retry = await baseQuery;
@@ -1555,7 +1673,7 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
                 .neq('status', 'read');
 
             if (unreadErr) {
-                console.warn('âš ï¸ Failed to compute unread counts:', unreadErr.message || unreadErr);
+                console.warn('⚠️ Failed to compute unread counts:', unreadErr.message || unreadErr);
             } else if (Array.isArray(unreadRows)) {
                 for (const row of unreadRows) {
                     const cid = (row as any)?.conversation_id;
@@ -1623,7 +1741,7 @@ app.get('/api/contacts', authMiddleware, async (req: any, res) => {
         let { data, error } = await query;
         if (!requestedOrgId && organization_id && !error && (data?.length || 0) === 0) {
             console.warn(
-                `âš ï¸ No contacts found for organization_id=${organization_id}. ` +
+                `⚠️ No contacts found for organization_id=${organization_id}. ` +
                 `Retrying without org filter (dev mode).`
             );
             const retry = await baseQuery;
@@ -1749,9 +1867,20 @@ app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
         if (inviteErr) {
             // If user already exists, we might get an error. Try to find the user instead.
             if (inviteErr.message.includes('already been registered') || inviteErr.status === 422) {
-                const { data: users, error: listErr } = await supabase.auth.admin.listUsers();
-                if (listErr) throw listErr;
-                const existingUser = users.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+                let page = 1;
+                let existingUser;
+                while (true) {
+                    const { data: users, error: listErr } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+                    if (listErr) throw listErr;
+                    if (!users?.users?.length) break;
+                    
+                    existingUser = users.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+                    if (existingUser) break;
+                    
+                    if (users.users.length < 1000) break;
+                    page++;
+                }
+
                 if (!existingUser) throw new Error('User already registered but could not be found');
                 userId = existingUser.id;
             } else {
@@ -1776,7 +1905,33 @@ app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
 
         if (insertErr) throw insertErr;
 
-        res.json({ success: true, message: 'Invite sent' });
+        // 4. Send custom invitation email
+        try {
+            const signupLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/signup?email=${encodeURIComponent(email)}`;
+            await sendEmail(
+                email,
+                `Invitation to join FlowsApp Team`,
+                `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; rounded: 8px;">
+                    <h2 style="color: #25D366;">You've been invited!</h2>
+                    <p>Hello <strong>${name}</strong>,</p>
+                    <p>You have been invited to join the <strong>FlowsApp</strong> team as an <strong>${role || 'agent'}</strong>.</p>
+                    <p>As a team member, you'll be able to manage WhatsApp chats and help automate customer interactions.</p>
+                    <div style="margin: 30px 0;">
+                        <a href="${signupLink}" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Accept Invitation & Signup</a>
+                    </div>
+                    <p style="color: #666; font-size: 14px;">If you already have an account, you can simply login to access your new organization.</p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    <p style="color: #999; font-size: 12px;">This invitation was sent from the FlowsApp Dashboard.</p>
+                </div>
+                `
+            );
+        } catch (mailErr) {
+            console.error("Failed to send invitation email:", mailErr);
+            // We don't throw here so the user is still created/invited in the DB
+        }
+
+        res.json({ success: true, message: 'Member invited successfully and email sent' });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
@@ -3097,7 +3252,7 @@ app.post("/webhook", async (req, res) => {
                 organization_id = acc.organization_id;
                 wa_account_id = acc.id;
             } else {
-                console.warn(`âš ï¸ Phone ID ${phone_number_id} not found in wa_accounts. Using DEFAULT_ORG_ID.`);
+                console.warn(`⚠️ Phone ID ${phone_number_id} not found in wa_accounts. Using DEFAULT_ORG_ID.`);
             }
         }
 
@@ -3106,7 +3261,7 @@ app.post("/webhook", async (req, res) => {
         }
 
         if (!organization_id) {
-            console.error("âŒ No Organization ID found for incoming webhook.");
+            console.error("❌ No Organization ID found for incoming webhook.");
             return;
         }
 
@@ -3121,14 +3276,31 @@ app.post("/webhook", async (req, res) => {
 
             let type = msg.type;
             let text = "";
+            let interactivePayload: any = null; // button/list reply ka raw data
 
-            if (type === 'text') text = msg.text?.body;
-            else if (type === 'button') text = msg.button?.text; // etc.
-            else if (type === 'image') text = msg.image?.caption || '[Image]';
-            else if (type === 'video') text = msg.video?.caption || '[Video]';
-            else if (type === 'audio') text = '[Audio]';
-            else if (type === 'document') text = msg.document?.filename || '[Document]';
-            else text = `[${type}]`;
+            // REPLACED: Updated type extraction logic for interactive/buttons
+            if (type === 'text') {
+                text = msg.text?.body || '';
+            } else if (type === 'interactive') {
+                interactivePayload = msg.interactive;
+                text = (msg.interactive?.button_reply?.title || 
+                        msg.interactive?.list_reply?.title || 
+                        msg.interactive?.button_reply?.id || 
+                        msg.interactive?.list_reply?.id || 
+                        `[interactive:${msg.interactive.type}]`);
+            } else if (type === 'button') {
+                text = msg.button?.text || '';
+            } else if (type === 'image') {
+                text = msg.image?.caption || '[Image]';
+            } else if (type === 'video') {
+                text = msg.video?.caption || '[Video]';
+            } else if (type === 'audio') {
+                text = '[Audio]';
+            } else if (type === 'document') {
+                text = msg.document?.filename || '[Document]';
+            } else {
+                text = `[${type}]`;
+            }
 
             // Ensure wa_account exists so conversations FK/unique constraints work
             if (!wa_account_id && phone_number_id && supabase) {
@@ -3277,16 +3449,19 @@ app.post("/webhook", async (req, res) => {
 
             // E. Bot Auto-Reply
             try {
-                // Only process text messages for bot replies
                 let flowConsumedMessage = false;
-                if (type === 'text' && text) {
+
+                // Flow engine: text + button replies + interactive replies sab process karo
+                const isFlowEligible = (type === 'text' || type === 'interactive' || type === 'button') && text;
+
+                if (isFlowEligible) {
                     const flowResult = await processFlowEngine(organization_id, contact.id, conv.id, text);
                     if (flowResult?.consumed) {
                         flowConsumedMessage = true;
-                        
+
                         // 1. Send preceding text output if present
                         if (flowResult.output) {
-                            console.log(`🌊 Flow Engine replied with text to: "${text.substring(0, 50)}..."`);
+                            console.log(`🌊 Flow Engine replied with text to: "${text.substring(0, 50)}"`);
                             const sendResult = await sendTextMessage(from, flowResult.output, phone_number_id);
                             const botWaMessageId = sendResult?.messages?.[0]?.id || null;
 
@@ -3298,15 +3473,17 @@ app.post("/webhook", async (req, res) => {
 
                             io.emit("new_message", {
                                 from: metadata?.display_phone_number || phone_number_id, phone: from, text: flowResult.output,
-                                sender: 'agent', conversation_id: conv.id, contact_id: contact.id, message_id: storedBotReply?.id || null,
-                                wa_message_id: botWaMessageId, created_at: storedBotReply?.created_at || new Date().toISOString(),
+                                sender: 'agent', conversation_id: conv.id, contact_id: contact.id,
+                                message_id: storedBotReply?.id || null,
+                                wa_message_id: botWaMessageId,
+                                created_at: storedBotReply?.created_at || new Date().toISOString(),
                                 connectedAccount: metadata?.display_phone_number, type: 'text', is_bot_reply: true,
                             });
                         }
 
                         // 2. Send interactive buttons if present
                         if (flowResult.interactive?.type === 'button') {
-                            console.log(`🔘 Flow Engine sending real buttons to: "${text.substring(0, 50)}..."`);
+                            console.log(`🔘 Flow Engine sending real buttons`);
                             const { body, buttons, footer } = flowResult.interactive;
                             const sendResult = await sendInteractiveButtons(from, body, buttons, footer, phone_number_id);
                             const botWaMessageId = sendResult?.messages?.[0]?.id || null;
@@ -3319,61 +3496,42 @@ app.post("/webhook", async (req, res) => {
 
                             io.emit("new_message", {
                                 from: metadata?.display_phone_number || phone_number_id, phone: from, text: body,
-                                sender: 'agent', conversation_id: conv.id, contact_id: contact.id, message_id: storedBotReply?.id || null,
-                                wa_message_id: botWaMessageId, created_at: storedBotReply?.created_at || new Date().toISOString(),
+                                sender: 'agent', conversation_id: conv.id, contact_id: contact.id,
+                                message_id: storedBotReply?.id || null,
+                                wa_message_id: botWaMessageId,
+                                created_at: storedBotReply?.created_at || new Date().toISOString(),
                                 connectedAccount: metadata?.display_phone_number, type: 'interactive', is_bot_reply: true,
                             });
                         }
 
                         // Update conversation preview
                         const lastPreview = flowResult.interactive?.body || flowResult.output || "";
-                        await supabase.from('w_conversations').update({ 
-                            last_message_at: new Date().toISOString(), 
-                            last_message_preview: lastPreview.substring(0, 100) 
+                        await supabase.from('w_conversations').update({
+                            last_message_at: new Date().toISOString(),
+                            last_message_preview: lastPreview.substring(0, 100)
                         }).eq('id', conv.id);
                     }
                 }
 
+                // AI Agent fallback — sirf tab jab flow ne consume nahi kiya aur type text hai
                 if (!flowConsumedMessage && type === 'text' && text) {
-                    const botResult = await getBotAgentReply({
-                        organization_id,
-                        conversation_id: conv.id,
-                        text
-                    });
-
+                    const botResult = await getBotAgentReply({ organization_id, conversation_id: conv.id, text });
                     if (botResult?.reply) {
-                        console.log(`ðŸ¤– Bot "${botResult.agent?.name}" replying to: "${text.substring(0, 50)}..."`);
-                        
-                        // Send the reply via WhatsApp
+                        console.log(`🤖 Bot "${botResult.agent?.name}" replying`);
                         const sendResult = await sendTextMessage(from, botResult.reply, phone_number_id);
                         const botWaMessageId = sendResult?.messages?.[0]?.id || null;
-
-                        // Store the bot's reply message
                         const storedBotReply = await storeMessage({
-                            organization_id,
-                            contact_id: contact.id,
-                            conversation_id: conv.id,
-                            wa_message_id: botWaMessageId,
-                            direction: "outbound",
-                            type: "text",
+                            organization_id, contact_id: contact.id, conversation_id: conv.id,
+                            wa_message_id: botWaMessageId, direction: "outbound", type: "text",
                             content: { text: botResult.reply, bot_agent_id: botResult.agent?.id },
                             status: "sent",
                         } as any);
-
-                        // Emit the bot reply to frontend
                         io.emit("new_message", {
-                            from: metadata?.display_phone_number || phone_number_id,
-                            phone: from,
-                            text: botResult.reply,
-                            sender: 'agent',
-                            conversation_id: conv.id,
-                            contact_id: contact.id,
-                            message_id: storedBotReply?.id || null,
-                            wa_message_id: botWaMessageId,
+                            from: metadata?.display_phone_number || phone_number_id, phone: from, text: botResult.reply,
+                            sender: 'agent', conversation_id: conv.id, contact_id: contact.id,
+                            message_id: storedBotReply?.id || null, wa_message_id: botWaMessageId,
                             created_at: storedBotReply?.created_at || new Date().toISOString(),
-                            connectedAccount: metadata?.display_phone_number,
-                            type: 'text',
-                            is_bot_reply: true,
+                            connectedAccount: metadata?.display_phone_number, type: 'text', is_bot_reply: true,
                             bot_agent_name: botResult.agent?.name,
                         });
 

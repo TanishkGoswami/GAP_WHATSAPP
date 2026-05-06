@@ -1119,6 +1119,28 @@ export default function LiveChat() {
             )
         }
 
+        const interactive = msg.content?.interactive
+        if (interactive?.type === 'button') {
+            return (
+                <div className="space-y-3">
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{interactive.body || msg.text}</p>
+                    <div className="flex flex-wrap gap-2">
+                        {interactive.buttons?.map((btn) => (
+                            <div 
+                                key={btn.id}
+                                className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm"
+                            >
+                                {btn.text}
+                            </div>
+                        ))}
+                    </div>
+                    {interactive.footer && (
+                        <p className="text-[10px] text-gray-400 italic">{interactive.footer}</p>
+                    )}
+                </div>
+            )
+        }
+
         return msg.text ? <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p> : null
     }
 

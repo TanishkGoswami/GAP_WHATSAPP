@@ -19,7 +19,9 @@ export function AuthProvider({ children }) {
             })
             if (res.ok) {
                 const data = await res.json()
-                setUserRole(data?.role || 'owner')
+                const role = data?.role || 'owner'
+                console.log("Profile Data:", data, "Resolved Role:", role)
+                setUserRole(role)
                 setMemberProfile(data)
             }
         } catch (e) {
