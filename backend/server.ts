@@ -128,14 +128,11 @@ async function authMiddleware(req: any, res: any, next: any) {
         const portal = req.headers['x-auth-portal'] || 'owner';
         const dbRole = member?.role;
 
-        if (portal === 'owner') {
-            // Force owner role if logging into owner portal (unless they are admin)
-            req.role = dbRole === 'admin' ? 'admin' : 'owner';
-        } else if (portal === 'agent') {
+        if (portal === 'agent') {
             // Force agent role if logging into agent portal
             req.role = 'agent';
         } else {
-            // Fallback to database role or default to owner if no portal header
+            // Use actual database role or default to owner if no profile exists
             req.role = dbRole || 'owner';
         }
 

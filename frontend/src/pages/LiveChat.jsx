@@ -18,7 +18,9 @@ const socket = io(BACKEND_BASE, {
 const API_BASE = `${BACKEND_BASE}/api`;
 
 export default function LiveChat() {
-    const { user, session, loginType, memberProfile } = useAuth()
+    const { user, session, loginType, memberProfile, userRole } = useAuth()
+    const isAdmin = userRole === 'admin' || userRole === 'owner'
+    
     const authHeaders = useMemo(() => ({
         'Authorization': `Bearer ${session?.access_token}`,
         'X-Auth-Portal': loginType || 'owner'
@@ -1549,40 +1551,42 @@ export default function LiveChat() {
                                 >
                                     <Info className="h-5 w-5" />
                                 </button>
-                                <div className="relative">
-                                    <button 
-                                        onClick={() => setIsAutoAssignMenuOpen(!isAutoAssignMenuOpen)}
-                                        className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
-                                    >
-                                        <MoreVertical className="h-5 w-5" />
-                                    </button>
-                                    {isAutoAssignMenuOpen && (
-                                        <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 overflow-hidden">
-                                            <button
-                                                onClick={() => { 
-                                                    setDraftAutoAssignSettings({ enabled: autoAssignSettings.enabled, batch_size: autoAssignSettings.batch_size });
-                                                    setIsAutoAssignModalOpen(true); 
-                                                    setIsAutoAssignMenuOpen(false); 
-                                                }}
-                                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                            >
-                                                <Bot className="h-4 w-4 text-green-500" />
-                                                Auto Assign Rules
-                                            </button>
-                                            <button
-                                                onClick={() => { 
-                                                    setDraftPausedAgents([...autoAssignSettings.paused_agents]);
-                                                    setIsAgentStatusModalOpen(true); 
-                                                    setIsAutoAssignMenuOpen(false); 
-                                                }}
-                                                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                            >
-                                                <User className="h-4 w-4 text-blue-500" />
-                                                Agent Status (Pause)
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
+                                {isAdmin && (
+                                    <div className="relative">
+                                        <button 
+                                            onClick={() => setIsAutoAssignMenuOpen(!isAutoAssignMenuOpen)}
+                                            className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                                        >
+                                            <MoreVertical className="h-5 w-5" />
+                                        </button>
+                                        {isAutoAssignMenuOpen && (
+                                            <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 overflow-hidden">
+                                                <button
+                                                    onClick={() => { 
+                                                        setDraftAutoAssignSettings({ enabled: autoAssignSettings.enabled, batch_size: autoAssignSettings.batch_size });
+                                                        setIsAutoAssignModalOpen(true); 
+                                                        setIsAutoAssignMenuOpen(false); 
+                                                    }}
+                                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                                >
+                                                    <Bot className="h-4 w-4 text-green-500" />
+                                                    Auto Assign Rules
+                                                </button>
+                                                <button
+                                                    onClick={() => { 
+                                                        setDraftPausedAgents([...autoAssignSettings.paused_agents]);
+                                                        setIsAgentStatusModalOpen(true); 
+                                                        setIsAutoAssignMenuOpen(false); 
+                                                    }}
+                                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                                >
+                                                    <User className="h-4 w-4 text-blue-500" />
+                                                    Agent Status (Pause)
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
 

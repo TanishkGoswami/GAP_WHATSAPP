@@ -11,9 +11,11 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true)
     const [userRole, setUserRole] = useState(null)
     const [memberProfile, setMemberProfile] = useState(null)
+    const [isProfileLoading, setIsProfileLoading] = useState(true)
     const [loginType, setLoginType] = useState(localStorage.getItem('auth_login_type') || 'owner')
 
     const fetchMemberProfile = async (token) => {
+        setIsProfileLoading(true)
         try {
             const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/my-profile`, {
                 headers: { 
@@ -36,6 +38,8 @@ export function AuthProvider({ children }) {
         } catch (e) {
             console.error("Failed to fetch member profile", e)
             setUserRole(loginType === 'agent' ? 'agent' : 'owner')
+        } finally {
+            setIsProfileLoading(false)
         }
     }
 
@@ -63,6 +67,7 @@ export function AuthProvider({ children }) {
         } else {
             setUserRole(null)
             setMemberProfile(null)
+            setIsProfileLoading(false)
         }
     }, [session, loginType])
 
@@ -89,6 +94,7 @@ export function AuthProvider({ children }) {
         session,
         userRole,
         memberProfile,
+        isProfileLoading,
         loginType
     }
 

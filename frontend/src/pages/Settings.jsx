@@ -112,7 +112,7 @@ export default function Settings() {
         }
     }
 
-    const isAdmin = loginType === 'owner' || userRole === 'admin' || userRole === 'owner'
+    const isAdmin = userRole === 'admin' || userRole === 'owner'
 
     return (
         <div className="max-w-6xl mx-auto flex gap-8">

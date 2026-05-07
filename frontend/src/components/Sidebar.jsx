@@ -31,13 +31,13 @@ export default function Sidebar() {
     const { userRole, loginType } = useAuth()
     console.log("Sidebar User Role:", userRole, "Login Type:", loginType)
 
-    const isAdmin = loginType === 'owner' || userRole === 'admin' || userRole === 'owner'
+    const isOwner = userRole === 'owner'
 
-    // Restrict access for agents
+    // Restrict access for agents and admins
     const filteredNavigation = navigation.filter(item => {
-        if (!isAdmin) {
-            // Agents only see Dashboard, Shared Inbox, Contacts
-            return ['Dashboard', 'Shared Inbox', 'Contacts'].includes(item.name)
+        if (!isOwner) {
+            // Agents and Admins only see Shared Inbox (Live Chat section)
+            return ['Shared Inbox'].includes(item.name)
         }
         return true
     })

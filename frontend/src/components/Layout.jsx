@@ -1,14 +1,22 @@
-import { Outlet, Navigate, useNavigate } from 'react-router-dom'
+import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import { Bell, User, LogOut } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 export default function Layout() {
-    const { user, loading, signOut } = useAuth()
+    const { user, userRole, loading, isProfileLoading, signOut } = useAuth()
     const navigate = useNavigate()
+    const location = useLocation()
 
-    if (loading) return null // wait for auth context to determine session
+    if (loading || isProfileLoading) return null // wait for auth context to determine session and role
     if (!user) return <Navigate to="/login" replace />
+
+    const isOwner = userRole === 'owner'
+    
+    // Redirect non-owners to live-chat if they try to access restricted paths
+    if (!isOwner && location.pathname !== '/live-chat') {
+        return <Navigate to="/live-chat" replace />
+    }
 
     const handleLogout = async () => {
         try {
