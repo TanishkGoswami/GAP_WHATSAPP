@@ -22,7 +22,27 @@ import { sendEmail } from "./email";
 import pino from "pino";
 
 const app = express();
-app.use(cors());
+const corsOrigins = [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://parted-deuce-penpal.ngrok-free.dev",
+    "https://w.getaipilot.in",
+    "https://wb.getaipilot.in"
+];
+
+const corsAllowedHeaders = [
+    "Content-Type",
+    "Authorization",
+    "X-Auth-Portal",
+    "ngrok-skip-browser-warning"
+];
+
+app.use(cors({
+    origin: corsOrigins,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: corsAllowedHeaders
+}));
 
 // Keep raw body for Meta signature verification
 app.use(
@@ -35,7 +55,12 @@ app.use(
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-    cors: { origin: "*", methods: ["GET", "POST"] },
+    cors: {
+        origin: corsOrigins,
+        methods: ["GET", "POST"],
+        allowedHeaders: corsAllowedHeaders,
+        credentials: true
+    },
 });
 
 const PORT = Number(process.env.PORT || 3001);
@@ -99,6 +124,104 @@ function decryptToken(stored: string): string {
     }
 }
 
+async function inspectMetaTokenPermissions(token: string) {
+    const appId = process.env.META_APP_ID;
+    const appSecret = process.env.META_APP_SECRET;
+    if (!appId || !appSecret || !token) {
+        return { checked: false, missingScopes: [], scopes: [], error: null };
+    }
+
+    try {
+        const debugUrl = `https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(`${appId}|${appSecret}`)}`;
+        const response = await fetch(debugUrl);
+        const data: any = await response.json();
+        if (!response.ok || data.error) {
+            return {
+                checked: true,
+                missingScopes: [],
+                scopes: [],
+                error: data.error?.message || 'Unable to inspect Meta token'
+            };
+        }
+
+        const scopes = Array.isArray(data.data?.scopes) ? data.data.scopes : [];
+        const requiredScopes = ['whatsapp_business_messaging', 'whatsapp_business_management'];
+        const missingScopes = requiredScopes.filter(scope => !scopes.includes(scope));
+        return { checked: true, missingScopes, scopes, error: null };
+    } catch (err: any) {
+        return { checked: true, missingScopes: [], scopes: [], error: err.message || 'Unable to inspect Meta token' };
+    }
+}
+
+function getMetaSendErrorMessage(error: any) {
+    const code = error?.code;
+    const details = error?.error_data?.details || error?.message || '';
+    if (code === 131005) {
+        return `(#131005) Access denied: selected WhatsApp account token cannot send messages with this phone number. Reconnect the account using a token with whatsapp_business_messaging permission, and make sure the phone number belongs to the same WABA/token. Meta details: ${details}`;
+    }
+    return error?.message || 'API Error';
+}
+
+async function getMetaAccountDiagnostics(account: any) {
+    const token = account?.access_token_encrypted ? decryptToken(account.access_token_encrypted) : '';
+    const diagnostics: any = {
+        account_id: account?.id || null,
+        phone_number_id: account?.phone_number_id || null,
+        whatsapp_business_account_id: account?.whatsapp_business_account_id || null,
+        has_access_token: !!token,
+        token_permissions: null,
+        phone_number_access: null,
+        waba_access: null,
+        send_ready: false,
+        issues: []
+    };
+
+    if (!token) {
+        diagnostics.issues.push('Missing Meta access token. Reconnect this account.');
+        return diagnostics;
+    }
+
+    diagnostics.token_permissions = await inspectMetaTokenPermissions(token);
+    if (diagnostics.token_permissions?.missingScopes?.length) {
+        diagnostics.issues.push(`Token missing permission(s): ${diagnostics.token_permissions.missingScopes.join(', ')}`);
+    }
+
+    if (account?.phone_number_id) {
+        try {
+            const phoneRes = await fetch(`https://graph.facebook.com/v21.0/${account.phone_number_id}?fields=id,display_phone_number,verified_name,quality_rating,platform_type,code_verification_status&access_token=${encodeURIComponent(token)}`);
+            const phoneJson: any = await phoneRes.json();
+            diagnostics.phone_number_access = phoneJson;
+            if (!phoneRes.ok || phoneJson.error) {
+                diagnostics.issues.push(`Token cannot access phone number ${account.phone_number_id}: ${phoneJson.error?.message || 'Unknown Meta error'}`);
+            }
+        } catch (err: any) {
+            diagnostics.issues.push(`Could not validate phone number access: ${err.message}`);
+        }
+    } else {
+        diagnostics.issues.push('Missing phone_number_id on this account.');
+    }
+
+    if (account?.whatsapp_business_account_id) {
+        try {
+            const wabaRes = await fetch(`https://graph.facebook.com/v21.0/${account.whatsapp_business_account_id}/phone_numbers?access_token=${encodeURIComponent(token)}`);
+            const wabaJson: any = await wabaRes.json();
+            diagnostics.waba_access = wabaJson;
+            if (!wabaRes.ok || wabaJson.error) {
+                diagnostics.issues.push(`Token cannot access WABA ${account.whatsapp_business_account_id}: ${wabaJson.error?.message || 'Unknown Meta error'}`);
+            } else if (account?.phone_number_id && !wabaJson.data?.some((phone: any) => String(phone.id) === String(account.phone_number_id))) {
+                diagnostics.issues.push(`Phone number ${account.phone_number_id} was not found inside WABA ${account.whatsapp_business_account_id} for this token.`);
+            }
+        } catch (err: any) {
+            diagnostics.issues.push(`Could not validate WABA phone list: ${err.message}`);
+        }
+    } else {
+        diagnostics.issues.push('Missing whatsapp_business_account_id on this account.');
+    }
+
+    diagnostics.send_ready = diagnostics.issues.length === 0;
+    return diagnostics;
+}
+
 // ====== Auth Middleware (Supabase JWT) ======
 async function authMiddleware(req: any, res: any, next: any) {
     const authHeader = req.headers.authorization;
@@ -154,10 +277,12 @@ async function authMiddleware(req: any, res: any, next: any) {
                 } else {
                     // 1. Create Organization
                     const orgName = `${user.email.split('@')[0]}'s Workspace`;
+                    const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
                     const { data: newOrg, error: orgErr } = await supabase
                         .from('organizations')
                         .insert({ 
                             name: orgName,
+                            slug: slug,
                             plan_id: 'starter',
                             plan_status: 'trial',
                             is_active: true
@@ -288,6 +413,74 @@ function derivePhoneForStorage(value: string | null | undefined): string | null 
     // Generic E.164-ish digits
     if (digits.length >= 8 && digits.length <= 15) return digits;
     return null;
+}
+
+function normalizeTemplateHeaderMedia(mapping: any, fallbackType?: string) {
+    const source = mapping && typeof mapping === 'object' ? mapping : {};
+    const type = String(
+        source._header_media_type ||
+        source.header_media_type ||
+        fallbackType ||
+        ''
+    ).toLowerCase();
+    const url = String(
+        source._header_media_url ||
+        source.header_media_url ||
+        source.headerImageUrl ||
+        source.header_image_url ||
+        source.headerUrl ||
+        ''
+    ).trim();
+
+    return { type, url };
+}
+
+function normalizeDynamicUrlButtonValue(templateUrl: string, value: any) {
+    let cleanValue = String(value || '').trim();
+    const cleanTemplateUrl = String(templateUrl || '');
+    const placeholderIndex = cleanTemplateUrl.indexOf('{{');
+    const staticPrefix = placeholderIndex >= 0 ? cleanTemplateUrl.slice(0, placeholderIndex) : '';
+
+    if (staticPrefix && cleanValue.startsWith(staticPrefix)) {
+        cleanValue = cleanValue.slice(staticPrefix.length);
+    }
+
+    if (staticPrefix.endsWith('/') && cleanValue.startsWith('/')) {
+        cleanValue = cleanValue.slice(1);
+    }
+
+    return cleanValue;
+}
+
+function validateDynamicUrlButtonValue(templateUrl: string, value: any) {
+    const rawValue = String(value || '').trim();
+    const cleanTemplateUrl = String(templateUrl || '');
+    const placeholderIndex = cleanTemplateUrl.indexOf('{{');
+    const staticPrefix = placeholderIndex >= 0 ? cleanTemplateUrl.slice(0, placeholderIndex) : '';
+    const normalizedValue = normalizeDynamicUrlButtonValue(templateUrl, rawValue);
+    const isAbsoluteUrl = /^https?:\/\//i.test(rawValue);
+
+    if (staticPrefix && isAbsoluteUrl && !rawValue.startsWith(staticPrefix)) {
+        return {
+            ok: false,
+            value: normalizedValue,
+            error: `URL button is approved for ${staticPrefix}... Enter only the placeholder part for that approved URL, or create a new Meta template for this different domain.`
+        };
+    }
+
+    if (staticPrefix && /^https?:\/\//i.test(normalizedValue)) {
+        return {
+            ok: false,
+            value: normalizedValue,
+            error: 'URL button needs only the placeholder value, not a full URL.'
+        };
+    }
+
+    return {
+        ok: !!normalizedValue,
+        value: normalizedValue,
+        error: 'URL button placeholder value is required.'
+    };
 }
 
 function formatIndianPhoneForDisplay(value: string | null | undefined): string {
@@ -1864,6 +2057,60 @@ app.get('/api/contacts', authMiddleware, async (req: any, res) => {
     }
 });
 
+app.post('/api/contacts', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+    const { name, phone, tags = [] } = req.body || {};
+
+    try {
+        if (!organization_id) {
+            return res.status(400).json({ error: 'organization_id is required' });
+        }
+
+        const phoneDigits = normalizeWaIdToPhone(phone);
+        if (!phoneDigits) {
+            return res.status(400).json({ error: 'Valid phone number is required' });
+        }
+
+        const wa_key = normalizeIndianPhoneKey(phoneDigits) || phoneDigits;
+        const normalizedPhone = wa_key;
+        const normalizedTags = Array.isArray(tags)
+            ? tags.map((tag: any) => String(tag).trim()).filter(Boolean)
+            : String(tags || '').split(',').map((tag) => tag.trim()).filter(Boolean);
+
+        const { data: existing, error: existingErr } = await supabase
+            .from('w_contacts')
+            .select('id')
+            .eq('organization_id', organization_id)
+            .eq('wa_key', wa_key)
+            .maybeSingle();
+        if (existingErr) throw existingErr;
+        if (existing?.id) {
+            return res.status(409).json({ error: 'Contact already exists' });
+        }
+
+        const { data, error } = await supabase
+            .from('w_contacts')
+            .insert({
+                organization_id,
+                name: String(name || '').trim() || normalizedPhone,
+                phone: normalizedPhone,
+                wa_id: normalizedPhone,
+                wa_key,
+                tags: normalizedTags,
+                contact_type: 'individual'
+            })
+            .select('id, name, custom_name, phone, wa_id, wa_key, tags, created_at, last_active, contact_type')
+            .single();
+        if (error) throw error;
+
+        io.emit('contact_updated', { contact: data });
+        res.status(201).json(data);
+    } catch (err: any) {
+        console.error('Error creating contact:', err);
+        res.status(500).json({ error: err.message || 'Failed to create contact' });
+    }
+});
+
 app.patch('/api/contacts/:id', authMiddleware, async (req: any, res) => {
     const contactId = req.params.id;
     const organization_id = req.organization_id;
@@ -1911,6 +2158,41 @@ app.patch('/api/contacts/:id', authMiddleware, async (req: any, res) => {
     } catch (err: any) {
         console.error('Error updating contact:', err);
         res.status(500).json({ error: err.message || 'Failed to update contact' });
+    }
+});
+
+app.delete('/api/contacts/:id', authMiddleware, async (req: any, res) => {
+    const contactId = req.params.id;
+    const organization_id = req.organization_id;
+
+    try {
+        if (!organization_id) {
+            return res.status(400).json({ error: 'organization_id is required' });
+        }
+
+        const { data: existing, error: findErr } = await supabase
+            .from('w_contacts')
+            .select('id, organization_id')
+            .eq('id', contactId)
+            .maybeSingle();
+        if (findErr) throw findErr;
+        if (!existing?.id) return res.status(404).json({ error: 'Contact not found' });
+        if (existing.organization_id !== organization_id) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
+        const { error } = await supabase
+            .from('w_contacts')
+            .delete()
+            .eq('id', contactId)
+            .eq('organization_id', organization_id);
+        if (error) throw error;
+
+        io.emit('contact_deleted', { id: contactId });
+        res.json({ success: true });
+    } catch (err: any) {
+        console.error('Error deleting contact:', err);
+        res.status(500).json({ error: err.message || 'Failed to delete contact' });
     }
 });
 
@@ -2375,11 +2657,14 @@ app.patch('/api/conversations/:id/bot', async (req, res) => {
 });
 
 // Get OpenAI settings
-app.get('/api/settings/openai', async (req, res) => {
-    const requestedOrgId = req.query.organization_id as string | undefined;
+app.get('/api/settings/openai', authMiddleware, async (req: any, res) => {
     const organization_id = req.organization_id;
 
     try {
+        if (!organization_id) {
+            return res.status(400).json({ error: 'organization_id is required' });
+        }
+
         const { data, error } = await supabase
             .from('openai_settings')
             .select('id, organization_id, created_at, updated_at')
@@ -2399,9 +2684,8 @@ app.get('/api/settings/openai', async (req, res) => {
 });
 
 // Save OpenAI API key
-app.post('/api/settings/openai', async (req, res) => {
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+app.post('/api/settings/openai', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
     const { api_key } = req.body;
 
     try {
@@ -2610,7 +2894,6 @@ app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: 
         if (!conv?.contact?.wa_id) throw new Error('Conversation contact missing wa_id');
         if (!conv?.account?.phone_number_id) throw new Error('Conversation account missing phone_number_id');
 
-        const orgId = conv.organization_id;
         if (!orgId) throw new Error('Organization not configured');
 
         const toPhone = String(conv.contact.wa_id);
@@ -3134,6 +3417,16 @@ app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
             return res.status(400).json({ error: `Meta API error: ${verifyData.error.message}` });
         }
 
+        const tokenInspection = await inspectMetaTokenPermissions(String(access_token).trim());
+        if (tokenInspection.checked && tokenInspection.missingScopes.length > 0) {
+            return res.status(400).json({
+                error: `This Meta token can access the phone number but cannot be used for sending. Missing permission(s): ${tokenInspection.missingScopes.join(', ')}. Generate a System User token with whatsapp_business_messaging and whatsapp_business_management.`
+            });
+        }
+        if (tokenInspection.error) {
+            console.warn('[whatsapp/accounts/meta] Could not inspect Meta token permissions:', tokenInspection.error);
+        }
+
         const resolvedDisplayPhone = verifyData.display_phone_number || display_phone_number || null;
         const resolvedName = verifyData.verified_name || name || 'WhatsApp Business API';
 
@@ -3178,6 +3471,28 @@ app.delete('/api/whatsapp/accounts/:id', authMiddleware, async (req, res) => {
         res.json({ success: true });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/whatsapp/accounts/:id/diagnostics', authMiddleware, async (req: any, res) => {
+    const { id } = req.params;
+    const orgId = req.organization_id;
+
+    try {
+        const { data: account, error } = await supabase
+            .from('w_wa_accounts')
+            .select('id, organization_id, phone_number_id, whatsapp_business_account_id, access_token_encrypted, display_phone_number, name, status')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!account?.id) return res.status(404).json({ error: 'WhatsApp account not found' });
+
+        res.json(await getMetaAccountDiagnostics(account));
+    } catch (err: any) {
+        console.error('WhatsApp account diagnostics error:', err);
+        res.status(500).json({ error: err.message || 'Failed to inspect WhatsApp account' });
     }
 });
 
@@ -4711,6 +5026,36 @@ app.get('/api/broadcast/tags', authMiddleware, async (req, res) => {
 
 async function processCampaign(campaign: any) {
     try {
+        const originalVariableMapping = campaign?.variable_mapping || {};
+        const { data: freshCampaign, error: freshCampaignErr } = await supabase
+            .from('w_campaigns')
+            .select('*')
+            .eq('id', campaign.id)
+            .maybeSingle();
+
+        if (freshCampaignErr) {
+            console.warn('[processCampaign] Could not refetch campaign before processing:', freshCampaignErr.message);
+        } else if (freshCampaign) {
+            const freshMapping = freshCampaign.variable_mapping || {};
+            const originalHeaderMedia = normalizeTemplateHeaderMedia(originalVariableMapping);
+            const freshHeaderMedia = normalizeTemplateHeaderMedia(freshMapping);
+
+            campaign = { ...campaign, ...freshCampaign };
+
+            if (originalHeaderMedia.url && !freshHeaderMedia.url) {
+                campaign.variable_mapping = {
+                    ...freshMapping,
+                    ...originalVariableMapping
+                };
+                console.warn('[processCampaign] DB campaign mapping was missing header media; using launch payload mapping', {
+                    campaign_id: campaign.id,
+                    template_name: campaign.template_name,
+                    header_media_type: originalHeaderMedia.type,
+                    header_media_url: originalHeaderMedia.url
+                });
+            }
+        }
+
         await supabase.from('w_campaigns').update({ status: 'processing' }).eq('id', campaign.id);
         
         const orgId = campaign.organization_id;
@@ -4767,8 +5112,57 @@ async function processCampaign(campaign: any) {
             
             let renderedText = mapping._template_body || `[Broadcast Template: ${campaign.template_name}]`;
             const parameters = [];
+            const { type: headerMediaType, url: headerMediaUrl } = normalizeTemplateHeaderMedia(mapping);
 
-            const sortedKeys = Object.keys(mapping).filter(k => k !== '_template_body').sort((a, b) => parseInt(a) - parseInt(b));
+            if (headerMediaType && !headerMediaUrl) {
+                failed++;
+                results.push({
+                    phone: recipient,
+                    name: contact.name || contact.custom_name || 'Unknown',
+                    status: 'failed',
+                    error: `Missing required ${headerMediaType} header media URL`
+                });
+                continue;
+            }
+
+            if (headerMediaType && headerMediaUrl) {
+                components.push({
+                    type: 'header',
+                    parameters: [
+                        {
+                            type: headerMediaType,
+                            [headerMediaType]: { link: headerMediaUrl }
+                        }
+                    ]
+                });
+            }
+
+            const buttonUrlKeys = Object.keys(mapping)
+                .map((key) => {
+                    const match = key.match(/^_?button_url_(\d+)$/);
+                    return match ? { key, index: match[1] } : null;
+                })
+                .filter(Boolean)
+                .sort((a: any, b: any) => parseInt(a.index) - parseInt(b.index));
+
+            const addedButtonIndexes = new Set<string>();
+            for (const item of buttonUrlKeys as any[]) {
+                if (addedButtonIndexes.has(item.index)) continue;
+                const text = String(mapping[`_button_url_${item.index}`] || mapping[`button_url_${item.index}`] || '').trim();
+                if (!text) continue;
+
+                components.push({
+                    type: 'button',
+                    sub_type: 'url',
+                    index: item.index,
+                    parameters: [{ type: 'text', text }]
+                });
+                addedButtonIndexes.add(item.index);
+            }
+
+            const sortedKeys = Object.keys(mapping)
+                .filter(k => /^\d+$/.test(k))
+                .sort((a, b) => parseInt(a) - parseInt(b));
             
             for (const num of sortedKeys) {
                 const field = mapping[num];
@@ -4865,7 +5259,14 @@ async function processCampaign(campaign: any) {
                     }
                 } else {
                     failed++;
-                    results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'failed', error: data.error?.message || 'API Error' });
+                    console.error('[processCampaign] Meta template send failed', {
+                        campaign_id: campaign.id,
+                        template_name: campaign.template_name,
+                        recipient,
+                        error: data.error,
+                        components: payload.template.components
+                    });
+                    results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'failed', error: getMetaSendErrorMessage(data.error) });
                 }
             } catch (e: any) {
                 failed++;
@@ -4909,16 +5310,157 @@ setInterval(async () => {
 }, 60000); // Check every minute
 
 // POST /api/broadcast/send
+app.post('/api/broadcast/header-media', authMiddleware, upload.single('file'), async (req: any, res) => {
+    const orgId = req.organization_id;
+    const file = req.file;
+
+    try {
+        if (!orgId) {
+            return res.status(400).json({ error: 'organization_id is required' });
+        }
+        if (!file) {
+            return res.status(400).json({ error: 'File is required' });
+        }
+
+        const uploaded = await uploadMediaToStorage({
+            organization_id: orgId,
+            conversation_id: 'broadcast-template-headers',
+            fileName: file.originalname || `template-header-${crypto.randomUUID()}`,
+            mimeType: file.mimetype || 'application/octet-stream',
+            buffer: file.buffer
+        });
+
+        res.json(uploaded);
+    } catch (err: any) {
+        console.error('Broadcast header media upload error:', err);
+        res.status(500).json({ error: err.message || 'Failed to upload header media' });
+    }
+});
+
 app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
     const orgId = (req as any).organization_id;
-    const { name, wa_account_id, audience_tag, csv_data, template_name, template_language, variable_mapping, scheduled_at } = req.body;
+    const {
+        name,
+        wa_account_id,
+        audience_tag,
+        csv_data,
+        template_name,
+        template_language,
+        variable_mapping,
+        scheduled_at,
+        required_header_type,
+        header_media_type,
+        header_media_url
+    } = req.body;
     
     try {
         if (!wa_account_id || !template_name || !template_language) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
+        const variableMapping = variable_mapping && typeof variable_mapping === 'object' ? { ...variable_mapping } : {};
+        if (header_media_url) {
+            const mediaType = String(header_media_type || variableMapping.header_media_type || variableMapping._header_media_type || 'image').toLowerCase();
+            variableMapping._header_media_type = mediaType;
+            variableMapping._header_media_url = header_media_url;
+            variableMapping.header_media_type = mediaType;
+            variableMapping.header_media_url = header_media_url;
+        }
+
+        const requiredHeaderTypeFromClient = String(required_header_type || '').toLowerCase();
+        if (['image', 'video', 'document'].includes(requiredHeaderTypeFromClient)) {
+            const { type: headerMediaType, url: headerMediaUrl } = normalizeTemplateHeaderMedia(variableMapping, requiredHeaderTypeFromClient);
+            if (!headerMediaUrl) {
+                return res.status(400).json({
+                    error: `Template "${template_name}" requires a ${requiredHeaderTypeFromClient} header media URL. Upload media or paste a public URL before launching.`
+                });
+            }
+
+            variableMapping._header_media_type = requiredHeaderTypeFromClient;
+            variableMapping._header_media_url = headerMediaUrl;
+            variableMapping.header_media_type = requiredHeaderTypeFromClient;
+            variableMapping.header_media_url = headerMediaUrl;
+        }
+
+        const { data: account, error: accountErr } = await supabase
+            .from('w_wa_accounts')
+            .select('id, phone_number_id, access_token_encrypted, whatsapp_business_account_id')
+            .eq('id', wa_account_id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (accountErr) throw accountErr;
+        if (!account?.id) return res.status(400).json({ error: 'Selected WhatsApp account was not found' });
+        if (!account.access_token_encrypted) return res.status(400).json({ error: 'Selected WhatsApp account is missing a Meta access token. Reconnect this account.' });
+
+        const token = decryptToken(account.access_token_encrypted);
+        const tokenInspection = await inspectMetaTokenPermissions(token);
+        if (tokenInspection.checked && tokenInspection.missingScopes.length > 0) {
+            return res.status(400).json({
+                error: `Selected WhatsApp account token is missing required Meta permission(s): ${tokenInspection.missingScopes.join(', ')}. Reconnect using a System User or embedded signup token with whatsapp_business_messaging and whatsapp_business_management.`
+            });
+        }
+        if (tokenInspection.error) {
+            console.warn('[broadcast/send] Could not inspect Meta token permissions:', tokenInspection.error);
+        }
+
+        if (account.whatsapp_business_account_id) {
+            const tplRes = await fetch(`https://graph.facebook.com/v20.0/${account.whatsapp_business_account_id}/message_templates?fields=name,language,status,components&limit=250`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            const tplJson = await tplRes.json();
+            if (!tplRes.ok) {
+                return res.status(tplRes.status).json({ error: tplJson.error?.message || 'Failed to validate template before sending' });
+            }
+
+            const template = (tplJson.data || []).find((tpl: any) => tpl.name === template_name && (!template_language || tpl.language === template_language));
+            if (!template) {
+                return res.status(400).json({
+                    error: `Could not validate template "${template_name}" before sending. Refresh templates and try again.`
+                });
+            }
+            const header = template?.components?.find((component: any) => component.type === 'HEADER');
+            const headerFormat = String(header?.format || '').toLowerCase();
+            if (['image', 'video', 'document'].includes(headerFormat)) {
+                const { type: headerMediaType, url: headerMediaUrl } = normalizeTemplateHeaderMedia(variableMapping, headerFormat);
+                if (headerMediaType !== headerFormat || !headerMediaUrl) {
+                    return res.status(400).json({
+                        error: `Template "${template_name}" requires a ${headerFormat} header media URL. Upload media or paste a public URL before launching.`
+                    });
+                }
+                variableMapping._header_media_type = headerFormat;
+                variableMapping._header_media_url = headerMediaUrl;
+                variableMapping.header_media_type = headerFormat;
+                variableMapping.header_media_url = headerMediaUrl;
+            }
+
+            const buttons = template?.components?.find((component: any) => component.type === 'BUTTONS')?.buttons || [];
+            for (let index = 0; index < buttons.length; index++) {
+                const button = buttons[index];
+                const isDynamicUrlButton = String(button?.type || '').toUpperCase() === 'URL' && String(button?.url || '').includes('{{');
+                if (!isDynamicUrlButton) continue;
+
+                const rawButtonValue = variableMapping[`_button_url_${index}`] || variableMapping[`button_url_${index}`];
+                const buttonValidation = validateDynamicUrlButtonValue(button.url, rawButtonValue);
+                if (!buttonValidation.ok) {
+                    return res.status(400).json({
+                        error: `Template "${template_name}" has a dynamic URL button "${button.text || index + 1}". ${buttonValidation.error}`
+                    });
+                }
+
+                const buttonValue = buttonValidation.value;
+                variableMapping[`_button_url_${index}`] = buttonValue;
+                variableMapping[`button_url_${index}`] = buttonValue;
+            }
+        }
+
         const isScheduled = scheduled_at && new Date(scheduled_at) > new Date();
+        console.log('[broadcast/send] saving variable_mapping', {
+            template_name,
+            required_header_type,
+            header_media_type,
+            has_header_media_url: !!header_media_url,
+            variableMapping
+        });
 
         const { data: campaign, error: insertErr } = await supabase
             .from('w_campaigns')
@@ -4930,7 +5472,7 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
                 csv_data: csv_data || null,
                 template_name,
                 template_language,
-                variable_mapping,
+                variable_mapping: variableMapping,
                 scheduled_at: scheduled_at || null,
                 status: isScheduled ? 'scheduled' : 'processing'
             })
@@ -4942,12 +5484,34 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
             throw new Error('Database Error: Have you run the w_campaigns SQL script in Supabase?');
         }
 
+        const { data: persistedCampaign, error: mappingPersistErr } = await supabase
+            .from('w_campaigns')
+            .update({ variable_mapping: variableMapping })
+            .eq('id', campaign.id)
+            .select()
+            .single();
+
+        if (mappingPersistErr) {
+            console.error('[broadcast/send] Failed to persist campaign variable_mapping after insert:', mappingPersistErr);
+        }
+
+        const campaignForProcessing = {
+            ...(persistedCampaign || campaign),
+            variable_mapping: variableMapping
+        };
+
+        console.log('[broadcast/send] persisted variable_mapping', {
+            campaign_id: campaignForProcessing.id,
+            saved_header_media_url: !!normalizeTemplateHeaderMedia(campaignForProcessing.variable_mapping).url,
+            variable_mapping: campaignForProcessing.variable_mapping
+        });
+
         if (!isScheduled) {
             // Process asynchronously without blocking response
-            processCampaign(campaign);
-            res.json({ message: "Campaign processing started", campaign, status: 'processing' });
+            processCampaign(campaignForProcessing);
+            res.json({ message: "Campaign processing started", campaign: campaignForProcessing, status: 'processing' });
         } else {
-            res.json({ message: "Campaign scheduled successfully", campaign, status: 'scheduled' });
+            res.json({ message: "Campaign scheduled successfully", campaign: campaignForProcessing, status: 'scheduled' });
         }
 
     } catch (err: any) {

@@ -4,19 +4,30 @@ import './index.css'
 import App from './App.jsx'
 import axios from 'axios'
 
-// Configure Axios globally to bypass Ngrok's anti-abuse warning
-axios.defaults.headers.common['ngrok-skip-browser-warning'] = 'true';
+const backendUrl = import.meta.env.VITE_BACKEND_URL || ''
 
-// Global fetch interceptor to bypass Ngrok's anti-abuse warning screen for all API requests
+const shouldSkipNgrokWarning = (resource) => {
+  const url = typeof resource === 'string' ? resource : resource?.url
+  return url?.includes('ngrok-free.dev') || (backendUrl && url?.startsWith(backendUrl))
+}
+
+axios.interceptors.request.use((config) => {
+  if (shouldSkipNgrokWarning(config.url)) {
+    config.headers = config.headers || {}
+    config.headers['ngrok-skip-browser-warning'] = 'true'
+  }
+  return config
+})
+
+// Bypass Ngrok's anti-abuse warning screen for backend API fetches.
 const originalFetch = window.fetch;
 window.fetch = async (...args) => {
   let [resource, config] = args;
-  if (typeof resource === 'string' && resource.includes('ngrok-free.dev')) {
-    config = config || {};
-    config.headers = {
-      ...config.headers,
-      'ngrok-skip-browser-warning': 'true' // Bypasses the blue "Visit Site" screen
-    };
+  if (shouldSkipNgrokWarning(resource)) {
+    config = config || {}
+    const headers = new Headers(config.headers || {})
+    headers.set('ngrok-skip-browser-warning', 'true')
+    config.headers = headers
   }
   return originalFetch(resource, config);
 };

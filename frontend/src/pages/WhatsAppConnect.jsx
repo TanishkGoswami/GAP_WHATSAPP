@@ -21,6 +21,8 @@ export default function WhatsAppConnect() {
     const [manualSelectedPhoneId, setManualSelectedPhoneId] = useState('');
     const [manualStatus, setManualStatus] = useState('idle'); // idle | validating | saving | saved | error
     const [manualError, setManualError] = useState(null);
+    const [diagnostics, setDiagnostics] = useState({});
+    const [diagnosticsLoadingId, setDiagnosticsLoadingId] = useState(null);
 
     useEffect(() => {
         if (session?.access_token) fetchAccounts();
@@ -74,6 +76,22 @@ export default function WhatsAppConnect() {
             });
             if (res.ok) setAccounts(prev => prev.filter(a => a.id !== id));
         } catch { alert('Failed to delete account'); }
+    };
+
+    const runAccountDiagnostics = async (id) => {
+        setDiagnosticsLoadingId(id);
+        try {
+            const res = await fetch(`${API_URL}/api/whatsapp/accounts/${id}/diagnostics`, {
+                headers: { 'Content-Type': 'application/json', ...getAuthHeader() }
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to inspect account');
+            setDiagnostics(prev => ({ ...prev, [id]: data }));
+        } catch (err) {
+            setDiagnostics(prev => ({ ...prev, [id]: { send_ready: false, issues: [err.message] } }));
+        } finally {
+            setDiagnosticsLoadingId(null);
+        }
     };
 
     // ===== RECOMMENDED: FB Embedded Signup =====
@@ -221,6 +239,37 @@ export default function WhatsAppConnect() {
                                         {acc.whatsapp_business_account_id ? 'Meta API' : 'Baileys'}
                                     </span>
                                 </div>
+                                {acc.whatsapp_business_account_id && (
+                                    <div className="mt-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => runAccountDiagnostics(acc.id)}
+                                            disabled={diagnosticsLoadingId === acc.id}
+                                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                        >
+                                            {diagnosticsLoadingId === acc.id ? 'Checking Meta permissions...' : 'Check Send Access'}
+                                        </button>
+                                        {diagnostics[acc.id] && (
+                                            <div className={`mt-2 rounded-lg border p-3 text-xs ${diagnostics[acc.id].send_ready ? 'border-green-200 bg-green-50 text-green-800' : 'border-red-200 bg-red-50 text-red-800'}`}>
+                                                <div className="flex items-start gap-2">
+                                                    {diagnostics[acc.id].send_ready ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+                                                    <div>
+                                                        <p className="font-semibold">
+                                                            {diagnostics[acc.id].send_ready ? 'Ready to send via Meta API' : 'Meta send access needs attention'}
+                                                        </p>
+                                                        {!diagnostics[acc.id].send_ready && (
+                                                            <ul className="mt-1 list-disc space-y-1 pl-4">
+                                                                {(diagnostics[acc.id].issues || ['Unknown Meta permission issue']).map((issue, index) => (
+                                                                    <li key={index}>{issue}</li>
+                                                                ))}
+                                                            </ul>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>

@@ -13,7 +13,12 @@ const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
 // Connect to backend
 const socket = io(BACKEND_BASE, {
+    autoConnect: false,
     transports: ['websocket', 'polling'],
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    timeout: 10000,
 });
 const API_BASE = `${BACKEND_BASE}/api`;
 
@@ -906,6 +911,9 @@ export default function LiveChat() {
             sessionId = 'dashboard_session'; // Persistent default session
             localStorage.setItem('whatsapp_session_id', sessionId);
         }
+        if (!socket.connected) {
+            socket.connect();
+        }
         socket.emit('join_session', sessionId);
 
         return () => {
@@ -919,8 +927,9 @@ export default function LiveChat() {
             socket.off('qr');
             socket.off('status');
             socket.off('session_not_found');
+            socket.disconnect();
         };
-    }, [memberProfile]);
+    }, [memberProfile?.organization_id]);
 
     const renderReactionsPill = (msg) => {
         const list = Array.isArray(msg?.reactions) ? msg.reactions : []
@@ -1284,7 +1293,7 @@ export default function LiveChat() {
     // Render Simplified Connect Prompt if no accounts connected
     if (!isConnected && connectedAccounts.length === 0) {
         return (
-            <div className="flex flex-col items-center justify-center h-[calc(100vh-theme(spacing.28))] bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
+            <div className="flex h-full min-h-0 flex-col items-center justify-center bg-white p-8 text-center">
                 <div className="bg-green-50 p-4 rounded-full mb-4">
                     <Phone className="h-10 w-10 text-green-600" />
                 </div>
@@ -1303,7 +1312,7 @@ export default function LiveChat() {
     // Render Chat Interface
     return (
         <AudioPlayerProvider>
-        <div className="flex h-[calc(100vh-theme(spacing.28))] lg:h-[calc(100vh-theme(spacing.20))] -m-2 lg:-m-0 bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm shadow-gray-200/50">
+        <div className="flex h-full min-h-0 bg-white overflow-hidden">
             {/* Left Cone: Chat List */}
             <div className={`${selectedChat ? 'hidden lg:flex' : 'flex'} w-full lg:w-80 border-r border-gray-200 flex-col bg-white overflow-hidden`}>
                 {/* Header / Account Switcher */}
