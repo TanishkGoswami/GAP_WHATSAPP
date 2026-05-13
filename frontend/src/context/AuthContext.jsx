@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import { supabase } from '../supabaseClient'
 
 const AuthContext = createContext({})
@@ -11,10 +11,14 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true)
     const [userRole, setUserRole] = useState(null)
     const [memberProfile, setMemberProfile] = useState(null)
-    const [isProfileLoading, setIsProfileLoading] = useState(true)
+    const [isProfileLoading, setIsProfileLoading] = useState(false)
+    const fetchedForUserId = useRef(null) // tracks which user we last fetched profile for
     const [loginType, setLoginType] = useState(localStorage.getItem('auth_login_type') || 'owner')
 
-    const fetchMemberProfile = async (token) => {
+    const fetchMemberProfile = async (token, userId) => {
+        // Avoid re-fetching on TOKEN_REFRESHED (tab focus) — only fetch when user actually changes
+        if (fetchedForUserId.current === userId && userRole !== null) return
+        fetchedForUserId.current = userId
         setIsProfileLoading(true)
         try {
             const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/my-profile`, {
@@ -44,32 +48,36 @@ export function AuthProvider({ children }) {
     }
 
     useEffect(() => {
-        // Check active sessions and sets the user
+        // Initial session load — sets loading=false exactly once
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session ?? null)
             setUser(session?.user ?? null)
             setLoading(false)
         })
 
-        // Listen for changes on auth state (logged in, signed out, etc.)
+        // Listen for auth state changes (login, logout, token refresh on tab focus, etc.)
+        // Do NOT call setLoading here — it causes children to unmount/remount on
+        // TOKEN_REFRESHED events (tab switching), wiping form state in child pages.
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             setSession(session ?? null)
             setUser(session?.user ?? null)
-            setLoading(false)
+            // setLoading intentionally omitted — initial load already handled above
         })
 
         return () => subscription.unsubscribe()
     }, [])
 
     useEffect(() => {
-        if (session?.access_token) {
-            fetchMemberProfile(session.access_token)
-        } else {
+        if (session?.access_token && session?.user?.id) {
+            fetchMemberProfile(session.access_token, session.user.id)
+        } else if (!session) {
+            // Logged out — reset everything
+            fetchedForUserId.current = null
             setUserRole(null)
             setMemberProfile(null)
             setIsProfileLoading(false)
         }
-    }, [session, loginType])
+    }, [session?.user?.id, loginType])
 
     const value = {
         signUp: (data) => supabase.auth.signUp(data),
