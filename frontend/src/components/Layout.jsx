@@ -8,7 +8,7 @@ export default function Layout() {
     const navigate = useNavigate()
     const location = useLocation()
 
-    if (loading || isProfileLoading) return null // wait for auth context to determine session and role
+    if (loading) return null // wait only for the initial auth check, never block on profile re-fetch
     if (!user) return <Navigate to="/login" replace />
 
     const isOwner = userRole === 'owner'
