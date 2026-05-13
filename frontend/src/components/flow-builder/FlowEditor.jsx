@@ -64,8 +64,7 @@ function FlowEditorContent({ flow, onClose }) {
     const [selectedNode, setSelectedNode] = useState(null);
     const [configPanelOpen, setConfigPanelOpen] = useState(false);
 
-    let id = 0;
-    const getId = () => `node_${id++}`;
+    const getId = () => `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     const onConnect = useCallback(
         (params) => setEdges((eds) => addEdge({

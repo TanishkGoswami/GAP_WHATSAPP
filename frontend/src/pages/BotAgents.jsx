@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Bot, Plus, Settings, Trash2, Power, Database, Key, FileText, Save, Brain, X, Upload, Loader2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 const API_BASE = `${BACKEND_BASE}/api`;
 
 export default function BotAgents() {
+    const { session } = useAuth();
     const [agents, setAgents] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedAgent, setSelectedAgent] = useState(null);
@@ -33,10 +35,13 @@ export default function BotAgents() {
 
     // Fetch agents from API
     const fetchAgents = async () => {
+        if (!session?.access_token) return;
         try {
             setIsLoading(true);
             setFetchError(null);
-            const res = await fetch(`${API_BASE}/agents`);
+            const res = await fetch(`${API_BASE}/agents`, {
+                headers: { 'Authorization': `Bearer ${session.access_token}` }
+            });
             if (res.ok) {
                 const data = await res.json();
                 // Transform data to match UI format
@@ -69,8 +74,11 @@ export default function BotAgents() {
 
     // Fetch OpenAI settings status
     const fetchApiSettings = async () => {
+        if (!session?.access_token) return;
         try {
-            const res = await fetch(`${API_BASE}/settings/openai`);
+            const res = await fetch(`${API_BASE}/settings/openai`, {
+                headers: { 'Authorization': `Bearer ${session.access_token}` }
+            });
             if (res.ok) {
                 const data = await res.json();
                 setApiKeyConfigured(data.configured || data.hasEnvKey);
@@ -81,11 +89,14 @@ export default function BotAgents() {
     };
 
     useEffect(() => {
-        fetchAgents();
-        fetchApiSettings();
-    }, []);
+        if (session?.access_token) {
+            fetchAgents();
+            fetchApiSettings();
+        }
+    }, [session]);
 
     const handleCreateAgent = async () => {
+        if (!session?.access_token) return;
         setIsSaving(true);
         try {
             const payload = {
@@ -102,7 +113,10 @@ export default function BotAgents() {
 
             const res = await fetch(`${API_BASE}/agents`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
                 body: JSON.stringify(payload)
             });
 
@@ -161,7 +175,10 @@ export default function BotAgents() {
 
             const res = await fetch(`${API_BASE}/agents/${editingAgent.id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
                 body: JSON.stringify(payload)
             });
 
@@ -188,7 +205,10 @@ export default function BotAgents() {
         try {
             const res = await fetch(`${API_BASE}/agents/${id}`, {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
                 body: JSON.stringify({ is_active: !agent.isActive })
             });
 
@@ -207,7 +227,8 @@ export default function BotAgents() {
 
         try {
             const res = await fetch(`${API_BASE}/agents/${id}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${session.access_token}` }
             });
 
             if (res.ok) {
@@ -232,7 +253,10 @@ export default function BotAgents() {
         try {
             const res = await fetch(`${API_BASE}/settings/openai`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
                 body: JSON.stringify({ api_key: apiKey })
             });
 

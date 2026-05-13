@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap } from 'lucide-react';
 import axios from 'axios';
 import FlowEditor from '../components/flow-builder/FlowEditor';
+import { useAuth } from '../context/AuthContext';
 
 export default function FlowBuilder() {
+    const { session } = useAuth();
     const [flows, setFlows] = useState([]);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [editingFlow, setEditingFlow] = useState(null);
@@ -14,13 +16,17 @@ export default function FlowBuilder() {
     const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
     useEffect(() => {
-        fetchFlows();
-    }, []);
+        if (session?.access_token) {
+            fetchFlows();
+        }
+    }, [session]);
 
     const fetchFlows = async () => {
         try {
             setLoading(true);
-            const res = await axios.get(`${API_URL}/api/flows`);
+            const res = await axios.get(`${API_URL}/api/flows`, {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            });
             setFlows(res.data);
         } catch (error) {
             console.error('Failed to fetch flows:', error);
@@ -42,7 +48,9 @@ export default function FlowBuilder() {
         };
 
         try {
-            const res = await axios.post(`${API_URL}/api/flows`, newFlow);
+            const res = await axios.post(`${API_URL}/api/flows`, newFlow, {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            });
             setFlows([res.data, ...flows]);
             setShowCreateModal(false);
             setNewFlowName('');
@@ -57,7 +65,9 @@ export default function FlowBuilder() {
     const handleDeleteFlow = async (id) => {
         if (confirm('Are you sure you want to delete this flow?')) {
             try {
-                await axios.delete(`${API_URL}/api/flows/${id}`);
+                await axios.delete(`${API_URL}/api/flows/${id}`, {
+                    headers: { 'Authorization': `Bearer ${session?.access_token}` }
+                });
                 setFlows(flows.filter(f => f.id !== id));
             } catch (error) {
                 console.error('Failed to delete flow', error);
@@ -75,7 +85,9 @@ export default function FlowBuilder() {
             edges: flow.edges,
         };
         try {
-            const res = await axios.post(`${API_URL}/api/flows`, duplicate);
+            const res = await axios.post(`${API_URL}/api/flows`, duplicate, {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            });
             setFlows([res.data, ...flows]);
         } catch (error) {
             console.error('Failed to duplicate flow', error);
@@ -85,7 +97,9 @@ export default function FlowBuilder() {
     const toggleFlowStatus = async (flow) => {
         const newStatus = flow.status === 'active' ? 'draft' : 'active';
         try {
-            const res = await axios.put(`${API_URL}/api/flows/${flow.id}`, { status: newStatus });
+            const res = await axios.put(`${API_URL}/api/flows/${flow.id}`, { status: newStatus }, {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            });
             setFlows(flows.map(f => f.id === flow.id ? res.data : f));
         } catch (error) {
             console.error('Failed to update status', error);

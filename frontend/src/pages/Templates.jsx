@@ -42,20 +42,31 @@ export default function Templates() {
     const [activeTab, setActiveTab] = useState('ALL') // ALL, MARKETING, UTILITY
     const [templates, setTemplates] = useState([])
     const [loading, setLoading] = useState(true)
+    const [hasConnectedAccount, setHasConnectedAccount] = useState(false)
 
-    const fetchTemplates = async () => {
+    const fetchData = async () => {
         try {
             const token = session?.access_token;
             if (!token) return;
 
-            const res = await fetch(`${API_URL}/api/whatsapp/templates`, {
+            // Check if account is connected
+            const accRes = await fetch(`${API_URL}/api/whatsapp/accounts`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            const data = await res.json();
-            if (res.ok) {
-                setTemplates(data || []);
+            if (accRes.ok) {
+                const accounts = await accRes.json();
+                setHasConnectedAccount(Array.isArray(accounts) && accounts.length > 0);
+            }
+
+            // Fetch templates
+            const tplRes = await fetch(`${API_URL}/api/whatsapp/templates`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const tplData = await tplRes.json();
+            if (tplRes.ok) {
+                setTemplates(tplData || []);
             } else {
-                console.error(data.error);
+                console.error(tplData.error);
             }
         } catch (error) {
             console.error(error);
@@ -65,8 +76,10 @@ export default function Templates() {
     }
 
     useEffect(() => {
-        fetchTemplates();
-    }, [])
+        if (session?.access_token) {
+            fetchData();
+        }
+    }, [session])
 
     const handleDelete = async (name, isDemo) => {
         if(isDemo) {
@@ -81,7 +94,7 @@ export default function Templates() {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
-                fetchTemplates();
+                fetchData();
             } else {
                 const data = await res.json();
                 alert(data.error || 'Failed to delete template');
@@ -125,7 +138,7 @@ export default function Templates() {
 
             {/* Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[...templates, ...DEMO_TEMPLATES].filter(t => activeTab === 'ALL' || t.category === activeTab).map((template) => (
+                {[...templates, ...(hasConnectedAccount ? [] : DEMO_TEMPLATES)].filter(t => activeTab === 'ALL' || t.category === activeTab).map((template) => (
                     <div 
                         key={template.id || template.name} 
                         onClick={() => setSelectedTemplate(template)}
@@ -192,7 +205,7 @@ export default function Templates() {
                 </button>
             </div>
 
-            <CreateTemplateModal isOpen={iscreateOpen} onClose={() => setIsCreateOpen(false)} onSuccess={fetchTemplates} />
+            <CreateTemplateModal isOpen={iscreateOpen} onClose={() => setIsCreateOpen(false)} onSuccess={fetchData} />
             <ViewTemplateModal template={selectedTemplate} onClose={() => setSelectedTemplate(null)} />
         </div>
     )
@@ -210,7 +223,7 @@ function ViewTemplateModal({ template, onClose }) {
         <Modal isOpen={!!template} onClose={onClose} title={`View Template: ${template.name}`} maxWidth="max-w-md">
             <div className="bg-gray-100 rounded-2xl p-4 flex flex-col items-center">
                 <div className="w-full h-full bg-[#E5DDD5] rounded-xl overflow-hidden shadow-inner flex flex-col p-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]">
-                    <div className="bg-white rounded-lg p-2 shadow-sm rounded-tr-none max-w-[90%] self-start relative">
+                    <div className="bg-white rounded-lg p-3 pb-6 pr-12 shadow-sm rounded-tr-none max-w-[90%] self-start relative">
                         {headerComp?.format === 'TEXT' && <p className="font-bold text-gray-800 text-sm mb-2">{headerComp.text}</p>}
                         {headerComp?.format === 'IMAGE' && (
                             <div className="h-32 bg-gray-200 rounded mb-2 flex flex-col items-center justify-center text-gray-400">
@@ -441,8 +454,17 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess }) {
                         />
                         <div className="flex justify-between items-center mt-1">
                             <button
+                                type="button"
                                 className="text-xs text-green-600 font-medium hover:underline"
-                                onClick={() => setData(prev => ({ ...prev, bodyText: prev.bodyText + ' {{1}}' }))}
+                                onClick={() => {
+                                    const matches = data.bodyText.match(/\{\{(\d+)\}\}/g);
+                                    let nextNum = 1;
+                                    if (matches) {
+                                        const nums = matches.map(m => parseInt(m.replace(/[^0-9]/g, '')));
+                                        nextNum = Math.max(...nums) + 1;
+                                    }
+                                    setData(prev => ({ ...prev, bodyText: prev.bodyText + (prev.bodyText ? ' ' : '') + `{{${nextNum}}}` }));
+                                }}
                             >
                                 + Add Variable
                             </button>
@@ -547,7 +569,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess }) {
                 {/* Right: Preview */}
                 <div className="w-[320px] bg-gray-100 rounded-2xl p-4 flex flex-col items-center">
                     <div className="w-full h-full bg-[#E5DDD5] rounded-xl overflow-hidden shadow-inner flex flex-col p-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]">
-                        <div className="bg-white rounded-lg p-2 shadow-sm rounded-tr-none max-w-[90%] self-start relative">
+                        <div className="bg-white rounded-lg p-3 pb-6 pr-12 shadow-sm rounded-tr-none max-w-[90%] self-start relative">
                             {/* Header Media */}
                             {data.headerType === 'TEXT' && data.headerText && (
                                 <p className="font-bold text-gray-800 text-sm mb-2">{data.headerText}</p>

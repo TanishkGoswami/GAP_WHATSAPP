@@ -9,6 +9,39 @@ export function AuthProvider({ children }) {
     const [user, setUser] = useState(null)
     const [session, setSession] = useState(null)
     const [loading, setLoading] = useState(true)
+    const [userRole, setUserRole] = useState(null)
+    const [memberProfile, setMemberProfile] = useState(null)
+    const [isProfileLoading, setIsProfileLoading] = useState(true)
+    const [loginType, setLoginType] = useState(localStorage.getItem('auth_login_type') || 'owner')
+
+    const fetchMemberProfile = async (token) => {
+        setIsProfileLoading(true)
+        try {
+            const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/my-profile`, {
+                headers: { 
+                    Authorization: `Bearer ${token}`,
+                    'X-Auth-Portal': loginType
+                }
+            })
+            if (res.ok) {
+                const data = await res.json()
+                // If loginType is owner, we prefer 'owner' role unless DB says otherwise
+                // But usually if they login via owner portal, we treat them as owner if profile is missing
+                const role = data?.role || (loginType === 'agent' ? 'agent' : 'owner')
+                console.log("Profile Data:", data, "Resolved Role:", role, "Login Type:", loginType)
+                setUserRole(role)
+                setMemberProfile(data)
+            } else {
+                // If profile not found, use loginType to decide default
+                setUserRole(loginType === 'agent' ? 'agent' : 'owner')
+            }
+        } catch (e) {
+            console.error("Failed to fetch member profile", e)
+            setUserRole(loginType === 'agent' ? 'agent' : 'owner')
+        } finally {
+            setIsProfileLoading(false)
+        }
+    }
 
     useEffect(() => {
         // Check active sessions and sets the user
@@ -28,18 +61,41 @@ export function AuthProvider({ children }) {
         return () => subscription.unsubscribe()
     }, [])
 
+    useEffect(() => {
+        if (session?.access_token) {
+            fetchMemberProfile(session.access_token)
+        } else {
+            setUserRole(null)
+            setMemberProfile(null)
+            setIsProfileLoading(false)
+        }
+    }, [session, loginType])
+
     const value = {
         signUp: (data) => supabase.auth.signUp(data),
-        signIn: (data) => supabase.auth.signInWithPassword(data),
+        signIn: async (data, type = 'owner') => {
+            setLoginType(type)
+            localStorage.setItem('auth_login_type', type)
+            return supabase.auth.signInWithPassword(data)
+        },
         signInWithGoogle: () => supabase.auth.signInWithOAuth({ 
             provider: 'google',
             options: {
                 redirectTo: `${window.location.origin}/dashboard`
             }
         }),
-        signOut: () => supabase.auth.signOut(),
+        signOut: () => {
+            setUserRole(null)
+            setMemberProfile(null)
+            localStorage.removeItem('auth_login_type')
+            return supabase.auth.signOut()
+        },
         user,
         session,
+        userRole,
+        memberProfile,
+        isProfileLoading,
+        loginType
     }
 
     return (

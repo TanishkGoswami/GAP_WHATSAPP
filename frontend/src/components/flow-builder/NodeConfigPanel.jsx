@@ -90,6 +90,10 @@ function renderConfigForm(nodeType, config, updateConfig) {
             return <LocationConfig config={config} updateConfig={updateConfig} />;
         case 'httpApi':
             return <HTTPAPIConfig config={config} updateConfig={updateConfig} />;
+        case 'template':
+            return <TemplateConfig config={config} updateConfig={updateConfig} />;
+        case 'interactive':
+            return <InteractiveListConfig config={config} updateConfig={updateConfig} />;
         default:
             return <DefaultConfig config={config} updateConfig={updateConfig} />;
     }
@@ -373,37 +377,208 @@ function ConditionConfig({ config, updateConfig }) {
 }
 
 function ButtonConfig({ config, updateConfig }) {
-    const buttons = config.buttons || [{ text: '', url: '' }, { text: '', url: '' }, { text: '', url: '' }];
+    const buttons = config.buttons || [
+        { text: '', type: 'reply', url: '' },
+        { text: '', type: 'reply', url: '' },
+        { text: '', type: 'reply', url: '' }
+    ];
 
     const updateButton = (index, field, value) => {
         const newButtons = [...buttons];
-        newButtons[index][field] = value;
+        newButtons[index] = { ...newButtons[index], [field]: value };
         updateConfig('buttons', newButtons);
+    };
+
+    const addButton = () => {
+        if (buttons.length < 3) {
+            updateConfig('buttons', [...buttons, { text: '', type: 'reply', url: '' }]);
+        }
+    };
+
+    const removeButton = (index) => {
+        updateConfig('buttons', buttons.filter((_, i) => i !== index));
     };
 
     return (
         <div className="space-y-4">
-            {buttons.map((button, index) => (
-                <div key={index} className="p-3 bg-gray-50 rounded-lg space-y-2">
-                    <label className="block text-xs font-medium text-gray-600">
-                        Button {index + 1}
-                    </label>
-                    <input
-                        type="text"
-                        value={button.text}
-                        onChange={(e) => updateButton(index, 'text', e.target.value)}
-                        placeholder="Button text"
-                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                    />
-                    <input
-                        type="url"
-                        value={button.url}
-                        onChange={(e) => updateButton(index, 'url', e.target.value)}
-                        placeholder="https://..."
-                        className="w-full px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                    />
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Header Message</label>
+                <textarea
+                    value={config.headerText || ''}
+                    onChange={(e) => updateConfig('headerText', e.target.value)}
+                    placeholder="Message shown above buttons..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    rows={3}
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Footer Text (Optional)</label>
+                <input
+                    type="text"
+                    value={config.footerText || ''}
+                    onChange={(e) => updateConfig('footerText', e.target.value)}
+                    placeholder="Footer message..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+            </div>
+
+            <div className="space-y-3">
+                <label className="block text-sm font-medium text-gray-700">Buttons (max 3)</label>
+                {buttons.map((button, index) => (
+                    <div key={index} className="p-3 bg-gray-50 rounded-lg border space-y-2">
+                        <div className="flex items-center justify-between">
+                            <label className="text-xs font-medium text-gray-600">Button {index + 1}</label>
+                            {buttons.length > 1 && (
+                                <button onClick={() => removeButton(index)} className="text-red-400 hover:text-red-600 text-xs">Remove</button>
+                            )}
+                        </div>
+
+                        <input
+                            type="text"
+                            value={button.text}
+                            onChange={(e) => updateButton(index, 'text', e.target.value)}
+                            placeholder="Button label (max 20 chars)"
+                            maxLength={20}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                        />
+
+                        <select
+                            value={button.type || 'reply'}
+                            onChange={(e) => updateButton(index, 'type', e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
+                        >
+                            <option value="reply">Quick Reply (next node se link hoga)</option>
+                            <option value="url">URL Open karo</option>
+                            <option value="phone">Phone Call</option>
+                        </select>
+
+                        {button.type === 'url' && (
+                            <input
+                                type="url"
+                                value={button.url || ''}
+                                onChange={(e) => updateButton(index, 'url', e.target.value)}
+                                placeholder="https://..."
+                                className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg"
+                            />
+                        )}
+                        {button.type === 'phone' && (
+                            <input
+                                type="text"
+                                value={button.phone || ''}
+                                onChange={(e) => updateButton(index, 'phone', e.target.value)}
+                                placeholder="+91XXXXXXXXXX"
+                                className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg"
+                            />
+                        )}
+                        {button.type === 'reply' && (
+                            <p className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                                Flow editor mein is button se next node connect karo
+                            </p>
+                        )}
+                    </div>
+                ))}
+
+                {buttons.length < 3 && (
+                    <button
+                        onClick={addButton}
+                        className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-green-400 hover:text-green-600"
+                    >
+                        + Add Button
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function TemplateConfig({ config, updateConfig }) {
+    const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+    const [templates, setTemplates] = useState([]);
+
+    useEffect(() => {
+        fetch(`${API_URL}/api/whatsapp/templates`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('sb-access-token')}` } // Fallback auth, you may want to adjust this
+        })
+        .then(r => r.json())
+        .then(data => setTemplates(Array.isArray(data) ? data : []))
+        .catch(() => setTemplates([]));
+    }, []);
+
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Template Select karo</label>
+                <select
+                    value={config.templateName || ''}
+                    onChange={(e) => {
+                        const selected = templates.find(t => t.name === e.target.value);
+                        updateConfig('templateName', e.target.value);
+                        updateConfig('language', selected?.language || 'en_US');
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                >
+                    <option value="">-- Template choose karo --</option>
+                    {templates.map(t => (
+                        <option key={t.name} value={t.name}>{t.name} ({t.status})</option>
+                    ))}
+                </select>
+            </div>
+
+            {config.templateName && (
+                <div className="p-3 bg-indigo-50 rounded-lg">
+                    <p className="text-xs text-indigo-600 font-medium">Selected: {config.templateName}</p>
+                    <p className="text-xs text-gray-500">Language: {config.language}</p>
                 </div>
-            ))}
+            )}
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Template Variables (optional)</label>
+                <textarea
+                    value={config.variables || ''}
+                    onChange={(e) => updateConfig('variables', e.target.value)}
+                    placeholder={'{"1": "John", "2": "Order #123"}'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono"
+                    rows={3}
+                />
+                <p className="text-xs text-gray-400 mt-1">JSON format mein variable values do</p>
+            </div>
+        </div>
+    );
+}
+
+function InteractiveListConfig({ config, updateConfig }) {
+    const items = config.items || [{ id: 'item1', title: '', description: '' }];
+
+    const updateItem = (index, field, value) => {
+        const newItems = [...items];
+        newItems[index] = { ...newItems[index], [field]: value };
+        updateConfig('items', newItems);
+    };
+
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Header Text</label>
+                <input type="text" value={config.headerText || ''} onChange={(e) => updateConfig('headerText', e.target.value)} placeholder="Choose an option:" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Button Label</label>
+                <input type="text" value={config.buttonLabel || ''} onChange={(e) => updateConfig('buttonLabel', e.target.value)} placeholder="View Options" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">List Items</label>
+                {items.map((item, idx) => (
+                    <div key={idx} className="p-3 bg-gray-50 rounded-lg space-y-2 mb-2">
+                        <input type="text" value={item.id} onChange={(e) => updateItem(idx, 'id', e.target.value)} placeholder="ID (e.g. opt1)" className="w-full px-2 py-1 border rounded text-xs font-mono" />
+                        <input type="text" value={item.title} onChange={(e) => updateItem(idx, 'title', e.target.value)} placeholder="Title" className="w-full px-2 py-1 border rounded text-sm" />
+                        <input type="text" value={item.description} onChange={(e) => updateItem(idx, 'description', e.target.value)} placeholder="Description (optional)" className="w-full px-2 py-1 border rounded text-sm" />
+                    </div>
+                ))}
+                <button onClick={() => updateConfig('items', [...items, { id: `item${items.length + 1}`, title: '', description: '' }])} className="w-full py-1.5 border-dashed border-2 border-gray-300 rounded text-sm text-gray-400 hover:text-teal-600">
+                    + Add Item
+                </button>
+            </div>
         </div>
     );
 }

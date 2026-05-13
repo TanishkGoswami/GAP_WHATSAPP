@@ -22,7 +22,9 @@ export default function WhatsAppConnect() {
     const [manualStatus, setManualStatus] = useState('idle'); // idle | validating | saving | saved | error
     const [manualError, setManualError] = useState(null);
 
-    useEffect(() => { fetchAccounts(); }, [user]);
+    useEffect(() => {
+        if (session?.access_token) fetchAccounts();
+    }, [session]);
 
     useEffect(() => {
         if (!window.FB) return;
@@ -41,12 +43,23 @@ export default function WhatsAppConnect() {
         setLoadingAccounts(true);
         try {
             const res = await fetch(`${API_URL}/api/whatsapp/accounts`, {
-                headers: { ...getAuthHeader() }
+                headers: { 'Content-Type': 'application/json', ...getAuthHeader() }
             });
+            if (res.status === 401) {
+                console.error('Auth failed fetching accounts — session may have expired');
+                setAccounts([]);
+                return;
+            }
             const data = await res.json();
-            if (Array.isArray(data)) setAccounts(data);
+            if (Array.isArray(data)) {
+                setAccounts(data);
+            } else {
+                console.error('Failed to load accounts:', data?.error || data);
+                setAccounts([]);
+            }
         } catch (err) {
             console.error('Failed to fetch accounts:', err);
+            setAccounts([]);
         } finally {
             setLoadingAccounts(false);
         }
@@ -75,7 +88,7 @@ export default function WhatsAppConnect() {
                 try {
                     const res = await fetch(`${API_URL}/api/wa/connect/callback`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
                         body: JSON.stringify({
                             code: response.authResponse.code,
                             organization_id: user?.user_metadata?.organization_id
@@ -120,7 +133,7 @@ export default function WhatsAppConnect() {
             setManualError(null);
             try {
                 const res = await fetch(
-                    `https://graph.facebook.com/v18.0/${businessAccountId}/phone_numbers?access_token=${encodeURIComponent(accessToken)}`
+                    `https://graph.facebook.com/v21.0/${businessAccountId}/phone_numbers?access_token=${encodeURIComponent(accessToken)}`
                 );
                 const data = await res.json();
                 if (data.error) throw new Error(data.error.message);
@@ -343,6 +356,8 @@ export default function WhatsAppConnect() {
 
                             <input
                                 type="text"
+                                name="wa_business_account_id_input_disable_autofill"
+                                autoComplete="off"
                                 placeholder="WhatsApp Business Account ID"
                                 value={manualCreds.businessAccountId}
                                 onChange={e => setManualCreds(p => ({ ...p, businessAccountId: e.target.value }))}
@@ -350,7 +365,9 @@ export default function WhatsAppConnect() {
                                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400 transition-all"
                             />
                             <input
-                                type="password"
+                                type="text"
+                                name="wa_access_token_input_disable_autofill"
+                                autoComplete="new-password"
                                 placeholder="Access Token"
                                 value={manualCreds.accessToken}
                                 onChange={e => setManualCreds(p => ({ ...p, accessToken: e.target.value }))}

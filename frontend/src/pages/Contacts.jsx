@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Filter, MoreHorizontal, Upload, Phone, Calendar, Tag, Edit2, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
+import { useAuth } from '../context/AuthContext'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
 
 export default function Contacts() {
-    const [contacts, setContacts] = useState([])
+    const { session } = useAuth()
     const [selectedContact, setSelectedContact] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [customNameDraft, setCustomNameDraft] = useState('')
-    const [isSavingName, setIsSavingName] = useState(false)
-    const [saveNameError, setSaveNameError] = useState('')
+
 
     const isHumanContact = (c) => {
         const waId = String(c?.wa_id || '').trim().toLowerCase()
@@ -25,24 +26,64 @@ export default function Contacts() {
         return true
     }
 
-    useEffect(() => {
-        const run = async () => {
-            try {
-                const res = await fetch(`${API_BASE}/contacts`)
-                if (!res.ok) {
-                    const body = await res.text().catch(() => '')
-                    console.error('Failed to fetch contacts:', res.status, body)
-                    return
-                }
-                const data = await res.json()
-                const rows = Array.isArray(data) ? data : []
-                setContacts(rows.filter(isHumanContact))
-            } catch (e) {
-                console.error('Failed to fetch contacts:', e)
+    const queryClient = useQueryClient()
+
+    const { data: contactsData = [], isLoading: loading, error: contactsError } = useQuery({
+        queryKey: ['contacts', session?.access_token],
+        queryFn: async () => {
+            if (!session?.access_token) return []
+            const res = await fetch(`${API_BASE}/contacts`, {
+                headers: { Authorization: `Bearer ${session.access_token}` }
+            })
+            if (!res.ok) {
+                const body = await res.text().catch(() => '')
+                throw new Error(`Failed to fetch contacts: ${res.status} ${body}`)
             }
-        }
-        run()
-    }, [])
+            const data = await res.json()
+            const rows = Array.isArray(data) ? data : []
+            return rows.filter(isHumanContact)
+        },
+        staleTime: 1000 * 60 * 5, // 5 min cache
+        enabled: !!session?.access_token
+    })
+
+    const contacts = contactsData;
+
+    const mutation = useMutation({
+        mutationFn: async (updatedContact) => {
+            if (!session?.access_token) return
+            const res = await fetch(`${API_BASE}/contacts/${updatedContact.id}`, {
+                method: 'PATCH',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                },
+                body: JSON.stringify({ custom_name: customNameDraft }),
+            })
+            if (!res.ok) {
+                const body = await res.text().catch(() => '')
+                throw new Error(body || `Failed to save (HTTP ${res.status})`)
+            }
+            return res.json()
+        },
+        onSuccess: (updated) => {
+            // Update the cache immediately
+            queryClient.setQueryData(['contacts', session?.access_token], (old) => {
+                return (old || []).map(c => c.id === updated.id ? { ...c, ...updated } : c)
+            })
+            setSelectedContact(prev => prev ? { ...prev, ...updated } : prev)
+            // Also invalidate to be sure
+            queryClient.invalidateQueries({ queryKey: ['contacts'] })
+        },
+    })
+
+    const saveCustomName = async () => {
+        if (!selectedContact?.id) return
+        mutation.mutate(selectedContact)
+    }
+
+    const isSavingName = mutation.isPending
+    const saveNameError = mutation.error?.message || ''
 
     const normalizeIndianPhoneKey = (value) => {
         const raw = String(value || '')
@@ -97,54 +138,49 @@ export default function Contacts() {
     const handleViewContact = (contact) => {
         setSelectedContact(contact);
         setCustomNameDraft(String(contact?.custom_name || ''))
-        setSaveNameError('')
         setShowProfileModal(true);
     };
 
-    const saveCustomName = async () => {
-        if (!selectedContact?.id) return
-        setIsSavingName(true)
-        setSaveNameError('')
-        try {
-            const res = await fetch(`${API_BASE}/contacts/${selectedContact.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ custom_name: customNameDraft }),
-            })
-            if (!res.ok) {
-                const body = await res.text().catch(() => '')
-                throw new Error(body || `Failed to save (HTTP ${res.status})`)
-            }
-            const updated = await res.json().catch(() => null)
-            if (updated) {
-                setSelectedContact(prev => prev ? { ...prev, ...updated } : prev)
-                setContacts(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c))
-            }
-        } catch (e) {
-            setSaveNameError(e?.message || 'Failed to save')
-        } finally {
-            setIsSavingName(false)
-        }
-    }
-
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="space-y-6">            {/* Page Header */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Contacts</h1>
-                    <p className="text-sm text-gray-500 mt-1">Manage your subscribers and leads ({contacts.length} total)</p>
+                    <p className="text-sm text-gray-500 mt-1">Manage your audience and customer data</p>
                 </div>
-                <div className="flex gap-2">
-                    <button className="inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors shadow-sm">
+                <div className="flex items-center gap-3">
+                    <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
                         <Upload className="h-4 w-4" />
-                        Import
+                        Import CSV
                     </button>
-                    <button className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm">
+                    <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 rounded-lg text-sm font-medium text-white hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100">
                         <Plus className="h-4 w-4" />
                         Add Contact
                     </button>
                 </div>
             </div>
+
+            {mutation.error && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-center gap-3">
+                    <span className="font-bold">Error:</span> {mutation.error.message}
+                </div>
+            )}
+
+            {/* Error State for Fetch */}
+            {contactsError && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                        <span className="font-bold">Failed to load contacts:</span>
+                        <span>{contactsError.message}</span>
+                    </div>
+                    <button 
+                        onClick={() => queryClient.invalidateQueries({ queryKey: ['contacts'] })}
+                        className="text-xs font-bold underline text-red-800 hover:text-red-900 w-fit"
+                    >
+                        Try Again
+                    </button>
+                </div>
+            )}
 
             {/* Filters & Search */}
             <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-col sm:flex-row gap-4">

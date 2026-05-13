@@ -18,6 +18,7 @@ import makeWASocket, {
     proto,
 } from "@whiskeysockets/baileys";
 import * as fs from "fs";
+import { sendEmail } from "./email";
 import pino from "pino";
 
 const app = express();
@@ -102,16 +103,109 @@ function decryptToken(stored: string): string {
 async function authMiddleware(req: any, res: any, next: any) {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-    if (!token) return res.status(401).json({ error: 'Unauthorized â€” missing token' });
+    if (!token) return res.status(401).json({ error: 'Unauthorized - missing token' });
 
-    if (!supabase) return res.status(503).json({ error: 'Service unavailable â€” Supabase not configured' });
+    if (!supabase) return res.status(503).json({ error: 'Service unavailable - Supabase not configured' });
 
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) return res.status(401).json({ error: 'Unauthorized â€” invalid or expired token' });
+    try {
+        const { data: { user }, error } = await supabase.auth.getUser(token);
+        if (error || !user) {
+            console.error("Supabase Auth Error:", error?.message || error);
+            return res.status(401).json({ error: 'Unauthorized - invalid or expired token' });
+        }
 
-    req.user = user;
-    req.organization_id = user.user_metadata?.organization_id || null;
-    next();
+        req.user = user;
+        
+        // Fetch member role and org
+        const { data: member } = await supabase
+            .from('organization_members')
+            .select('role, organization_id')
+            .eq('user_id', user.id)
+            .maybeSingle();
+        
+        // Resolve role and portal context
+
+        const portal = req.headers['x-auth-portal'] || 'owner';
+        const dbRole = member?.role;
+
+        if (portal === 'agent') {
+            // Force agent role if logging into agent portal
+            req.role = 'agent';
+        } else {
+            // Use actual database role or default to owner if no profile exists
+            req.role = dbRole || 'owner';
+        }
+
+        let orgId = member?.organization_id || user.user_metadata?.organization_id || null;
+
+        // AUTO-PROVISION: If no orgId found and user is an owner (or logging into owner portal)
+        if (!orgId && req.role !== 'agent') {
+            console.log(`[Auth] Auto-provisioning organization for: ${user.email}`);
+            try {
+                // Re-check for race condition
+                const { data: checkAgain } = await supabase
+                    .from('organization_members')
+                    .select('organization_id')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+
+                if (checkAgain?.organization_id) {
+                    orgId = checkAgain.organization_id;
+                } else {
+                    // 1. Create Organization
+                    const orgName = `${user.email.split('@')[0]}'s Workspace`;
+                    const { data: newOrg, error: orgErr } = await supabase
+                        .from('organizations')
+                        .insert({ 
+                            name: orgName,
+                            plan_id: 'starter',
+                            plan_status: 'trial',
+                            is_active: true
+                        })
+                        .select()
+                        .single();
+
+                    if (orgErr) throw orgErr;
+
+                    // 2. Create Member
+                    const { error: memberErr } = await supabase
+                        .from('organization_members')
+                        .insert({
+                            user_id: user.id,
+                            organization_id: newOrg.id,
+                            role: 'owner',
+                            name: user.user_metadata?.full_name || user.email.split('@')[0],
+                            email: user.email
+                        });
+
+                    if (memberErr) throw memberErr;
+
+                    // 3. Update User Metadata (Optional but helps)
+                    await supabase.auth.admin.updateUserById(user.id, {
+                        user_metadata: { ...user.user_metadata, organization_id: newOrg.id }
+                    });
+
+                    orgId = newOrg.id;
+                    console.log(`[Auth] Successfully provisioned org ${orgId} for ${user.email}`);
+                }
+            } catch (err: any) {
+                console.error(`[Auth] Provisioning failed for ${user.email}:`, err.message);
+                // Continue, might still fail 403 below
+            }
+        }
+        
+        if (!orgId) {
+            console.warn(`⚠️ User ${user.email} (${user.id}) has no organization_id.`);
+            return res.status(403).json({ error: 'Forbidden - User does not belong to any organization' });
+        }
+        
+        req.organization_id = orgId;
+        
+        next();
+    } catch (err: any) {
+        console.error("Auth Middleware Exception:", err.message);
+        return res.status(500).json({ error: 'Internal server error during authentication' });
+    }
 }
 
 function decodeSupabaseJwtRole(token: string | null | undefined): string | null {
@@ -148,72 +242,13 @@ function isAllZeroUuid(value: string) {
     return String(value).toLowerCase() === '00000000-0000-0000-0000-000000000000';
 }
 
-// For multi-org setup you should pass orgId from frontend/user auth.
-// In dev, DEFAULT_ORG_ID can be omitted and we auto-create an org named "Default".
-// If DEFAULT_ORG_ID is set to an invalid UUID or the all-zero placeholder, ignore it.
-const RAW_DEFAULT_ORG_ID = process.env.DEFAULT_ORG_ID || null;
-const DEFAULT_ORG_ID =
-    RAW_DEFAULT_ORG_ID && isUuid(RAW_DEFAULT_ORG_ID) && !isAllZeroUuid(RAW_DEFAULT_ORG_ID)
-        ? RAW_DEFAULT_ORG_ID
-        : null;
-
-if (RAW_DEFAULT_ORG_ID && !DEFAULT_ORG_ID) {
-    console.warn(
-        `âš ï¸ DEFAULT_ORG_ID is set but invalid/placeholder ('${RAW_DEFAULT_ORG_ID}'). ` +
-        `Ignoring it and using/creating the "Default" organization.`
-    );
-}
-
-// Runtime org fallback (dev convenience). If DEFAULT_ORG_ID isn't provided,
-// we auto-create (or reuse) an organization named "Default".
-let resolvedOrgId: string | null = DEFAULT_ORG_ID;
-let resolvingOrgPromise: Promise<string | null> | null = null;
+// ====== Global / Shared Constants ======
+const DEFAULT_ORG_ID = null;
+let resolvedOrgId: string | null = null;
 
 async function ensureDefaultOrganizationId(): Promise<string | null> {
-    if (resolvedOrgId) return resolvedOrgId;
-    if (!supabase) return null;
-    if (resolvingOrgPromise) return resolvingOrgPromise;
-
-    resolvingOrgPromise = (async () => {
-        try {
-            const { data: existing, error: findErr } = await supabase
-                .from('organizations')
-                .select('id')
-                .eq('name', 'Default')
-                .order('created_at', { ascending: true })
-                .limit(1)
-                .maybeSingle();
-
-            if (findErr) throw findErr;
-            if (existing?.id) {
-                resolvedOrgId = existing.id;
-                return resolvedOrgId;
-            }
-
-            const { data: created, error: createErr } = await supabase
-                .from('organizations')
-                .insert({ name: 'Default' })
-                .select('id')
-                .single();
-
-            if (createErr) throw createErr;
-
-            resolvedOrgId = created?.id || null;
-            console.log('âœ… Created default organization:', resolvedOrgId);
-            return resolvedOrgId;
-        } catch (err) {
-            console.error('âŒ Failed to ensure default organization:', err);
-            return null;
-        } finally {
-            resolvingOrgPromise = null;
-        }
-    })();
-
-    return resolvingOrgPromise;
+    return null;
 }
-
-// Fire-and-forget bootstrap on startup
-ensureDefaultOrganizationId().catch(() => undefined);
 
 function normalizeWaIdToPhone(value: string | null | undefined): string | null {
     if (!value) return null;
@@ -552,6 +587,59 @@ async function sendTextMessage(to: string, body: string, phone_number_id: string
     return data;
 }
 
+async function sendInteractiveButtons(to: string, body: string, buttons: any[], footer: string = '', phone_number_id: string | null = null) {
+    let token = ACCESS_TOKEN;
+    let fromId = PHONE_NUMBER_ID;
+
+    if (phone_number_id && supabase) {
+        const { data } = await supabase.from('w_wa_accounts').select('access_token_encrypted').eq('phone_number_id', phone_number_id).single();
+        if (data?.access_token_encrypted) {
+            token = decryptToken(data.access_token_encrypted);
+            fromId = phone_number_id;
+        }
+    }
+
+    if (!fromId || !token) throw new Error("Missing WA creds for send");
+
+    const url = `https://graph.facebook.com/v21.0/${fromId}/messages`;
+
+    const payload = {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "interactive",
+        interactive: {
+            type: "button",
+            body: { text: body },
+            footer: footer ? { text: footer } : undefined,
+            action: {
+                buttons: buttons.map(b => ({
+                    type: "reply",
+                    reply: {
+                        id: b.id,
+                        title: b.text.substring(0, 20) // WhatsApp limit
+                    }
+                }))
+            }
+        }
+    };
+
+    const r = await fetch(url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+    });
+
+    const data = await r.json();
+    if (!r.ok) {
+        throw new Error(`Interactive send failed: ${JSON.stringify(data)}`);
+    }
+    return data;
+}
+
 // ====== Connect WhatsApp Flow (Embedded Signup) ======
 // 1. Start: Returns the URL to pop up
 app.get("/api/wa/connect/start", (req, res) => {
@@ -634,7 +722,7 @@ app.post("/api/wa/connect/callback", async (req, res) => {
                     // Insert or Update in wa_accounts
                     const { data, error } = await supabase.from('w_wa_accounts').upsert({
                         organization_id: organization_id || DEFAULT_ORG_ID,
-                        waba_id: currentWabaId,
+                        whatsapp_business_account_id: currentWabaId,
                         phone_number_id,
                         display_phone_number,
                         access_token_encrypted: encryptToken(finalToken),
@@ -796,7 +884,7 @@ async function upsertContact(organization_id: string, wa_account_id: string, wa_
             }
         }
 
-        io.emit('contact_updated', { contact: updated });
+        io.to(`org:${organization_id}`).emit('contact_updated', { contact: updated });
         return updated;
     }
 
@@ -822,8 +910,101 @@ async function upsertContact(organization_id: string, wa_account_id: string, wa_
         .single();
 
     if (insErr) throw insErr;
-    io.emit('contact_updated', { contact: inserted });
+    io.to(`org:${organization_id}`).emit('contact_updated', { contact: inserted });
     return inserted;
+}
+
+// ====== Helper: Auto Assign Conversation ======
+async function performAutoAssignment(organization_id: string, conversation_id: string) {
+    try {
+        // 1. Fetch organization settings
+        const { data: org, error: orgErr } = await supabase
+            .from('organizations')
+            .select('settings')
+            .eq('id', organization_id)
+            .single();
+
+        if (orgErr || !org?.settings?.auto_assign?.enabled) return;
+
+        const config = org.settings.auto_assign;
+        const batchSize = Math.max(1, config.batch_size || 1);
+        const pausedAgents = config.paused_agents || [];
+        let state = config.state || { last_agent_id: null, current_batch_count: 0 };
+
+        // 2. Fetch eligible agents
+        const { data: members, error: memErr } = await supabase
+            .from('organization_members')
+            .select('user_id')
+            .eq('organization_id', organization_id)
+            .in('role', ['agent', 'owner', 'admin'])
+            .eq('is_active', true);
+        
+        if (memErr || !members || members.length === 0) return;
+
+        const eligibleAgents = members
+            .map((m: any) => m.user_id)
+            .filter((id: string) => !pausedAgents.includes(id));
+
+        if (eligibleAgents.length === 0) return;
+
+        // 3. Determine next agent
+        let nextAgentId = eligibleAgents[0];
+        let newBatchCount = 1;
+
+        if (state.last_agent_id && eligibleAgents.includes(state.last_agent_id)) {
+            if (state.current_batch_count < batchSize) {
+                // Keep assigning to the same agent
+                nextAgentId = state.last_agent_id;
+                newBatchCount = state.current_batch_count + 1;
+            } else {
+                // Move to next agent
+                const currentIndex = eligibleAgents.indexOf(state.last_agent_id);
+                const nextIndex = (currentIndex + 1) % eligibleAgents.length;
+                nextAgentId = eligibleAgents[nextIndex];
+                newBatchCount = 1;
+            }
+        } else {
+            // Last agent not found or no state, start fresh with first eligible
+            nextAgentId = eligibleAgents[0];
+            newBatchCount = 1;
+        }
+
+        // 4. Update the conversation
+        const { data: updatedConv, error: updErr } = await supabase
+            .from('w_conversations')
+            .update({ assigned_agent_id: nextAgentId })
+            .eq('id', conversation_id)
+            .select('assigned_agent_id')
+            .single();
+        
+        if (updErr) throw updErr;
+
+        // Fetch agent name
+        const { data: agentData } = await supabase.from('organization_members').select('name').eq('user_id', nextAgentId).single();
+
+        // Broadcast update
+        io.to(`org:${organization_id}`).emit('conversation_updated', {
+            id: conversation_id,
+            assigned_agent_id: nextAgentId,
+            assigned_agent_name: agentData?.name || null
+        });
+
+        // 5. Update state in organization settings
+        const newAutoAssign = {
+            ...config,
+            state: { last_agent_id: nextAgentId, current_batch_count: newBatchCount }
+        };
+
+        await supabase
+            .from('organizations')
+            .update({ settings: { ...org.settings, auto_assign: newAutoAssign } })
+            .eq('id', organization_id);
+
+        console.log(`[Auto Assign] Assigned conversation ${conversation_id} to agent ${nextAgentId} (Count: ${newBatchCount}/${batchSize})`);
+
+    } catch (e) {
+        console.error('[Auto Assign Error]', e);
+    }
 }
 
 // ====== Helper: upsert conversation ======
@@ -862,14 +1043,35 @@ async function upsertConversation(organization_id: string, wa_account_id: string
         status: 'open'
     };
 
-    const { data, error } = await supabase
-        .from('w_conversations')
-        .upsert(payload, { onConflict: 'organization_id,wa_account_id,contact_id' })
-        .select()
-        .single();
+    if (existing) {
+        const { data, error } = await supabase
+            .from('w_conversations')
+            .update(payload)
+            .eq('id', existing.id)
+            .select()
+            .single();
+        if (error) console.error("Conversation Update Error:", error);
 
-    if (error) console.error("Conversation Upsert Error:", error);
-    return data;
+        if (data && !data.assigned_agent_id && lastMessageOpts.direction === 'inbound') {
+            // Run asynchronously to avoid blocking
+            performAutoAssignment(organization_id, data.id).catch(console.error);
+        }
+
+        return data;
+    } else {
+        const { data, error } = await supabase
+            .from('w_conversations')
+            .insert(payload)
+            .select()
+            .single();
+        if (error) console.error("Conversation Insert Error:", error);
+
+        if (data && lastMessageOpts.direction === 'inbound') {
+            performAutoAssignment(organization_id, data.id).catch(console.error);
+        }
+
+        return data;
+    }
 }
 
 // ====== Helper: store message ======
@@ -1092,7 +1294,7 @@ async function getBotAgentReply(params: {
 }
 
 // ====== Helper: Process Flow Engine ======
-async function processFlowEngine(organization_id: string, contact_id: string, conversation_id: string, text: string): Promise<{consumed: boolean, output: string | null}> {
+async function processFlowEngine(organization_id: string, contact_id: string, conversation_id: string, text: string): Promise<{consumed: boolean, output: string | null, interactive?: any}> {
     const normalized = text.toLowerCase().trim();
 
     // 0. Respect Bot Toggle
@@ -1111,11 +1313,13 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
     let currentFlowId = null;
     let currentNodeId = null;
     let session_id = null;
+    let isResuming = false;
 
     if (session) {
         currentFlowId = session.flow_id;
         currentNodeId = session.current_node_id;
         session_id = session.id;
+        isResuming = true;
     } else {
         // 2. Check for trigger matches in active flows
         const { data: activeFlows } = await supabase
@@ -1126,8 +1330,16 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
 
         let matchedFlow = null;
         for (const flow of activeFlows || []) {
-            const triggers = flow.triggers || [];
-            if (triggers.some((t: string) => normalized.includes(t.toLowerCase()))) {
+            // Check flow-level triggers AND startBotFlow node keywords
+            const flowTriggers = flow.triggers || [];
+            const nodes = flow.nodes || [];
+            const startNode = nodes.find((n: any) => n.type === 'startBotFlow');
+            const nodeTriggers = startNode?.data?.config?.keywords
+                ? String(startNode.data.config.keywords).split(',').map((k: string) => k.trim()).filter(Boolean)
+                : [];
+            const allTriggers = [...new Set([...flowTriggers, ...nodeTriggers])];
+
+            if (allTriggers.some((t: string) => normalized.includes(t.toLowerCase()))) {
                 matchedFlow = flow;
                 break;
             }
@@ -1143,88 +1355,245 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
 
         currentNodeId = startNode.id;
 
-        // Create new session
+        // Create or find active session
         const { data: newSession, error: sessErr } = await supabase
             .from('w_flow_sessions')
-            .upsert({
-                organization_id, contact_id, flow_id: currentFlowId,
-                current_node_id: currentNodeId, status: 'active'
-            }, { onConflict: 'organization_id,contact_id' })
-            .select().single();
-            
-        if (!sessErr && newSession) session_id = newSession.id;
+            .insert({
+                organization_id,
+                contact_id,
+                flow_id: currentFlowId,
+                current_node_id: currentNodeId,
+                status: 'active',
+                state_data: {}
+            })
+            .select()
+            .single();
+
+        if (sessErr) {
+            console.error('Session create error:', sessErr);
+            // Agar duplicate error hai toh existing session use karo
+            if (sessErr.code === '23505') {
+                const { data: existingSession } = await supabase
+                    .from('w_flow_sessions')
+                    .select('*')
+                    .eq('organization_id', organization_id)
+                    .eq('contact_id', contact_id)
+                    .eq('status', 'active')
+                    .maybeSingle();
+                if (existingSession) {
+                    currentFlowId = existingSession.flow_id;
+                    currentNodeId = existingSession.current_node_id;
+                    session_id = existingSession.id;
+                    isResuming = true;
+                }
+            }
+        } else if (newSession) {
+            session_id = newSession.id;
+        }
+
+        console.log(`🆕 New flow session created: ${session_id}, starting at node: ${currentNodeId}`);
     }
 
-    if (!currentFlowId || !currentNodeId) return { consumed: false, output: null };
+    if (!currentFlowId || !currentNodeId || !session_id) {
+        return { consumed: false, output: null };
+    }
 
-    // Execute Flow steps
-    const { data: flow } = await supabase.from('w_flows').select('nodes, edges').eq('id', currentFlowId).single();
-    if (!flow) return { consumed: true, output: null };
+    // Flow data load karo
+    const { data: flowData } = await supabase
+        .from('w_flows')
+        .select('nodes, edges')
+        .eq('id', currentFlowId)
+        .single();
 
-    const nodes = flow.nodes || [];
-    const edges = flow.edges || [];
+    if (!flowData) return { consumed: true, output: null };
 
-    let activeNode = nodes.find((n: any) => n.id === currentNodeId);
-    let outputText = [];
-    
-    // Safety break for loop
-    let steps = 0;
-    while (activeNode && steps < 10) {
-        steps++;
-        
-        // If it's a message node, collect text
-        if (activeNode.type === 'textMessage' && activeNode.data?.config?.text) {
-            outputText.push(activeNode.data.config.text);
-        } else if (activeNode.type === 'button') {
-            const body = activeNode.data?.config?.text || 'Options:';
-            const btns = (activeNode.data?.config?.buttons || []).map((b: any, i:number) => `${i+1}. ${b.text}`).join('\n');
-            outputText.push(`${body}\n${btns}`);
-            // Wait for user input
-            await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
-            return { consumed: true, output: outputText.join('\n\n') };
-        } else if (activeNode.type === 'userInput') {
-            const q = activeNode.data?.config?.question || 'Please reply:';
-            outputText.push(q);
-            await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
-            return { consumed: true, output: outputText.join('\n\n') };
-        }
+    const nodes: any[] = flowData.nodes || [];
+    const edges: any[] = flowData.edges || [];
 
-        // Advance to next node
-        let nextEdge = null;
-        if (session && steps === 1) {
-            // Evaluated response from user
-            const outEdges = edges.filter((e: any) => e.source === activeNode.id);
+    // ----------------------------------------------------------------
+    // RESUMING: User ne button click kiya ya kuch type kiya
+    // Pehle current node ke edges check karo aur next node pe jao
+    // ----------------------------------------------------------------
+    if (isResuming) {
+        const currentNode = nodes.find((n: any) => n.id === currentNodeId);
+
+        if (currentNode?.type === 'button' || currentNode?.type === 'userInput') {
+            // User ka response match karo outgoing edges se
+            const outEdges = edges.filter((e: any) => e.source === currentNodeId);
+            let nextEdge: any = null;
+
             if (outEdges.length === 1) {
                 nextEdge = outEdges[0];
-            } else {
-                nextEdge = outEdges.find((e: any) => e.sourceHandle === normalized || e.label?.toLowerCase() === normalized) || outEdges[0];
+            } else if (outEdges.length > 1) {
+                // Button ID, title, ya label se match karo
+                nextEdge = outEdges.find((e: any) => {
+                    const handle = (e.sourceHandle || '').toLowerCase();
+                    const label = (e.label || '').toLowerCase();
+                    return handle === normalized || label === normalized || normalized.includes(handle);
+                }) || outEdges.find((e: any) => {
+                    // Fallback to sourceHandle comparison if label fails
+                    return e.sourceHandle && normalized.includes(e.sourceHandle.toLowerCase());
+                }) || outEdges[0]; // fallback: pehla edge
             }
-        } else {
-            // Automatic advance without user input
-            nextEdge = edges.find((e: any) => e.source === activeNode.id);
+
+            if (nextEdge) {
+                currentNodeId = nextEdge.target;
+                await supabase
+                    .from('w_flow_sessions')
+                    .update({ current_node_id: currentNodeId })
+                    .eq('id', session_id);
+                console.log(`➡️ Advancing to node: ${currentNodeId}`);
+            } else {
+                // Koi edge nahi — flow complete
+                await supabase.from('w_flow_sessions').update({ status: 'completed' }).eq('id', session_id);
+                return { consumed: true, output: null };
+            }
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // Node execution loop — current node se chalo
+    // ----------------------------------------------------------------
+    let activeNode = nodes.find((n: any) => n.id === currentNodeId);
+    const outputText: string[] = [];
+    let steps = 0;
+
+    while (activeNode && steps < 15) {
+        steps++;
+        const nodeType = activeNode.type;
+        const config = activeNode.data?.config || {};
+
+        console.log(`⚙️ Executing node: ${nodeType} (${activeNode.id})`);
+
+        // --- TEXT MESSAGE ---
+        if (nodeType === 'textMessage') {
+            const msg = config.message || config.text || activeNode.data?.label || '';
+            if (msg) outputText.push(msg);
         }
 
+        // --- BUTTON NODE ---
+        else if (nodeType === 'button') {
+            const body = config.text || config.headerText || 'Choose an option:';
+            const footer = config.footerText || '';
+            const buttons = (config.buttons || [])
+                .filter((b: any) => b.text)
+                .slice(0, 3);
+
+            // Session mein current_node_id save karo — next message yahan se resume hoga
+            await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
+
+            if (buttons.length > 0) {
+                return {
+                    consumed: true,
+                    output: outputText.length > 0 ? outputText.join('\n\n') : null,
+                    interactive: {
+                        type: 'button',
+                        body,
+                        footer,
+                        buttons: buttons.map((b: any) => ({
+                            id: b.id || b.text,
+                            text: b.text
+                        }))
+                    }
+                };
+            } else {
+                // Buttons nahi hain toh text fallback
+                outputText.push(body);
+                return { consumed: true, output: outputText.join('\n\n') };
+            }
+        }
+
+        // --- USER INPUT NODE ---
+        else if (nodeType === 'userInput') {
+            const question = config.question || config.text || 'Please reply:';
+            outputText.push(question);
+            // Session save karo
+            await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
+            return { consumed: true, output: outputText.join('\n\n') };
+        }
+
+        // --- CONDITION NODE ---
+        else if (nodeType === 'condition') {
+            const variable = (config.variable || '').toLowerCase();
+            const operator = config.operator || 'contains';
+            const value = (config.value || '').toLowerCase();
+
+            let conditionMet = false;
+            if (operator === 'contains') conditionMet = normalized.includes(value);
+            else if (operator === 'equals') conditionMet = normalized === value;
+            else if (operator === 'starts_with') conditionMet = normalized.startsWith(value);
+            else if (operator === 'ends_with') conditionMet = normalized.endsWith(value);
+            else conditionMet = true;
+
+            // Condition ke hisaab se sahi edge dhundo
+            const outEdges = edges.filter((e: any) => e.source === activeNode.id);
+            const matchEdge = outEdges.find((e: any) => {
+                const h = (e.sourceHandle || '').toLowerCase();
+                return conditionMet ? (h === 'yes' || h === 'true') : (h === 'no' || h === 'false');
+            }) || outEdges[0];
+
+            if (matchEdge) {
+                activeNode = nodes.find((n: any) => n.id === matchEdge.target);
+                continue;
+            } else {
+                break;
+            }
+        }
+
+        // --- MEDIA NODES (image, video, audio, file) ---
+        else if (['image', 'video', 'audio', 'file'].includes(nodeType)) {
+            const url = config.url || config.mediaUrl || '';
+            const caption = config.caption || '';
+            if (url) {
+                outputText.push(caption ? `${caption}\n${url}` : url);
+            }
+        }
+
+        // --- LOCATION NODE ---
+        else if (nodeType === 'location') {
+            const lat = config.latitude;
+            const lng = config.longitude;
+            const name = config.name || '';
+            if (lat && lng) {
+                outputText.push(`📍 ${name}\nhttps://maps.google.com/?q=${lat},${lng}`);
+            }
+        }
+
+        // --- TEMPLATE NODE ---
+        else if (nodeType === 'template') {
+            const tplName = config.templateName;
+            if (tplName) outputText.push(`[Template: ${tplName}]`);
+        }
+
+        // --- AI NODE (basic fallback) ---
+        else if (nodeType === 'ai') {
+            const prompt = config.prompt || config.systemPrompt || '';
+            if (prompt) outputText.push(`[AI: ${prompt.substring(0, 50)}...]`);
+        }
+
+        // Automatic advance — next edge dhundo
+        const nextEdge = edges.find((e: any) => e.source === activeNode.id);
         if (nextEdge) {
             activeNode = nodes.find((n: any) => n.id === nextEdge.target);
-            // If we just traversed into a new Wait node dynamically, don't execute it, let the next while loop iteration execute it and pause
         } else {
-            // End of flow
+            // Flow khatam
             await supabase.from('w_flow_sessions').update({ status: 'completed' }).eq('id', session_id);
+            console.log(`✅ Flow completed for session ${session_id}`);
             activeNode = null;
         }
     }
 
-    return { 
-        consumed: true, 
-        output: outputText.length > 0 ? outputText.join('\n\n') : null 
+    return {
+        consumed: true,
+        output: outputText.length > 0 ? outputText.join('\n\n') : null
     };
 }
 
 // ====== API Endpoints ======
 
-app.get("/api/dashboard-stats", async (req, res) => {
+app.get("/api/dashboard-stats", authMiddleware, async (req: any, res) => {
     try {
-        const organization_id = await ensureDefaultOrganizationId();
+        const organization_id = req.organization_id;
         
         // 1. Total Messages (lifetime)
         const { count: totalMessages, error: e1 } = await supabase
@@ -1307,35 +1676,30 @@ app.delete("/api/flow-sessions/:id", async (req, res) => {
         res.json({ success: true });
     } catch(err: any) { res.status(500).json({ error: err.message }); }
 });
-app.get("/api/conversations", async (req, res) => {
-    // In a real app, use the authenticated user's organization_id
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
-    const wa_account_id = req.query.wa_account_id as string; // Optional filter
-    const user_id = req.query.user_id as string; // Current agent's ID
 
-    // If still missing, fall back to returning conversations across orgs (dev mode).
+app.get("/api/conversations", authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+    const wa_account_id = req.query.wa_account_id as string; // Optional filter
+    const user_id = req.user.id;
+    const user_role = req.role;
+
     if (!organization_id) {
-        console.warn("âš ï¸ No organization_id resolved; returning conversations without org filter (dev mode)");
+        return res.status(403).json({ error: 'No organization linked to this account' });
     }
 
     try {
-        const baseQuery = supabase
+        let query = supabase
             .from('w_conversations')
             .select(`
                 *,
-                contact:contacts(id, name, custom_name, phone, wa_id, wa_key, created_at, tags)
+                contact:w_contacts(id, name, custom_name, phone, wa_id, wa_key, created_at, tags)
             `)
+            .eq("organization_id", organization_id)
             .order("last_message_at", { ascending: false });
 
-        let query = baseQuery;
-
-        // Only hard-filter by organization_id when the client explicitly asked for it.
-        // Using a stale DEFAULT_ORG_ID is a common dev misconfig and makes the UI look empty.
-        if (requestedOrgId) {
-            query = query.eq("organization_id", requestedOrgId);
-        } else if (organization_id) {
-            query = query.eq("organization_id", organization_id);
+        // ROLE BASED FILTERING (Step 2G)
+        if (user_role === 'agent') {
+            query = query.eq('assigned_to', user_id);
         }
 
         if (wa_account_id && wa_account_id !== 'All') {
@@ -1375,7 +1739,7 @@ app.get("/api/conversations", async (req, res) => {
                     // Dev-friendly behavior: conversations may exist even if wa_accounts was never bootstrapped.
                     // In that case, don't blank the inbox; just skip the account filter.
                     console.warn(
-                        `âš ï¸ wa_account_id filter '${wa_account_id}' could not be resolved to a wa_accounts.id. ` +
+                        `⚠️ wa_account_id filter '${wa_account_id}' could not be resolved to a wa_accounts.id. ` +
                         `Skipping account filter (dev mode).`
                     );
                 }
@@ -1384,18 +1748,6 @@ app.get("/api/conversations", async (req, res) => {
 
         let { data: conversations, error } = await query;
         if (error) throw error;
-
-        // Dev safety: if we filtered by resolvedOrgId (not explicitly requested) and got nothing,
-        // retry without org filter so chats stored under a different org still show up.
-        if (!requestedOrgId && organization_id && (conversations?.length || 0) === 0) {
-            console.warn(
-                `âš ï¸ No conversations found for organization_id=${organization_id}. ` +
-                `Retrying without org filter (dev mode).`
-            );
-            const retry = await baseQuery;
-            conversations = retry.data;
-            if (retry.error) throw retry.error;
-        }
 
         // Fetch Read States for this user
         let readStatesMap = new Map();
@@ -1424,7 +1776,7 @@ app.get("/api/conversations", async (req, res) => {
                 .neq('status', 'read');
 
             if (unreadErr) {
-                console.warn('âš ï¸ Failed to compute unread counts:', unreadErr.message || unreadErr);
+                console.warn('⚠️ Failed to compute unread counts:', unreadErr.message || unreadErr);
             } else if (Array.isArray(unreadRows)) {
                 for (const row of unreadRows) {
                     const cid = (row as any)?.conversation_id;
@@ -1469,36 +1821,27 @@ app.get("/api/conversations", async (req, res) => {
     }
 });
 
-app.get('/api/contacts', async (req, res) => {
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+app.get('/api/contacts', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
     const includeGroups = req.query.include_groups === 'true';
+    
+    if (!organization_id) {
+        return res.status(403).json({ error: 'No organization linked to this account' });
+    }
+
     try {
-        let baseQuery = supabase
+        let query = supabase
             .from('w_contacts')
             .select('id, name, custom_name, phone, wa_id, wa_key, tags, created_at, last_active, contact_type')
+            .eq('organization_id', organization_id)
             .order('created_at', { ascending: false });
 
         // By default, only show individual w_contacts (not groups/channels)
         if (!includeGroups) {
-            baseQuery = baseQuery.or('contact_type.eq.individual,contact_type.is.null');
-
+            query = query.or('contact_type.eq.individual,contact_type.is.null');
         }
-
-        let query = baseQuery;
-        if (requestedOrgId) query = query.eq('organization_id', requestedOrgId);
-        else if (organization_id) query = query.eq('organization_id', organization_id);
 
         let { data, error } = await query;
-        if (!requestedOrgId && organization_id && !error && (data?.length || 0) === 0) {
-            console.warn(
-                `âš ï¸ No contacts found for organization_id=${organization_id}. ` +
-                `Retrying without org filter (dev mode).`
-            );
-            const retry = await baseQuery;
-            data = retry.data;
-            error = retry.error;
-        }
         if (error) throw error;
 
         const rows = (data || []).map((c: any) => {
@@ -1521,10 +1864,9 @@ app.get('/api/contacts', async (req, res) => {
     }
 });
 
-app.patch('/api/contacts/:id', async (req, res) => {
+app.patch('/api/contacts/:id', authMiddleware, async (req: any, res) => {
     const contactId = req.params.id;
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || resolvedOrgId;
+    const organization_id = req.organization_id;
 
     try {
         if (!organization_id) {
@@ -1572,6 +1914,240 @@ app.patch('/api/contacts/:id', async (req, res) => {
     }
 });
 
+// ====== Team Management APIs ======
+
+// 2A. GET /api/team/members — All team members fetch karo
+app.get('/api/team/members', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    try {
+        const { data, error } = await supabase
+            .from('organization_members')
+            .select('*')
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: true });
+        
+        if (error) throw error;
+        res.json(data || []);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2B. POST /api/team/invite — Naya agent invite karo
+app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { email, name, role, password } = req.body;
+
+    if (!email || !name || !password) return res.status(400).json({ error: 'Email, name and password are required' });
+
+    try {
+        // 1. Check if user already member
+        const { data: existing } = await supabase
+            .from('organization_members')
+            .select('id')
+            .eq('organization_id', orgId)
+            .eq('email', email)
+            .maybeSingle();
+
+        if (existing) return res.status(400).json({ error: 'Member already exists' });
+
+        // 2. Create user via Supabase Admin (Requires service_role key)
+        let userId: string;
+        const { data: inviteData, error: inviteErr } = await supabase.auth.admin.createUser({
+            email,
+            password,
+            email_confirm: true,
+            user_metadata: { organization_id: orgId, role, name }
+        });
+
+        if (inviteErr) {
+            // If user already exists, we might get an error. Try to find the user instead.
+            if (inviteErr.message.includes('already been registered') || inviteErr.status === 422) {
+                let page = 1;
+                let existingUser;
+                while (true) {
+                    const { data: users, error: listErr } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+                    if (listErr) throw listErr;
+                    if (!users?.users?.length) break;
+                    
+                    existingUser = users.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
+                    if (existingUser) break;
+                    
+                    if (users.users.length < 1000) break;
+                    page++;
+                }
+
+                if (!existingUser) throw new Error('User already registered but could not be found');
+                userId = existingUser.id;
+            } else {
+                throw inviteErr;
+            }
+        } else {
+            userId = inviteData.user.id;
+        }
+
+        // 3. Insert into organization_members
+        const { error: insertErr } = await supabase
+            .from('organization_members')
+            .insert({
+                organization_id: orgId,
+                user_id: userId,
+                email,
+                name,
+                role: role || 'agent',
+                is_active: true
+            });
+
+        if (insertErr) throw insertErr;
+
+        // 4. Send custom invitation email
+        try {
+            // Fix: Only use FRONTEND_URL or localhost for frontend links, NOT the backend's PUBLIC_BASE_URL
+            const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+            const loginLink = `${baseUrl}/agent-login`;
+            await sendEmail(
+                email,
+                `Invitation to join FlowsApp Team`,
+                `
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+                    <h2 style="color: #25D366;">You've been invited!</h2>
+                    <p>Hello <strong>${name}</strong>,</p>
+                    <p>You have been invited to join the <strong>FlowsApp</strong> team as an <strong>${role || 'agent'}</strong>.</p>
+                    <p>As a team member, you'll be able to manage WhatsApp chats and help automate customer interactions.</p>
+                    
+                    <div style="background-color: #f9f9f9; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                        <h3 style="margin-top: 0;">Your Login Credentials:</h3>
+                        <p><strong>Login URL:</strong> <a href="${loginLink}">${loginLink}</a></p>
+                        <p><strong>Email ID:</strong> ${email}</p>
+                        <p><strong>Password:</strong> ${password}</p>
+                    </div>
+
+                    <div style="margin: 30px 0;">
+                        <a href="${loginLink}" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Go to Login Page</a>
+                    </div>
+                    <p style="color: #666; font-size: 14px;">If you already have an account, your existing password will continue to work.</p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    <p style="color: #999; font-size: 12px;">This invitation was sent from the FlowsApp Dashboard.</p>
+                </div>
+                `
+            );
+        } catch (mailErr) {
+            console.error("Failed to send invitation email:", mailErr);
+            // We don't throw here so the user is still created/invited in the DB
+        }
+
+        res.json({ success: true, message: 'Member invited successfully and email sent' });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2C. PATCH /api/team/members/:id — Role/Status update karo
+app.patch('/api/team/members/:id', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+    const { role, is_active, name } = req.body;
+
+    try {
+        const { error } = await supabase
+            .from('organization_members')
+            .update({ role, is_active, name })
+            .eq('id', id)
+            .eq('organization_id', orgId);
+
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2D. DELETE /api/team/members/:id — Member remove karo
+app.delete('/api/team/members/:id', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        // Find the user_id of the member to delete their auth account
+        const { data: member } = await supabase
+            .from('organization_members')
+            .select('user_id')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .single();
+
+        if (member && member.user_id) {
+            // Delete user from auth to completely revoke access
+            await supabase.auth.admin.deleteUser(member.user_id);
+        }
+
+        const { error } = await supabase
+            .from('organization_members')
+            .delete()
+            .eq('id', id)
+            .eq('organization_id', orgId);
+
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2E. GET /api/team/my-profile — Current agent ka profile
+app.get('/api/team/my-profile', authMiddleware, async (req: any, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('organization_members')
+            .select('*')
+            .eq('user_id', req.user.id)
+            .maybeSingle();
+
+        if (error) throw error;
+        res.json(data);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 2F. PATCH /api/conversations/:id/assign — Chat assign karo agent ko
+app.patch('/api/conversations/:id/assign', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+    const { agent_id } = req.body;
+
+    try {
+        const { data: updated, error } = await supabase
+            .from('w_conversations')
+            .update({ 
+                assigned_to: agent_id,
+                assigned_agent_id: agent_id
+            })
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .select('id, assigned_to')
+            .single();
+
+        if (error) throw error;
+
+        io.to(`org:${orgId}`).emit('conversation_assigned', { conversation_id: id, assigned_to: agent_id });
+        res.json({ success: true, conversation: updated });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get("/api/dashboard-stats", authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+    try {
+        const { data, error } = await supabase.rpc('get_dashboard_stats', { p_organization_id: organization_id });
+        if (error) throw error;
+        res.json(data);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ====== Flow Builder API ======
 app.get('/api/flows', async (req, res) => {
     const orgId = req.query.organization_id as string || await ensureDefaultOrganizationId();
@@ -1612,9 +2188,8 @@ app.delete('/api/flows/:id', async (req, res) => {
 
 // ====== Bot Agents API ======
 // Get all bot agents for an organization
-app.get('/api/agents', async (req, res) => {
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+app.get('/api/agents', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
 
     try {
         let query = supabase
@@ -1646,9 +2221,8 @@ app.get('/api/agents', async (req, res) => {
 });
 
 // Create a new bot agent
-app.post('/api/agents', async (req, res) => {
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+app.post('/api/agents', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
 
     try {
         if (!organization_id) {
@@ -1707,10 +2281,9 @@ app.post('/api/agents', async (req, res) => {
 });
 
 // Update a bot agent
-app.patch('/api/agents/:id', async (req, res) => {
+app.patch('/api/agents/:id', authMiddleware, async (req: any, res) => {
     const { id } = req.params;
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+    const organization_id = req.organization_id;
 
     try {
         const updateData: any = {};
@@ -1744,10 +2317,9 @@ app.patch('/api/agents/:id', async (req, res) => {
 });
 
 // Delete a bot agent
-app.delete('/api/agents/:id', async (req, res) => {
+app.delete('/api/agents/:id', authMiddleware, async (req: any, res) => {
     const { id } = req.params;
-    const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+    const organization_id = req.organization_id;
 
     try {
         let query = supabase
@@ -1805,7 +2377,7 @@ app.patch('/api/conversations/:id/bot', async (req, res) => {
 // Get OpenAI settings
 app.get('/api/settings/openai', async (req, res) => {
     const requestedOrgId = req.query.organization_id as string | undefined;
-    const organization_id = requestedOrgId || (await ensureDefaultOrganizationId());
+    const organization_id = req.organization_id;
 
     try {
         const { data, error } = await supabase
@@ -1861,8 +2433,95 @@ app.post('/api/settings/openai', async (req, res) => {
     }
 });
 
-app.get("/api/messages/:conversationId", async (req, res) => {
+// Get Auto Assign settings
+app.get('/api/settings/auto-assign', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+
+    try {
+        const { data, error } = await supabase
+            .from('organizations')
+            .select('settings')
+            .eq('id', organization_id)
+            .single();
+
+        if (error) throw error;
+
+        const autoAssignSettings = data?.settings?.auto_assign || {
+            enabled: false,
+            batch_size: 1,
+            paused_agents: [],
+            state: { last_agent_id: null, current_batch_count: 0 }
+        };
+
+        res.json(autoAssignSettings);
+    } catch (err: any) {
+        console.error('Error fetching auto assign settings:', err);
+        res.status(500).json({ error: err.message || 'Failed to fetch settings' });
+    }
+});
+
+// Update Auto Assign settings
+app.post('/api/settings/auto-assign', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+    const { enabled, batch_size, paused_agents } = req.body;
+
+    try {
+        const { data: orgData, error: fetchErr } = await supabase
+            .from('organizations')
+            .select('settings')
+            .eq('id', organization_id)
+            .single();
+
+        if (fetchErr) throw fetchErr;
+
+        const currentSettings = orgData?.settings || {};
+        const currentAutoAssign = currentSettings.auto_assign || {};
+
+        const newAutoAssign = {
+            ...currentAutoAssign,
+            enabled: enabled !== undefined ? enabled : currentAutoAssign.enabled || false,
+            batch_size: batch_size !== undefined ? Math.max(1, batch_size) : currentAutoAssign.batch_size || 1,
+            paused_agents: paused_agents !== undefined ? paused_agents : currentAutoAssign.paused_agents || []
+        };
+
+        const { data, error } = await supabase
+            .from('organizations')
+            .update({ settings: { ...currentSettings, auto_assign: newAutoAssign } })
+            .eq('id', organization_id)
+            .select('settings')
+            .single();
+
+        if (error) throw error;
+
+        res.json(data.settings.auto_assign);
+    } catch (err: any) {
+        console.error('Error updating auto assign settings:', err);
+        res.status(500).json({ error: err.message || 'Failed to update settings' });
+    }
+});
+
+// Get organization agents for the UI
+app.get('/api/team/agents', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+
+    try {
+        const { data, error } = await supabase
+            .from('organization_members')
+            .select('user_id, name, email, role, is_active')
+            .eq('organization_id', organization_id)
+            .in('role', ['agent', 'owner', 'admin']); // typically agents, but others might take chats
+
+        if (error) throw error;
+        res.json(data || []);
+    } catch (err: any) {
+        console.error('Error fetching agents for auto assign:', err);
+        res.status(500).json({ error: err.message || 'Failed to fetch agents' });
+    }
+});
+
+app.get("/api/messages/:conversationId", authMiddleware, async (req: any, res) => {
     const { conversationId } = req.params;
+    const orgId = req.organization_id;
     try {
         const rawLimit = Number(req.query.limit || 50);
         const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, rawLimit)) : 50;
@@ -1873,6 +2532,7 @@ app.get("/api/messages/:conversationId", async (req, res) => {
             .from('w_messages')
             .select("*")
             .eq("conversation_id", conversationId)
+            .eq("organization_id", orgId)
             .order("created_at", { ascending: false })
             .limit(limit);
 
@@ -1893,8 +2553,9 @@ app.get("/api/messages/:conversationId", async (req, res) => {
 });
 
 // Alias for required route shape
-app.get('/api/conversations/:id/messages', async (req, res) => {
+app.get('/api/conversations/:id/messages', authMiddleware, async (req: any, res) => {
     const conversationId = req.params.id;
+    const orgId = req.organization_id;
     try {
         const rawLimit = Number(req.query.limit || 50);
         const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, rawLimit)) : 50;
@@ -1904,6 +2565,7 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
             .from('w_messages')
             .select('*')
             .eq('conversation_id', conversationId)
+            .eq('organization_id', orgId)
             .order('created_at', { ascending: false })
             .limit(limit);
 
@@ -1923,8 +2585,9 @@ app.get('/api/conversations/:id/messages', async (req, res) => {
 });
 
 // Send Message (Outbound) - used by LiveChat UI
-app.post('/api/conversations/:conversationId/send', async (req, res) => {
+app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: any, res) => {
     const { conversationId } = req.params;
+    const orgId = req.organization_id;
     const { text, session_id } = req.body as { text?: string; session_id?: string };
 
     if (!text || !text.trim()) return res.status(400).json({ error: 'Text required' });
@@ -1936,17 +2599,18 @@ app.post('/api/conversations/:conversationId/send', async (req, res) => {
                 id,
                 organization_id,
                 wa_account_id,
-                contact:contacts(id, wa_id, name),
-                account:wa_accounts(id, phone_number_id, access_token_encrypted)
+                contact:w_contacts(id, wa_id, name),
+                account:w_wa_accounts(id, phone_number_id, access_token_encrypted)
             `)
             .eq('id', conversationId)
+            .eq('organization_id', orgId)
             .single();
 
         if (convErr) throw convErr;
         if (!conv?.contact?.wa_id) throw new Error('Conversation contact missing wa_id');
         if (!conv?.account?.phone_number_id) throw new Error('Conversation account missing phone_number_id');
 
-        const orgId = conv.organization_id || (await ensureDefaultOrganizationId());
+        const orgId = conv.organization_id;
         if (!orgId) throw new Error('Organization not configured');
 
         const toPhone = String(conv.contact.wa_id);
@@ -2073,8 +2737,8 @@ app.post('/api/conversations/:conversationId/send-media', upload.single('file'),
                 id,
                 organization_id,
                 wa_account_id,
-                contact:contacts(id, wa_id, name, phone),
-                account:wa_accounts(id, phone_number_id, access_token_encrypted)
+                contact:w_contacts(id, wa_id, name, phone),
+                account:w_wa_accounts(id, phone_number_id, access_token_encrypted)
             `)
             .eq('id', conversationId)
             .single();
@@ -2083,7 +2747,7 @@ app.post('/api/conversations/:conversationId/send-media', upload.single('file'),
         if (!conv?.contact?.wa_id) throw new Error('Conversation contact missing wa_id');
         if (!conv?.account?.phone_number_id) throw new Error('Conversation account missing phone_number_id');
 
-        const orgId = conv.organization_id || (await ensureDefaultOrganizationId());
+        const orgId = conv.organization_id;
         if (!orgId) throw new Error('Organization not configured');
 
         const mimeType = file.mimetype || 'application/octet-stream';
@@ -2240,8 +2904,8 @@ app.post('/api/messages/audio', upload.single('file'), async (req, res) => {
                 id,
                 organization_id,
                 wa_account_id,
-                contact:contacts(id, wa_id, name, phone),
-                account:wa_accounts(id, phone_number_id, access_token_encrypted)
+                contact:w_contacts(id, wa_id, name, phone),
+                account:w_wa_accounts(id, phone_number_id, access_token_encrypted)
             `)
             .eq('id', conversationId)
             .single();
@@ -2250,7 +2914,7 @@ app.post('/api/messages/audio', upload.single('file'), async (req, res) => {
         if (!conv?.contact?.wa_id) throw new Error('Conversation contact missing wa_id');
         if (!conv?.account?.phone_number_id) throw new Error('Conversation account missing phone_number_id');
 
-        const orgId = conv.organization_id || (await ensureDefaultOrganizationId());
+        const orgId = conv.organization_id;
         if (!orgId) throw new Error('Organization not configured');
 
         const mimeType = file.mimetype || 'audio/ogg';
@@ -2393,7 +3057,6 @@ app.post("/api/conversations/:id/read", async (req, res) => {
             const { error } = await supabase
                 .from('w_conversation_reads')
                 .upsert({
-                    organization_id: conv.organization_id,
                     conversation_id: id,
                     user_id: user_id,
                     last_read_at: new Date().toISOString()
@@ -2426,7 +3089,7 @@ app.post("/api/conversations/:id/read", async (req, res) => {
 
 // Get list of connected accounts
 app.get('/api/whatsapp/accounts', authMiddleware, async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
 
     try {
         if (!orgId) throw new Error('No organization found');
@@ -2435,6 +3098,7 @@ app.get('/api/whatsapp/accounts', authMiddleware, async (req, res) => {
             .from('w_wa_accounts')
             .select('*')
             .eq('organization_id', orgId)
+            .neq('status', 'disconnected')
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -2453,14 +3117,25 @@ app.get('/api/whatsapp/accounts', authMiddleware, async (req, res) => {
 // Add/Update Meta API Account
 app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
     const { phone_number_id, waba_id, access_token, display_phone_number, name } = req.body;
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
 
     if (!phone_number_id || !access_token) {
         return res.status(400).json({ error: 'phone_number_id and access_token are required' });
     }
 
     try {
-        if (!orgId) throw new Error('No organization found');
+        if (!orgId) throw new Error('No organization found. Make sure your Supabase is configured correctly.');
+
+        // Validate the token against Meta before saving
+        const verifyUrl = `https://graph.facebook.com/v21.0/${String(phone_number_id).trim()}?fields=id,display_phone_number,verified_name&access_token=${String(access_token).trim()}`;
+        const verifyRes = await fetch(verifyUrl);
+        const verifyData: any = await verifyRes.json();
+        if (verifyData.error) {
+            return res.status(400).json({ error: `Meta API error: ${verifyData.error.message}` });
+        }
+
+        const resolvedDisplayPhone = verifyData.display_phone_number || display_phone_number || null;
+        const resolvedName = verifyData.verified_name || name || 'WhatsApp Business API';
 
         // Upsert the account (token is AES-256 encrypted before storage)
         const { data, error } = await supabase
@@ -2470,15 +3145,17 @@ app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
                 phone_number_id: String(phone_number_id).trim(),
                 whatsapp_business_account_id: waba_id ? String(waba_id).trim() : null,
                 access_token_encrypted: encryptToken(String(access_token).trim()),
-                display_phone_number: display_phone_number ? String(display_phone_number).trim() : null,
-                name: name || 'WhatsApp Business API',
+                display_phone_number: resolvedDisplayPhone,
+                name: resolvedName,
                 status: 'connected'
             }, { onConflict: 'phone_number_id' })
             .select('*')
             .single();
 
-        if (error) throw error;
-
+        if (error) {
+            console.error('Supabase upsert error:', error);
+            throw new Error(error.message);
+        }
         res.json({ success: true, account: data });
     } catch (err: any) {
         console.error('Error saving Meta account:', err);
@@ -2489,11 +3166,11 @@ app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
 // Delete account
 app.delete('/api/whatsapp/accounts/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     try {
         const { error } = await supabase
             .from('w_wa_accounts')
-            .delete()
+            .update({ status: 'disconnected', access_token_encrypted: null })
             .eq('id', id)
             .eq('organization_id', orgId); // Ensure user can only delete their own accounts
             
@@ -2508,7 +3185,7 @@ app.delete('/api/whatsapp/accounts/:id', authMiddleware, async (req, res) => {
 
 // Get list of templates
 app.get('/api/whatsapp/templates', authMiddleware, async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     
     try {
         if (!orgId) throw new Error('No organization found');
@@ -2545,7 +3222,7 @@ app.get('/api/whatsapp/templates', authMiddleware, async (req, res) => {
 
 // Create Template
 app.post('/api/whatsapp/templates', authMiddleware, upload.single('file'), async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     const { name, category, language, components } = req.body;
     const file = req.file;
 
@@ -2630,7 +3307,7 @@ app.post('/api/whatsapp/templates', authMiddleware, upload.single('file'), async
 
 // Delete Template
 app.delete('/api/whatsapp/templates/:name', authMiddleware, async (req, res) => {
-    const orgId = (req as any).organization_id || (await ensureDefaultOrganizationId());
+    const orgId = (req as any).organization_id;
     const { name } = req.params;
 
     try {
@@ -2744,9 +3421,17 @@ app.post("/webhook", async (req, res) => {
     // Signature verify (recommended)
     if (APP_SECRET) {
         const ok = verifyMetaSignature(req);
-        if (!ok) return res.sendStatus(403);
+        if (!ok) {
+            console.log("❌ Webhook Signature Verification Failed!");
+            return res.sendStatus(403);
+        }
     }
     res.sendStatus(200); // Ack immediately
+
+    console.log("==========================================");
+    console.log("📥 WEBHOOK EVENT RECEIVED!");
+    console.log(JSON.stringify(req.body, null, 2));
+    console.log("==========================================");
 
     try {
         const body = req.body;
@@ -2759,7 +3444,7 @@ app.post("/webhook", async (req, res) => {
 
         // 1. Identify Organization & Account
         const phone_number_id = metadata?.phone_number_id;
-        let organization_id = resolvedOrgId;
+        let organization_id = null;
         let wa_account_id = null;
 
         if (phone_number_id && supabase) {
@@ -2772,17 +3457,11 @@ app.post("/webhook", async (req, res) => {
             if (acc) {
                 organization_id = acc.organization_id;
                 wa_account_id = acc.id;
-            } else {
-                console.warn(`âš ï¸ Phone ID ${phone_number_id} not found in wa_accounts. Using DEFAULT_ORG_ID.`);
             }
         }
 
         if (!organization_id) {
-            organization_id = await ensureDefaultOrganizationId();
-        }
-
-        if (!organization_id) {
-            console.error("âŒ No Organization ID found for incoming webhook.");
+            console.error(`❌ Webhook Error: Phone ID ${phone_number_id} not mapped to any organization.`);
             return;
         }
 
@@ -2797,14 +3476,31 @@ app.post("/webhook", async (req, res) => {
 
             let type = msg.type;
             let text = "";
+            let interactivePayload: any = null; // button/list reply ka raw data
 
-            if (type === 'text') text = msg.text?.body;
-            else if (type === 'button') text = msg.button?.text; // etc.
-            else if (type === 'image') text = msg.image?.caption || '[Image]';
-            else if (type === 'video') text = msg.video?.caption || '[Video]';
-            else if (type === 'audio') text = '[Audio]';
-            else if (type === 'document') text = msg.document?.filename || '[Document]';
-            else text = `[${type}]`;
+            // REPLACED: Updated type extraction logic for interactive/buttons
+            if (type === 'text') {
+                text = msg.text?.body || '';
+            } else if (type === 'interactive') {
+                interactivePayload = msg.interactive;
+                text = (msg.interactive?.button_reply?.title || 
+                        msg.interactive?.list_reply?.title || 
+                        msg.interactive?.button_reply?.id || 
+                        msg.interactive?.list_reply?.id || 
+                        `[interactive:${msg.interactive.type}]`);
+            } else if (type === 'button') {
+                text = msg.button?.text || '';
+            } else if (type === 'image') {
+                text = msg.image?.caption || '[Image]';
+            } else if (type === 'video') {
+                text = msg.video?.caption || '[Video]';
+            } else if (type === 'audio') {
+                text = '[Audio]';
+            } else if (type === 'document') {
+                text = msg.document?.filename || '[Document]';
+            } else {
+                text = `[${type}]`;
+            }
 
             // Ensure wa_account exists so conversations FK/unique constraints work
             if (!wa_account_id && phone_number_id && supabase) {
@@ -2827,8 +3523,35 @@ app.post("/webhook", async (req, res) => {
                 preview: text
             });
 
+            // Quoted/Reply context extract karo
+            let quotedMessage: any = null;
+            if (msg.context?.id) {
+                // DB mein quoted message dhundo
+                const { data: quotedMsg } = await supabase
+                    .from('w_messages')
+                    .select('id, text_body, type, content, wa_message_id, direction')
+                    .eq('wa_message_id', msg.context.id)
+                    .maybeSingle();
+
+                quotedMessage = {
+                    wa_message_id: msg.context.id,
+                    from: msg.context.from || null,
+                    // Agar DB mein mila toh uska text use karo
+                    text: quotedMsg?.text_body 
+                          || quotedMsg?.content?.text 
+                          || null,
+                    type: quotedMsg?.type || 'text',
+                    direction: quotedMsg?.direction || null,
+                    found: !!quotedMsg,
+                };
+            }
+
             // PRE-DEFINE CONTENT (Media will update this row later)
-            const enrichedContent: any = { text, raw: msg };
+            const enrichedContent: any = { 
+                text, 
+                raw: msg,
+                quoted: quotedMessage
+            };
 
             // C. Insert Message
             const storedInbound = await storeMessage({
@@ -2844,30 +3567,20 @@ app.post("/webhook", async (req, res) => {
 
             // D. Emit Realtime
             // Emit to org room
-            io.emit(`org:${organization_id}`, {
-                type: 'new_message',
-                message: {
-                    id: storedInbound?.id || crypto.randomUUID(),
-                    text,
-                    from,
-                    sender: 'user',
-                    timestamp: storedInbound?.created_at || new Date(),
-                    conversation_id: conv.id
-                }
-            });
-
-            // Legacy emit for current frontend compatibility
-            io.emit("new_message", {
+            io.to(`org:${organization_id}`).emit('new_message', {
                 from,
                 phone: from,
                 text,
+                quoted: quotedMessage || null,
                 sender: 'user',
                 conversation_id: conv.id,
                 contact_id: contact.id,
                 message_id: storedInbound?.id || null,
                 wa_message_id,
                 created_at: storedInbound?.created_at || new Date().toISOString(),
-                connectedAccount: metadata?.display_phone_number, // pass this if available
+                status: 'delivered',
+                name: profileName,
+                connectedAccount: metadata?.display_phone_number,
                 type,
                 ...(enrichedContent?.media_url ? { media_url: enrichedContent.media_url } : {}),
                 ...(enrichedContent?.mime_type ? { mime_type: enrichedContent.mime_type } : {}),
@@ -2924,16 +3637,19 @@ app.post("/webhook", async (req, res) => {
 
             // E. Bot Auto-Reply
             try {
-                // Only process text messages for bot replies
                 let flowConsumedMessage = false;
-                if (type === 'text' && text) {
+
+                // Flow engine: text + button replies + interactive replies sab process karo
+                const isFlowEligible = (type === 'text' || type === 'interactive' || type === 'button') && text;
+
+                if (isFlowEligible) {
                     const flowResult = await processFlowEngine(organization_id, contact.id, conv.id, text);
                     if (flowResult?.consumed) {
                         flowConsumedMessage = true;
-                        
-                        // Send output if flow generated one
+
+                        // 1. Send preceding text output if present
                         if (flowResult.output) {
-                            console.log(`ðŸŒŠ Flow Engine replied to: "${text.substring(0, 50)}..."`);
+                            console.log(`🌊 Flow Engine replied with text to: "${text.substring(0, 50)}"`);
                             const sendResult = await sendTextMessage(from, flowResult.output, phone_number_id);
                             const botWaMessageId = sendResult?.messages?.[0]?.id || null;
 
@@ -2945,57 +3661,65 @@ app.post("/webhook", async (req, res) => {
 
                             io.emit("new_message", {
                                 from: metadata?.display_phone_number || phone_number_id, phone: from, text: flowResult.output,
-                                sender: 'agent', conversation_id: conv.id, contact_id: contact.id, message_id: storedBotReply?.id || null,
-                                wa_message_id: botWaMessageId, created_at: storedBotReply?.created_at || new Date().toISOString(),
+                                sender: 'agent', conversation_id: conv.id, contact_id: contact.id,
+                                message_id: storedBotReply?.id || null,
+                                wa_message_id: botWaMessageId,
+                                created_at: storedBotReply?.created_at || new Date().toISOString(),
                                 connectedAccount: metadata?.display_phone_number, type: 'text', is_bot_reply: true,
                             });
-
-                            // Update conversation preview
-                            await supabase.from('w_conversations').update({ last_message_at: new Date().toISOString(), last_message_preview: flowResult.output.substring(0, 100) }).eq('id', conv.id);
                         }
+
+                        // 2. Send interactive buttons if present
+                        if (flowResult.interactive?.type === 'button') {
+                            console.log(`🔘 Flow Engine sending real buttons`);
+                            const { body, buttons, footer } = flowResult.interactive;
+                            const sendResult = await sendInteractiveButtons(from, body, buttons, footer, phone_number_id);
+                            const botWaMessageId = sendResult?.messages?.[0]?.id || null;
+
+                            const storedBotReply = await storeMessage({
+                                organization_id, contact_id: contact.id, conversation_id: conv.id,
+                                wa_message_id: botWaMessageId, direction: "outbound", type: "interactive",
+                                content: { text: body, interactive: flowResult.interactive, is_flow: true }, status: "sent",
+                            } as any);
+
+                            io.emit("new_message", {
+                                from: metadata?.display_phone_number || phone_number_id, phone: from, text: body,
+                                sender: 'agent', conversation_id: conv.id, contact_id: contact.id,
+                                message_id: storedBotReply?.id || null,
+                                wa_message_id: botWaMessageId,
+                                created_at: storedBotReply?.created_at || new Date().toISOString(),
+                                connectedAccount: metadata?.display_phone_number, type: 'interactive', is_bot_reply: true,
+                            });
+                        }
+
+                        // Update conversation preview
+                        const lastPreview = flowResult.interactive?.body || flowResult.output || "";
+                        await supabase.from('w_conversations').update({
+                            last_message_at: new Date().toISOString(),
+                            last_message_preview: lastPreview.substring(0, 100)
+                        }).eq('id', conv.id);
                     }
                 }
 
+                // AI Agent fallback — sirf tab jab flow ne consume nahi kiya aur type text hai
                 if (!flowConsumedMessage && type === 'text' && text) {
-                    const botResult = await getBotAgentReply({
-                        organization_id,
-                        conversation_id: conv.id,
-                        text
-                    });
-
+                    const botResult = await getBotAgentReply({ organization_id, conversation_id: conv.id, text });
                     if (botResult?.reply) {
-                        console.log(`ðŸ¤– Bot "${botResult.agent?.name}" replying to: "${text.substring(0, 50)}..."`);
-                        
-                        // Send the reply via WhatsApp
+                        console.log(`🤖 Bot "${botResult.agent?.name}" replying`);
                         const sendResult = await sendTextMessage(from, botResult.reply, phone_number_id);
                         const botWaMessageId = sendResult?.messages?.[0]?.id || null;
-
-                        // Store the bot's reply message
                         const storedBotReply = await storeMessage({
-                            organization_id,
-                            contact_id: contact.id,
-                            conversation_id: conv.id,
-                            wa_message_id: botWaMessageId,
-                            direction: "outbound",
-                            type: "text",
+                            organization_id, contact_id: contact.id, conversation_id: conv.id,
+                            wa_message_id: botWaMessageId, direction: "outbound", type: "text",
                             content: { text: botResult.reply, bot_agent_id: botResult.agent?.id },
                             status: "sent",
                         } as any);
-
-                        // Emit the bot reply to frontend
                         io.emit("new_message", {
-                            from: metadata?.display_phone_number || phone_number_id,
-                            phone: from,
-                            text: botResult.reply,
-                            sender: 'agent',
-                            conversation_id: conv.id,
-                            contact_id: contact.id,
-                            message_id: storedBotReply?.id || null,
-                            wa_message_id: botWaMessageId,
+                            from: metadata?.display_phone_number || phone_number_id, phone: from, text: botResult.reply,
+                            sender: 'agent', conversation_id: conv.id, contact_id: contact.id,
+                            message_id: storedBotReply?.id || null, wa_message_id: botWaMessageId,
                             created_at: storedBotReply?.created_at || new Date().toISOString(),
-                            connectedAccount: metadata?.display_phone_number,
-                            type: 'text',
-                            is_bot_reply: true,
+                            connectedAccount: metadata?.display_phone_number, type: 'text', is_bot_reply: true,
                             bot_agent_name: botResult.agent?.name,
                         });
 
@@ -3042,7 +3766,7 @@ app.post("/webhook", async (req, res) => {
 
 // ====== Baileys Implementation ======
 
-async function setupBaileys(sessionId: string, socket: any) {
+async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: string | null = null) {
     // CRITICAL FIX: Check concurrency lock
     if (initializingSessions.has(sessionId)) {
         console.log(`â³ Session ${sessionId} is already initializing. Skipping duplicate request.`);
@@ -3069,10 +3793,33 @@ async function setupBaileys(sessionId: string, socket: any) {
 
     try {
         const sessionDir = `baileys_auth_info/${sessionId}`;
+        const orgFile = `${sessionDir}/org_id.txt`;
 
         // Create dir if needed
         if (!fs.existsSync(sessionDir)) {
             fs.mkdirSync(sessionDir, { recursive: true });
+        }
+
+        // Persist/Resolve Organization ID
+        let organization_id = orgIdFromRequest;
+        if (!organization_id && fs.existsSync(orgFile)) {
+            organization_id = fs.readFileSync(orgFile, 'utf8').trim();
+        }
+
+        if (organization_id) {
+            fs.writeFileSync(orgFile, organization_id);
+        } else {
+            // Check if we can find it in socket data
+            organization_id = socket?.data?.organization_id || null;
+            if (organization_id) {
+                fs.writeFileSync(orgFile, organization_id);
+            }
+        }
+
+        if (!organization_id) {
+            console.warn(`⚠️ Cannot initialize Baileys session ${sessionId} - No Organization ID provided or persisted.`);
+            initializingSessions.delete(sessionId);
+            return;
         }
 
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
@@ -3133,15 +3880,12 @@ async function setupBaileys(sessionId: string, socket: any) {
 
         sock.ev.on("creds.update", saveCreds);
 
-        // Keep a small cache for org/account ids for this socket.
-        let cachedOrgId: string | null = null;
+        // Keep a small cache for account id for this socket.
         let cachedWaAccountId: string | null = null;
         const resolveOrgAndAccount = async () => {
-            if (cachedOrgId && cachedWaAccountId) return { orgId: cachedOrgId, waAccountId: cachedWaAccountId };
+            if (cachedWaAccountId) return { orgId: organization_id!, waAccountId: cachedWaAccountId };
 
-            const orgId = cachedOrgId || (await ensureDefaultOrganizationId());
-            if (!orgId) return { orgId: null as any, waAccountId: null as any };
-            cachedOrgId = orgId;
+            const orgId = organization_id!;
 
             const myJid = sock.user?.id || "";
             const myPhone = myJid.split(':')[0];
@@ -3782,7 +4526,15 @@ process.on('unhandledRejection', (reason: any, promise) => {
 });
 
 io.on("connection", (socket) => {
-    console.log("âœ… Frontend connected:", socket.id);
+    console.log("✅ Frontend connected:", socket.id);
+
+    // Join organization-specific room for multi-tenancy
+    socket.on("join_org", (orgId: string) => {
+        if (orgId) {
+            console.log(`👤 Client ${socket.id} joining room: org:${orgId}`);
+            socket.join(`org:${orgId}`);
+        }
+    });
 
     // Track explicit QR requests per socket.
     socket.data = socket.data || {};
@@ -3836,8 +4588,8 @@ io.on("connection", (socket) => {
     });
 
     // NEW: Explicit QR generation request
-    socket.on("request_qr", async (sessionId: string) => {
-        console.log(`ðŸ”” QR generation requested for session ${sessionId}`);
+    socket.on("request_qr", async (sessionId: string, orgId?: string) => {
+        console.log(`🔔 QR generation requested for session ${sessionId} (Org: ${orgId || 'None'})`);
 
         // Kill any existing session to ensure a clean slate for fresh QR
         const existing = sessions.get(sessionId);
@@ -3861,7 +4613,7 @@ io.on("connection", (socket) => {
         }
 
         // Create new Baileys session
-        await setupBaileys(sessionId, socket);
+        await setupBaileys(sessionId, socket, orgId || socket.data.organization_id);
     });
 
     // NEW: Explicit Logout request
@@ -3928,6 +4680,315 @@ httpServer.on('error', (err: any) => {
     }
     console.error('âŒ Server error:', err);
     process.exit(1);
+});
+
+// ====== Broadcast APIs ======
+
+// GET /api/broadcast/tags
+app.get('/api/broadcast/tags', authMiddleware, async (req, res) => {
+    const orgId = (req as any).organization_id;
+    try {
+        const { data: contacts, error: fetchErr } = await supabase
+            .from('w_contacts')
+            .select('tags')
+            .eq('organization_id', orgId);
+            
+        if (fetchErr) throw fetchErr;
+        
+        const tagsSet = new Set<string>();
+        contacts?.forEach((c: any) => {
+            if (Array.isArray(c.tags)) {
+                c.tags.forEach((t: string) => tagsSet.add(t));
+            }
+        });
+        
+        res.json({ tags: Array.from(tagsSet) });
+    } catch (err: any) {
+        console.error('Fetch Tags Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+async function processCampaign(campaign: any) {
+    try {
+        await supabase.from('w_campaigns').update({ status: 'processing' }).eq('id', campaign.id);
+        
+        const orgId = campaign.organization_id;
+        const wa_account_id = campaign.wa_account_id;
+        
+        const { data: account, error: accErr } = await supabase
+            .from('w_wa_accounts')
+            .select('id, phone_number_id, whatsapp_business_account_id, access_token_encrypted')
+            .eq('id', wa_account_id)
+            .single();
+
+        if (accErr || !account) throw new Error('WhatsApp account not found');
+        const token = decryptToken(account.access_token_encrypted);
+        const phone_number_id = account.phone_number_id;
+
+        let contactsToProcess = [];
+        if (campaign.csv_data && Array.isArray(campaign.csv_data)) {
+            contactsToProcess = campaign.csv_data;
+        } else {
+            let query = supabase
+                .from('w_contacts')
+                .select('id, name, custom_name, phone, wa_id, tags')
+                .eq('organization_id', orgId)
+                .eq('contact_type', 'individual');
+                
+            if (campaign.audience_tag) {
+                query = query.contains('tags', [campaign.audience_tag]);
+            }
+            
+            const { data: contacts, error: contactsErr } = await query;
+            if (contactsErr) throw contactsErr;
+            contactsToProcess = contacts || [];
+        }
+        
+        if (contactsToProcess.length === 0) {
+            await supabase.from('w_campaigns').update({ status: 'completed', total_contacts: 0 }).eq('id', campaign.id);
+            return;
+        }
+
+        let sent = 0;
+        let failed = 0;
+        const results = [];
+
+        for (const contact of contactsToProcess) {
+            const recipient = contact.phone || contact.wa_id;
+            if (!recipient) {
+                failed++;
+                results.push({ phone: null, name: contact.name || 'Unknown', status: 'failed', error: 'Missing phone number' });
+                continue;
+            }
+
+            const components = [];
+            const mapping = campaign.variable_mapping || {};
+            
+            let renderedText = mapping._template_body || `[Broadcast Template: ${campaign.template_name}]`;
+            const parameters = [];
+
+            const sortedKeys = Object.keys(mapping).filter(k => k !== '_template_body').sort((a, b) => parseInt(a) - parseInt(b));
+            
+            for (const num of sortedKeys) {
+                const field = mapping[num];
+                let text = '';
+                if (field === 'name') text = contact.custom_name || contact.name || '';
+                else if (field === 'phone') text = contact.phone || '';
+                else text = field || ''; 
+                
+                renderedText = renderedText.replace(`{{${num}}}`, text);
+                parameters.push({ type: 'text', text: text || ' ' });
+            }
+
+            if (parameters.length > 0) {
+                components.push({ type: 'body', parameters });
+            }
+
+            const payload = {
+                messaging_product: 'whatsapp',
+                to: recipient,
+                type: 'template',
+                template: {
+                    name: campaign.template_name,
+                    language: { code: campaign.template_language },
+                    components: components
+                }
+            };
+
+            try {
+                const response = await fetch(`https://graph.facebook.com/v21.0/${phone_number_id}/messages`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    sent++;
+                    results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'sent' });
+
+                    const wa_message_id = data.messages?.[0]?.id;
+                    const realWaId = data.contacts?.[0]?.wa_id || recipient;
+                    
+                    let currentContactId = contact.id;
+
+                    if (!currentContactId) {
+                        // First check if contact exists by real WhatsApp ID or the passed phone
+                        const { data: existingContacts } = await supabase
+                            .from('w_contacts')
+                            .select('id')
+                            .eq('organization_id', orgId)
+                            .or(`wa_id.eq.${realWaId},phone.eq.${recipient}`)
+                            .limit(1);
+
+                        if (existingContacts && existingContacts.length > 0) {
+                            currentContactId = existingContacts[0].id;
+                        } else {
+                            const { data: newContact, error: insertErr } = await supabase
+                                .from('w_contacts')
+                                .insert({
+                                    organization_id: orgId,
+                                    wa_account_id: wa_account_id,
+                                    name: contact.name || contact.custom_name || recipient,
+                                    phone: recipient,
+                                    wa_id: realWaId,
+                                    contact_type: 'individual'
+                                })
+                                .select('id')
+                                .single();
+                                
+                            if (newContact) {
+                                currentContactId = newContact.id;
+                            }
+                        }
+                    }
+
+                    if (currentContactId) {
+                        const conv = await upsertConversation(orgId, wa_account_id, currentContactId, {
+                            lastMessagePreview: `[Broadcast] ${campaign.template_name}`
+                        });
+                        
+                        if (conv && conv.id) {
+                            await storeMessage({
+                                organization_id: orgId,
+                                conversation_id: conv.id,
+                                contact_id: currentContactId,
+                                wa_message_id: wa_message_id || `broadcast-${Date.now()}`,
+                                direction: 'outbound',
+                                type: 'text',
+                                status: 'sent',
+                                content: { text: renderedText }
+                            });
+                        }
+                    }
+                } else {
+                    failed++;
+                    results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'failed', error: data.error?.message || 'API Error' });
+                }
+            } catch (e: any) {
+                failed++;
+                results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'failed', error: e.message || 'Network/Unknown Error' });
+            }
+            
+            await new Promise(r => setTimeout(r, 300));
+        }
+
+        await supabase.from('w_campaigns').update({ 
+            status: 'completed', 
+            total_contacts: contactsToProcess.length,
+            sent_count: sent,
+            failed_count: failed,
+            results: results
+        }).eq('id', campaign.id);
+
+    } catch (err) {
+        console.error('Error processing campaign:', campaign.id, err);
+        await supabase.from('w_campaigns').update({ status: 'failed' }).eq('id', campaign.id);
+    }
+}
+
+// Background scheduler
+setInterval(async () => {
+    try {
+        const { data: campaigns, error } = await supabase
+            .from('w_campaigns')
+            .select('*')
+            .eq('status', 'scheduled')
+            .lte('scheduled_at', new Date().toISOString());
+
+        if (error || !campaigns) return;
+        
+        for (const camp of campaigns) {
+            processCampaign(camp); // runs asynchronously
+        }
+    } catch (e) {
+        // ignore
+    }
+}, 60000); // Check every minute
+
+// POST /api/broadcast/send
+app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
+    const orgId = (req as any).organization_id;
+    const { name, wa_account_id, audience_tag, csv_data, template_name, template_language, variable_mapping, scheduled_at } = req.body;
+    
+    try {
+        if (!wa_account_id || !template_name || !template_language) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        const isScheduled = scheduled_at && new Date(scheduled_at) > new Date();
+
+        const { data: campaign, error: insertErr } = await supabase
+            .from('w_campaigns')
+            .insert({
+                organization_id: orgId,
+                wa_account_id,
+                name: name || 'Untitled Campaign',
+                audience_tag: audience_tag || null,
+                csv_data: csv_data || null,
+                template_name,
+                template_language,
+                variable_mapping,
+                scheduled_at: scheduled_at || null,
+                status: isScheduled ? 'scheduled' : 'processing'
+            })
+            .select()
+            .single();
+
+        if (insertErr) {
+            console.error("Campaign insert error:", insertErr);
+            throw new Error('Database Error: Have you run the w_campaigns SQL script in Supabase?');
+        }
+
+        if (!isScheduled) {
+            // Process asynchronously without blocking response
+            processCampaign(campaign);
+            res.json({ message: "Campaign processing started", campaign, status: 'processing' });
+        } else {
+            res.json({ message: "Campaign scheduled successfully", campaign, status: 'scheduled' });
+        }
+
+    } catch (err: any) {
+        console.error('Broadcast Send Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/broadcast/campaigns
+app.get('/api/broadcast/campaigns', authMiddleware, async (req, res) => {
+    const orgId = (req as any).organization_id;
+    try {
+        const { data, error } = await supabase
+            .from('w_campaigns')
+            .select('*')
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: false });
+            
+        if (error) throw error;
+        res.json({ campaigns: data });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/broadcast/campaigns/:id
+app.delete('/api/broadcast/campaigns/:id', authMiddleware, async (req, res) => {
+    const orgId = (req as any).organization_id;
+    try {
+        const { error } = await supabase
+            .from('w_campaigns')
+            .delete()
+            .eq('id', req.params.id)
+            .eq('organization_id', orgId)
+            .eq('status', 'scheduled'); // Only allow deleting scheduled campaigns
+            
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 httpServer.listen(PORT, () => {

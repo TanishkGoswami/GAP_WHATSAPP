@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { io } from "socket.io-client";
 import { CheckCircle, Loader2 } from 'lucide-react';
 import QRCode from "react-qr-code";
+import { useAuth } from '../context/AuthContext';
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
@@ -11,6 +12,7 @@ const socket = io(BACKEND_BASE, {
 });
 
 const WhatsAppLogin = () => {
+    const { memberProfile } = useAuth();
     const [qrCode, setQrCode] = useState('');
     const [status, setStatus] = useState('idle'); // idle | scanning | connected | ready | logging_out
     const [sessionId, setSessionId] = useState('');
@@ -78,7 +80,7 @@ const WhatsAppLogin = () => {
             setIsRequested(true);
             setStatus('scanning');
             setQrCode('');
-            socket.emit('request_qr', sessionId);
+            socket.emit('request_qr', sessionId, memberProfile?.organization_id);
         }
     };
 
