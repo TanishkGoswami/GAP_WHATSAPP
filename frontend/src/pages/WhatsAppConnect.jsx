@@ -21,8 +21,12 @@ export default function WhatsAppConnect() {
     const [manualSelectedPhoneId, setManualSelectedPhoneId] = useState('');
     const [manualStatus, setManualStatus] = useState('idle'); // idle | validating | saving | saved | error
     const [manualError, setManualError] = useState(null);
+    const [diagnostics, setDiagnostics] = useState({});
+    const [diagnosticsLoadingId, setDiagnosticsLoadingId] = useState(null);
 
-    useEffect(() => { fetchAccounts(); }, [user]);
+    useEffect(() => {
+        if (session?.access_token) fetchAccounts();
+    }, [session]);
 
     useEffect(() => {
         if (!window.FB) return;
@@ -41,12 +45,23 @@ export default function WhatsAppConnect() {
         setLoadingAccounts(true);
         try {
             const res = await fetch(`${API_URL}/api/whatsapp/accounts`, {
-                headers: { ...getAuthHeader() }
+                headers: { 'Content-Type': 'application/json', ...getAuthHeader() }
             });
+            if (res.status === 401) {
+                console.error('Auth failed fetching accounts — session may have expired');
+                setAccounts([]);
+                return;
+            }
             const data = await res.json();
-            if (Array.isArray(data)) setAccounts(data);
+            if (Array.isArray(data)) {
+                setAccounts(data);
+            } else {
+                console.error('Failed to load accounts:', data?.error || data);
+                setAccounts([]);
+            }
         } catch (err) {
             console.error('Failed to fetch accounts:', err);
+            setAccounts([]);
         } finally {
             setLoadingAccounts(false);
         }
@@ -63,6 +78,22 @@ export default function WhatsAppConnect() {
         } catch { alert('Failed to delete account'); }
     };
 
+    const runAccountDiagnostics = async (id) => {
+        setDiagnosticsLoadingId(id);
+        try {
+            const res = await fetch(`${API_URL}/api/whatsapp/accounts/${id}/diagnostics`, {
+                headers: { 'Content-Type': 'application/json', ...getAuthHeader() }
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to inspect account');
+            setDiagnostics(prev => ({ ...prev, [id]: data }));
+        } catch (err) {
+            setDiagnostics(prev => ({ ...prev, [id]: { send_ready: false, issues: [err.message] } }));
+        } finally {
+            setDiagnosticsLoadingId(null);
+        }
+    };
+
     // ===== RECOMMENDED: FB Embedded Signup =====
     const handleEmbeddedSignup = () => {
         if (!window.FB) { alert('Facebook SDK is loading. Try again in a moment.'); return; }
@@ -75,7 +106,7 @@ export default function WhatsAppConnect() {
                 try {
                     const res = await fetch(`${API_URL}/api/wa/connect/callback`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
                         body: JSON.stringify({
                             code: response.authResponse.code,
                             organization_id: user?.user_metadata?.organization_id
@@ -120,7 +151,7 @@ export default function WhatsAppConnect() {
             setManualError(null);
             try {
                 const res = await fetch(
-                    `https://graph.facebook.com/v18.0/${businessAccountId}/phone_numbers?access_token=${encodeURIComponent(accessToken)}`
+                    `https://graph.facebook.com/v21.0/${businessAccountId}/phone_numbers?access_token=${encodeURIComponent(accessToken)}`
                 );
                 const data = await res.json();
                 if (data.error) throw new Error(data.error.message);
@@ -208,6 +239,37 @@ export default function WhatsAppConnect() {
                                         {acc.whatsapp_business_account_id ? 'Meta API' : 'Baileys'}
                                     </span>
                                 </div>
+                                {acc.whatsapp_business_account_id && (
+                                    <div className="mt-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => runAccountDiagnostics(acc.id)}
+                                            disabled={diagnosticsLoadingId === acc.id}
+                                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                        >
+                                            {diagnosticsLoadingId === acc.id ? 'Checking Meta permissions...' : 'Check Send Access'}
+                                        </button>
+                                        {diagnostics[acc.id] && (
+                                            <div className={`mt-2 rounded-lg border p-3 text-xs ${diagnostics[acc.id].send_ready ? 'border-green-200 bg-green-50 text-green-800' : 'border-red-200 bg-red-50 text-red-800'}`}>
+                                                <div className="flex items-start gap-2">
+                                                    {diagnostics[acc.id].send_ready ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
+                                                    <div>
+                                                        <p className="font-semibold">
+                                                            {diagnostics[acc.id].send_ready ? 'Ready to send via Meta API' : 'Meta send access needs attention'}
+                                                        </p>
+                                                        {!diagnostics[acc.id].send_ready && (
+                                                            <ul className="mt-1 list-disc space-y-1 pl-4">
+                                                                {(diagnostics[acc.id].issues || ['Unknown Meta permission issue']).map((issue, index) => (
+                                                                    <li key={index}>{issue}</li>
+                                                                ))}
+                                                            </ul>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -343,6 +405,8 @@ export default function WhatsAppConnect() {
 
                             <input
                                 type="text"
+                                name="wa_business_account_id_input_disable_autofill"
+                                autoComplete="off"
                                 placeholder="WhatsApp Business Account ID"
                                 value={manualCreds.businessAccountId}
                                 onChange={e => setManualCreds(p => ({ ...p, businessAccountId: e.target.value }))}
@@ -350,7 +414,9 @@ export default function WhatsAppConnect() {
                                 className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-400 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400 transition-all"
                             />
                             <input
-                                type="password"
+                                type="text"
+                                name="wa_access_token_input_disable_autofill"
+                                autoComplete="new-password"
                                 placeholder="Access Token"
                                 value={manualCreds.accessToken}
                                 onChange={e => setManualCreds(p => ({ ...p, accessToken: e.target.value }))}

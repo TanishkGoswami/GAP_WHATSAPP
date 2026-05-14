@@ -2,15 +2,22 @@ import { useState, useEffect } from 'react';
 import { io } from "socket.io-client";
 import { CheckCircle, Loader2 } from 'lucide-react';
 import QRCode from "react-qr-code";
+import { useAuth } from '../context/AuthContext';
 
-const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 // Connect to backend
 const socket = io(BACKEND_BASE, {
-    transports: ['polling', 'websocket']
+    autoConnect: false,
+    transports: ['websocket', 'polling'],
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000,
+    timeout: 10000,
 });
 
 const WhatsAppLogin = () => {
+    const { memberProfile } = useAuth();
     const [qrCode, setQrCode] = useState('');
     const [status, setStatus] = useState('idle'); // idle | scanning | connected | ready | logging_out
     const [sessionId, setSessionId] = useState('');
@@ -21,6 +28,9 @@ const WhatsAppLogin = () => {
         const storedSession = localStorage.getItem('whatsapp_session_id') || `session_${Math.random().toString(36).substr(2, 9)}`;
         localStorage.setItem('whatsapp_session_id', storedSession);
         setSessionId(storedSession);
+        if (!socket.connected) {
+            socket.connect();
+        }
 
         if (socket.connected) {
             setStatus('ready');
@@ -70,6 +80,7 @@ const WhatsAppLogin = () => {
             socket.off('connected_account');
             socket.off('session_not_found');
             socket.off('error');
+            socket.disconnect();
         };
     }, []);
 
@@ -78,7 +89,7 @@ const WhatsAppLogin = () => {
             setIsRequested(true);
             setStatus('scanning');
             setQrCode('');
-            socket.emit('request_qr', sessionId);
+            socket.emit('request_qr', sessionId, memberProfile?.organization_id);
         }
     };
 

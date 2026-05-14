@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useAuth } from '../context/AuthContext'
 import {
     MessageSquare,
     CheckCheck,
@@ -49,29 +51,25 @@ const HealthBadge = ({ status }) => {
 }
 
 export default function Dashboard() {
-    const [stats, setStats] = useState(null);
-    const [loading, setLoading] = useState(true);
+    const { session } = useAuth();
+    const { data: stats, isLoading: loading } = useQuery({
+        queryKey: ['dashboard-stats', session?.access_token],
+        queryFn: async () => {
+            if (!session?.access_token) return null;
+            const res = await fetch(`${API_BASE}/dashboard-stats`, {
+                headers: { 
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'X-Auth-Portal': 'owner'
+                }
+            })
+            if (!res.ok) throw new Error('Failed to fetch dashboard stats')
+            return res.json()
+        },
+        staleTime: 1000 * 30,        // 30 sec cache
+        refetchInterval: 10000,      // Auto refresh every 10 sec
+        enabled: !!session?.access_token
+    })
 
-    const fetchStats = async () => {
-        try {
-            const res = await fetch(`${API_BASE}/dashboard-stats`);
-            if (res.ok) {
-                const data = await res.json();
-                setStats(data);
-            }
-        } catch (e) {
-            console.error("Dashboard monitor error:", e);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchStats();
-        // Poll for real-time vibe
-        const interval = setInterval(fetchStats, 10000);
-        return () => clearInterval(interval);
-    }, []);
 
     const metrics = stats?.metrics || { totalMessages: 0, delivered: 0, readRate: 0, failedRate: 0 };
 

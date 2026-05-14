@@ -36,37 +36,43 @@ const DEMO_TEMPLATES = [
 ];
 
 export default function Templates() {
-    const { session } = useAuth();
+    const { session, apiCall } = useAuth();
     const [iscreateOpen, setIsCreateOpen] = useState(false)
     const [selectedTemplate, setSelectedTemplate] = useState(null)
     const [activeTab, setActiveTab] = useState('ALL') // ALL, MARKETING, UTILITY
     const [templates, setTemplates] = useState([])
     const [loading, setLoading] = useState(true)
+    const [hasConnectedAccount, setHasConnectedAccount] = useState(false)
 
-    const fetchTemplates = async () => {
+    const fetchData = async () => {
         try {
-            const token = session?.access_token;
-            if (!token) return;
+            // Check if account is connected
+            const accRes = await apiCall(`${API_URL}/api/whatsapp/accounts`);
+            if (accRes.ok) {
+                const accounts = await accRes.json();
+                setHasConnectedAccount(Array.isArray(accounts) && accounts.length > 0);
+            }
 
-            const res = await fetch(`${API_URL}/api/whatsapp/templates`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setTemplates(data || []);
+            // Fetch templates
+            const tplRes = await apiCall(`${API_URL}/api/whatsapp/templates`);
+            const tplData = await tplRes.json();
+            if (tplRes.ok) {
+                setTemplates(tplData || []);
             } else {
-                console.error(data.error);
+                console.error('Error validating access token:', tplData.error);
             }
         } catch (error) {
-            console.error(error);
+            console.error('Error fetching data:', error);
         } finally {
             setLoading(false);
         }
     }
 
     useEffect(() => {
-        fetchTemplates();
-    }, [])
+        if (session?.access_token) {
+            fetchData();
+        }
+    }, [session])
 
     const handleDelete = async (name, isDemo) => {
         if(isDemo) {
@@ -75,13 +81,11 @@ export default function Templates() {
         }
         if(!confirm(`Are you sure you want to delete template "${name}"?`)) return;
         try {
-            const token = session?.access_token;
-            const res = await fetch(`${API_URL}/api/whatsapp/templates/${name}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
+            const res = await apiCall(`${API_URL}/api/whatsapp/templates/${name}`, {
+                method: 'DELETE'
             });
             if (res.ok) {
-                fetchTemplates();
+                fetchData();
             } else {
                 const data = await res.json();
                 alert(data.error || 'Failed to delete template');
@@ -125,7 +129,7 @@ export default function Templates() {
 
             {/* Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {[...templates, ...DEMO_TEMPLATES].filter(t => activeTab === 'ALL' || t.category === activeTab).map((template) => (
+                {[...templates, ...(hasConnectedAccount ? [] : DEMO_TEMPLATES)].filter(t => activeTab === 'ALL' || t.category === activeTab).map((template) => (
                     <div 
                         key={template.id || template.name} 
                         onClick={() => setSelectedTemplate(template)}
@@ -192,7 +196,7 @@ export default function Templates() {
                 </button>
             </div>
 
-            <CreateTemplateModal isOpen={iscreateOpen} onClose={() => setIsCreateOpen(false)} onSuccess={fetchTemplates} />
+            <CreateTemplateModal isOpen={iscreateOpen} onClose={() => setIsCreateOpen(false)} onSuccess={fetchData} apiCall={apiCall} />
             <ViewTemplateModal template={selectedTemplate} onClose={() => setSelectedTemplate(null)} />
         </div>
     )
@@ -205,18 +209,30 @@ function ViewTemplateModal({ template, onClose }) {
     const bodyComp = template.components?.find(c => c.type === 'BODY');
     const footerComp = template.components?.find(c => c.type === 'FOOTER');
     const buttonsComp = template.components?.find(c => c.type === 'BUTTONS');
+    const headerExample = headerComp?.example || {};
+    const headerMediaUrl =
+        headerComp?.media_url ||
+        headerComp?.url ||
+        headerComp?.link ||
+        headerExample?.header_url?.[0] ||
+        headerExample?.header_handle?.find?.((value) => String(value).startsWith('http'));
 
     return (
         <Modal isOpen={!!template} onClose={onClose} title={`View Template: ${template.name}`} maxWidth="max-w-md">
             <div className="bg-gray-100 rounded-2xl p-4 flex flex-col items-center">
                 <div className="w-full h-full bg-[#E5DDD5] rounded-xl overflow-hidden shadow-inner flex flex-col p-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]">
-                    <div className="bg-white rounded-lg p-2 shadow-sm rounded-tr-none max-w-[90%] self-start relative">
+                    <div className="bg-white rounded-lg p-3 pb-6 pr-12 shadow-sm rounded-tr-none max-w-[90%] self-start relative">
                         {headerComp?.format === 'TEXT' && <p className="font-bold text-gray-800 text-sm mb-2">{headerComp.text}</p>}
                         {headerComp?.format === 'IMAGE' && (
-                            <div className="h-32 bg-gray-200 rounded mb-2 flex flex-col items-center justify-center text-gray-400">
-                                <ImageIcon className="h-8 w-8" />
-                                <span className="text-[10px] mt-1 tracking-wider uppercase">Image Attachment</span>
-                            </div>
+                            headerMediaUrl ? (
+                                <img src={headerMediaUrl} alt="Template header" className="w-full h-32 object-cover rounded mb-2 bg-gray-100" />
+                            ) : (
+                                <div className="h-32 bg-gray-200 rounded mb-2 flex flex-col items-center justify-center text-gray-400 text-center px-3">
+                                    <ImageIcon className="h-8 w-8" />
+                                    <span className="text-[10px] mt-1 tracking-wider uppercase">Image Header</span>
+                                    <span className="text-[10px] mt-1 normal-case tracking-normal">Meta keeps this as approval sample. Add media when sending.</span>
+                                </div>
+                            )
                         )}
                         {headerComp?.format === 'VIDEO' && (
                             <div className="h-32 bg-gray-200 rounded mb-2 flex flex-col items-center justify-center text-gray-400">
@@ -255,8 +271,7 @@ function ViewTemplateModal({ template, onClose }) {
     )
 }
 
-function CreateTemplateModal({ isOpen, onClose, onSuccess }) {
-    const { session } = useAuth();
+function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall }) {
     const [step, setStep] = useState(1)
     const [data, setData] = useState({
         name: '',
@@ -314,10 +329,8 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess }) {
                 formData.append('file', file);
             }
 
-            const token = session?.access_token;
-            const res = await fetch(`${API_URL}/api/whatsapp/templates`, {
+            const res = await apiCall(`${API_URL}/api/whatsapp/templates`, {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
                 body: formData
             });
 
@@ -441,8 +454,17 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess }) {
                         />
                         <div className="flex justify-between items-center mt-1">
                             <button
+                                type="button"
                                 className="text-xs text-green-600 font-medium hover:underline"
-                                onClick={() => setData(prev => ({ ...prev, bodyText: prev.bodyText + ' {{1}}' }))}
+                                onClick={() => {
+                                    const matches = data.bodyText.match(/\{\{(\d+)\}\}/g);
+                                    let nextNum = 1;
+                                    if (matches) {
+                                        const nums = matches.map(m => parseInt(m.replace(/[^0-9]/g, '')));
+                                        nextNum = Math.max(...nums) + 1;
+                                    }
+                                    setData(prev => ({ ...prev, bodyText: prev.bodyText + (prev.bodyText ? ' ' : '') + `{{${nextNum}}}` }));
+                                }}
                             >
                                 + Add Variable
                             </button>
@@ -547,7 +569,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess }) {
                 {/* Right: Preview */}
                 <div className="w-[320px] bg-gray-100 rounded-2xl p-4 flex flex-col items-center">
                     <div className="w-full h-full bg-[#E5DDD5] rounded-xl overflow-hidden shadow-inner flex flex-col p-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]">
-                        <div className="bg-white rounded-lg p-2 shadow-sm rounded-tr-none max-w-[90%] self-start relative">
+                        <div className="bg-white rounded-lg p-3 pb-6 pr-12 shadow-sm rounded-tr-none max-w-[90%] self-start relative">
                             {/* Header Media */}
                             {data.headerType === 'TEXT' && data.headerText && (
                                 <p className="font-bold text-gray-800 text-sm mb-2">{data.headerText}</p>
