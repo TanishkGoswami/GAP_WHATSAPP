@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload } from 'lucide-react'
+import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
 
@@ -14,7 +14,40 @@ const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
 function parseVars(components) {
     const body = components?.find(c => c.type === 'BODY')?.text || ''
-    return [...new Set((body.match(/\{\{(\d+)\}\}/g) || []).map(m => m.replace(/\D/g, '')))]
+    const vars = []
+    const seen = new Set()
+    for (const match of body.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)) {
+        const key = String(match[1] || '').trim()
+        if (!key || seen.has(key)) continue
+        seen.add(key)
+        vars.push({
+            key,
+            token: `{{${key}}}`,
+            label: /^\d+$/.test(key) ? `Variable {{${key}}}` : key.replace(/[_-]/g, ' ')
+        })
+    }
+    return vars
+}
+
+function getTemplateComponentSummary(components = []) {
+    const header = components.find(c => c.type === 'HEADER')
+    const buttons = components.find(c => c.type === 'BUTTONS')?.buttons || []
+    const parts = []
+    if (header?.format) parts.push(`${String(header.format).toLowerCase()} header`)
+    if (buttons.length) parts.push(`${buttons.length} button${buttons.length > 1 ? 's' : ''}`)
+    return parts.length ? parts.join(' · ') : 'Body only'
+}
+
+function cleanTemplateMapping(mapping = {}) {
+    return Object.fromEntries(
+        Object.entries(mapping).filter(([key]) => (
+            !key.startsWith('_header_') &&
+            !key.startsWith('header_media_') &&
+            !key.startsWith('_button_url_') &&
+            !key.startsWith('button_url_') &&
+            !key.startsWith('_template_')
+        ))
+    )
 }
 
 function parseDynamicUrlButtons(components) {
@@ -108,7 +141,8 @@ export default function Broadcast() {
     const [isSending, setIsSending] = useState(false)
     const [sendResult, setSendResult] = useState(null)
 
-    const selectedTemplate = templates.find(t => t.name === campaign.template_name)
+    const selectedTemplate = templates.find(t => t.name === campaign.template_name && t.language === campaign.template_language)
+        || templates.find(t => t.name === campaign.template_name)
     const variables = selectedTemplate ? parseVars(selectedTemplate.components) : []
     const dynamicUrlButtons = selectedTemplate ? parseDynamicUrlButtons(selectedTemplate.components) : []
     const selectedHeader = selectedTemplate?.components?.find(c => c.type === 'HEADER')
@@ -328,9 +362,10 @@ export default function Broadcast() {
                     return alert(validation.message);
                 }
             }
-            for (let v of variables) {
-                if (!campaign.variable_mapping[v] && !customTexts[v]) {
-                    return alert(`Please map variable {{${v}}}.`);
+            for (let variable of variables) {
+                const key = variable.key
+                if (!campaign.variable_mapping[key] && !customTexts[key]) {
+                    return alert(`Please map ${variable.token}.`);
                 }
             }
         }
@@ -345,9 +380,11 @@ export default function Broadcast() {
         setSendResult(null);
 
         const finalMapping = { ...campaign.variable_mapping };
-        variables.forEach(v => {
-            if (finalMapping[v] === 'custom') {
-                finalMapping[v] = customTexts[v] || '';
+        finalMapping._template_variables = variables.map(variable => variable.key);
+        variables.forEach(variable => {
+            const key = variable.key
+            if (finalMapping[key] === 'custom') {
+                finalMapping[key] = customTexts[key] || '';
             }
         });
         finalMapping._template_body = selectedTemplate?.components?.find(c => c.type === 'BODY')?.text || `[Template: ${campaign.template_name}]`;
@@ -523,8 +560,8 @@ export default function Broadcast() {
                                                     <h4 className="text-sm font-bold text-gray-900 mb-3">Detailed Delivery Results</h4>
                                                     <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
                                                         {camp.results.map((res, idx) => (
-                                                            <div key={idx} className="flex justify-between items-center text-xs p-3 bg-white rounded shadow-sm border border-gray-100">
-                                                                <div className="flex items-center gap-3">
+                                                            <div key={idx} className="grid grid-cols-[1fr_auto] gap-4 text-xs p-3 bg-white rounded shadow-sm border border-gray-100">
+                                                                <div className="flex min-w-0 items-center gap-3">
                                                                     <div className={`w-2 h-2 rounded-full ${res.status === 'sent' ? 'bg-green-500' : 'bg-red-500'}`}></div>
                                                                     <span className="font-semibold text-gray-800">{res.name}</span> 
                                                                     <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{res.phone || 'Unknown Phone'}</span>
@@ -532,7 +569,7 @@ export default function Broadcast() {
                                                                 {res.status === 'sent' ? (
                                                                     <span className="text-green-600 font-medium">Delivered successfully</span>
                                                                 ) : (
-                                                                    <span className="text-red-600 font-medium text-right max-w-xs truncate" title={res.error}>
+                                                                    <span className="max-w-xl whitespace-normal break-words text-right font-medium text-red-600" title={res.error}>
                                                                         Failed: {res.error}
                                                                     </span>
                                                                 )}
@@ -800,8 +837,14 @@ export default function Broadcast() {
                                                 <div
                                                     key={tpl.id || tpl.name}
                                                     onClick={() => {
-                                                        setCampaign({ ...campaign, template_name: tpl.name, template_language: tpl.language });
-                                                        syncHeaderMediaUrl('');
+                                                        setHeaderMediaUrl('');
+                                                        setCustomTexts({});
+                                                        setCampaign({
+                                                            ...campaign,
+                                                            template_name: tpl.name,
+                                                            template_language: tpl.language,
+                                                            variable_mapping: cleanTemplateMapping(campaign.variable_mapping)
+                                                        });
                                                     }}
                                                     className={`p-4 rounded-lg border cursor-pointer transition-colors ${campaign.template_name === tpl.name
                                                             ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
@@ -815,6 +858,9 @@ export default function Broadcast() {
                                                     <div className="text-xs text-gray-500 mt-2 line-clamp-2">
                                                         {tpl.components?.find(c => c.type === 'BODY')?.text || 'No preview'}
                                                     </div>
+                                                    <div className="mt-3 text-[11px] font-medium text-gray-400">
+                                                        {getTemplateComponentSummary(tpl.components)}
+                                                    </div>
                                                 </div>
                                             ))}
                                             {templates.filter(t => t.status === 'APPROVED').length === 0 && (
@@ -825,55 +871,89 @@ export default function Broadcast() {
                                 </div>
 
                                 <div>
-                                    <h2 className="text-lg font-medium text-gray-900 mb-4">Map Variables</h2>
+                                    <div className="mb-4 flex items-start justify-between gap-3">
+                                        <div>
+                                            <h2 className="text-lg font-semibold text-gray-900">Content setup</h2>
+                                            <p className="mt-1 text-sm text-gray-500">Map template placeholders to contact fields or fixed values.</p>
+                                        </div>
+                                        {selectedTemplate && (
+                                            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
+                                                {getTemplateComponentSummary(selectedTemplate.components)}
+                                            </span>
+                                        )}
+                                    </div>
                                     {selectedTemplate ? (
-                                        <div className="space-y-4 bg-gray-50 p-6 rounded-xl border border-gray-100">
+                                        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                                            <div className="border-b border-gray-200 bg-gray-50 px-5 py-4">
+                                                <div className="text-sm font-semibold text-gray-900">{selectedTemplate.name}</div>
+                                                <div className="mt-1 text-xs text-gray-500">{selectedTemplate.category || 'Template'} · {selectedTemplate.language}</div>
+                                            </div>
+                                            <div className="space-y-5 p-5">
                                             {needsHeaderMedia && (
-                                                <div>
-                                                    <label className="block text-xs font-semibold text-red-600 uppercase mb-1">
-                                                        Required header {selectedHeaderFormat.toLowerCase()}
-                                                    </label>
-                                                    <label className="mb-3 flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-indigo-300 bg-white px-4 py-4 text-center hover:bg-indigo-50">
-                                                        {isHeaderUploading ? (
-                                                            <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
-                                                        ) : (
-                                                            <Upload className="h-6 w-6 text-indigo-600" />
-                                                        )}
-                                                        <span className="mt-2 text-sm font-medium text-indigo-700">
-                                                            {isHeaderUploading ? 'Uploading...' : `Upload ${selectedHeaderFormat.toLowerCase()}`}
-                                                        </span>
-                                                        <span className="mt-1 text-xs text-gray-500">or paste a public URL below</span>
-                                                        <input
-                                                            type="file"
-                                                            className="hidden"
-                                                            accept={selectedHeaderFormat === 'IMAGE' ? 'image/*' : selectedHeaderFormat === 'VIDEO' ? 'video/mp4,video/*' : '*/*'}
-                                                            disabled={isHeaderUploading}
-                                                            onChange={(e) => handleHeaderMediaUpload(e.target.files?.[0])}
-                                                        />
-                                                    </label>
-                                                    <input
-                                                        type="url"
-                                                        required
-                                                        placeholder="Paste actual public media URL"
-                                                        className={`w-full rounded-md text-sm ${headerMediaUrl.trim() ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
-                                                        value={headerMediaUrl}
-                                                        onChange={(e) => syncHeaderMediaUrl(e.target.value)}
-                                                    />
-                                                    <p className="mt-1 text-xs text-red-600">
-                                                        Placeholder text is not sent. This field must contain an uploaded or public media URL.
-                                                    </p>
+                                                <div className="rounded-lg border border-gray-200 bg-white">
+                                                    <div className="flex items-start gap-3 border-b border-gray-100 px-4 py-3">
+                                                        <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                                                            <FileText className="h-4 w-4" />
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <h3 className="text-sm font-semibold text-gray-900">Template header</h3>
+                                                                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase text-red-600">Required</span>
+                                                            </div>
+                                                            <p className="mt-1 text-xs text-gray-500">
+                                                                This approved template has a {selectedHeaderFormat.toLowerCase()} header, so Meta requires one public media URL for every send.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-3 p-4">
+                                                        <label className="flex min-h-20 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-center transition-colors hover:border-indigo-300 hover:bg-indigo-50">
+                                                            {isHeaderUploading ? (
+                                                                <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+                                                            ) : (
+                                                                <Upload className="h-5 w-5 text-indigo-600" />
+                                                            )}
+                                                            <span className="mt-2 text-sm font-medium text-indigo-700">
+                                                                {isHeaderUploading ? 'Uploading...' : `Upload ${selectedHeaderFormat.toLowerCase()}`}
+                                                            </span>
+                                                            <input
+                                                                type="file"
+                                                                className="hidden"
+                                                                accept={selectedHeaderFormat === 'IMAGE' ? 'image/*' : selectedHeaderFormat === 'VIDEO' ? 'video/mp4,video/*' : '*/*'}
+                                                                disabled={isHeaderUploading}
+                                                                onChange={(e) => handleHeaderMediaUpload(e.target.files?.[0])}
+                                                            />
+                                                        </label>
+                                                        <div>
+                                                            <label className="mb-1.5 block text-xs font-medium text-gray-700">Public media URL</label>
+                                                            <div className="relative">
+                                                                <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                                                <input
+                                                                    type="url"
+                                                                    required
+                                                                    placeholder="https://..."
+                                                                    className={`h-10 w-full rounded-lg pl-9 text-sm ${headerMediaUrl.trim() ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                                                                    value={headerMediaUrl}
+                                                                    onChange={(e) => syncHeaderMediaUrl(e.target.value)}
+                                                                />
+                                                            </div>
+                                                            <p className="mt-1.5 flex items-start gap-1.5 text-xs text-gray-500">
+                                                                <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                                                                Header placeholder text is not sent. Use an uploaded file or a public URL.
+                                                            </p>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             )}
                                             {dynamicUrlButtons.map((button) => (
-                                                <div key={`button-url-${button.index}`}>
-                                                    <label className="block text-xs font-semibold text-red-600 uppercase mb-1">
-                                                        Required URL button value
+                                                <div key={`button-url-${button.index}`} className="rounded-lg border border-gray-200 bg-white p-4">
+                                                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                                        URL button · {button.text}
                                                     </label>
                                                     <input
                                                         type="text"
                                                         required
                                                         placeholder={`Value for "${button.text}" URL`}
-                                                        className={`w-full rounded-md text-sm ${(campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`]) ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                                                        className={`h-10 w-full rounded-lg text-sm ${(campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`]) ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
                                                         value={campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`] || ''}
                                                         onChange={(e) => handleButtonUrlParamChange(button.index, e.target.value)}
                                                     />
@@ -882,37 +962,49 @@ export default function Broadcast() {
                                                     </p>
                                                 </div>
                                             ))}
-                                            {variables.length > 0 ? variables.map((v) => (
-                                                <div key={v}>
-                                                    <label className="block text-xs font-medium text-gray-500 uppercase mb-1">
-                                                        Variable {"{{"}{v}{"}}"}
-                                                    </label>
+                                            {(variables.length > 0 || dynamicUrlButtons.length > 0) && (
+                                                <div className="border-t border-gray-100 pt-5">
+                                                    <h3 className="text-sm font-semibold text-gray-900">Body variables</h3>
+                                                    <p className="mt-1 text-xs text-gray-500">Choose where each placeholder value should come from.</p>
+                                                </div>
+                                            )}
+                                            {variables.length > 0 ? variables.map((variable) => (
+                                                <div key={variable.key} className="rounded-lg border border-gray-200 bg-white p-4">
+                                                    <div className="mb-3 flex items-center justify-between gap-3">
+                                                        <div>
+                                                            <label className="block text-sm font-semibold capitalize text-gray-900">
+                                                                {variable.label}
+                                                            </label>
+                                                            <div className="mt-0.5 font-mono text-xs text-gray-400">{variable.token}</div>
+                                                        </div>
+                                                    </div>
                                                     <select 
-                                                        className="w-full rounded-md border-gray-300 text-sm mb-2"
-                                                        value={campaign.variable_mapping[v] || ''}
-                                                        onChange={e => handleVariableMapChange(v, e.target.value)}
+                                                        className="h-10 w-full rounded-lg border-gray-300 text-sm"
+                                                        value={campaign.variable_mapping[variable.key] || ''}
+                                                        onChange={e => handleVariableMapChange(variable.key, e.target.value)}
                                                     >
-                                                        <option value="">-- Select Field --</option>
+                                                        <option value="">Select source</option>
                                                         <option value="name">Contact Name</option>
                                                         <option value="phone">Contact Phone</option>
                                                         <option value="custom">Custom Text...</option>
                                                     </select>
                                                     
-                                                    {campaign.variable_mapping[v] === 'custom' && (
+                                                    {campaign.variable_mapping[variable.key] === 'custom' && (
                                                         <input 
                                                             type="text" 
                                                             placeholder="Enter custom text..." 
-                                                            className="w-full rounded-md border-gray-300 text-sm"
-                                                            value={customTexts[v] || ''}
-                                                            onChange={e => setCustomTexts({ ...customTexts, [v]: e.target.value })}
+                                                            className="mt-2 h-10 w-full rounded-lg border-gray-300 text-sm"
+                                                            value={customTexts[variable.key] || ''}
+                                                            onChange={e => setCustomTexts({ ...customTexts, [variable.key]: e.target.value })}
                                                         />
                                                     )}
                                                 </div>
                                             )) : (
-                                                <div className="text-sm text-gray-500 text-center py-4">
+                                                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 py-8 text-center text-sm text-gray-500">
                                                     This template has no variables.
                                                 </div>
                                             )}
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="flex h-full min-h-[200px] items-center justify-center text-sm text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">

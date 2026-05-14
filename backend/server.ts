@@ -22,12 +22,19 @@ import { sendEmail } from "./email";
 import pino from "pino";
 
 const app = express();
+const extraCorsOrigins = String(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
 const corsOrigins = [
     "http://localhost:3000",
+    "http://localhost:5173",
     "http://localhost:3001",
     "https://parted-deuce-penpal.ngrok-free.dev",
     "https://w.getaipilot.in",
-    "https://wb.getaipilot.in"
+    "https://wb.getaipilot.in",
+    ...extraCorsOrigins
 ];
 
 const corsAllowedHeaders = [
@@ -40,7 +47,7 @@ const corsAllowedHeaders = [
 app.use(cors({
     origin: corsOrigins,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: corsAllowedHeaders
 }));
 
@@ -57,7 +64,7 @@ const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
         origin: corsOrigins,
-        methods: ["GET", "POST"],
+        methods: ["GET", "POST", "PATCH"],
         allowedHeaders: corsAllowedHeaders,
         credentials: true
     },
@@ -65,9 +72,20 @@ const io = new Server(httpServer, {
 
 const PORT = Number(process.env.PORT || 3001);
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+const GRAPH_API_VERSION = process.env.META_GRAPH_VERSION || 'v21.0';
 
 const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'wa-media';
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const KNOWLEDGE_MAX_FILE_SIZE = 10 * 1024 * 1024;
+const KNOWLEDGE_MAX_CONTEXT_CHARS = 80_000;
+const KNOWLEDGE_ALLOWED_MIME_TYPES = new Set([
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'text/plain',
+    'text/markdown',
+    'text/csv',
+    'application/json',
+]);
 
 const UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -80,6 +98,8 @@ const sessions = new Map<string, any>();
 const latestQrBySession = new Map<string, { qr: string; createdAt: number }>();
 const groupNameCache = new Map<string, { subject: string; fetchedAt: number }>();
 const GROUP_NAME_TTL_MS = 5 * 60 * 1000;
+const profilePhotoCache = new Map<string, { url: string | null; fetchedAt: number }>();
+const PROFILE_PHOTO_TTL_MS = 30 * 60 * 1000;
 const initializingSessions = new Set<string>();
 const reconnectAttempts = new Map<string, number>();
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -159,7 +179,13 @@ function getMetaSendErrorMessage(error: any) {
     if (code === 131005) {
         return `(#131005) Access denied: selected WhatsApp account token cannot send messages with this phone number. Reconnect the account using a token with whatsapp_business_messaging permission, and make sure the phone number belongs to the same WABA/token. Meta details: ${details}`;
     }
-    return error?.message || 'API Error';
+    const parts = [
+        error?.message,
+        details && details !== error?.message ? details : '',
+        error?.error_subcode ? `subcode ${error.error_subcode}` : '',
+        error?.fbtrace_id ? `trace ${error.fbtrace_id}` : ''
+    ].filter(Boolean);
+    return parts.join(' | ') || 'API Error';
 }
 
 async function getMetaAccountDiagnostics(account: any) {
@@ -220,6 +246,116 @@ async function getMetaAccountDiagnostics(account: any) {
 
     diagnostics.send_ready = diagnostics.issues.length === 0;
     return diagnostics;
+}
+
+async function getOrgWhatsappAccount(accountId: string, orgId: string) {
+    const { data: account, error } = await supabase
+        .from('w_wa_accounts')
+        .select('*')
+        .eq('id', accountId)
+        .eq('organization_id', orgId)
+        .maybeSingle();
+
+    if (error) throw error;
+    return account;
+}
+
+async function fetchMetaBusinessProfile(account: any) {
+    const token = account?.access_token_encrypted ? decryptToken(account.access_token_encrypted) : '';
+    if (!account?.phone_number_id || !token) throw new Error('Selected account is missing phone number ID or access token');
+
+    const fields = 'about,address,description,email,profile_picture_url,websites,vertical';
+    const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${account.phone_number_id}/whatsapp_business_profile?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`;
+    const response = await fetch(url);
+    const json: any = await response.json();
+    if (!response.ok || json.error) throw new Error(json.error?.message || 'Failed to fetch WhatsApp business profile');
+
+    return Array.isArray(json.data) ? (json.data[0] || {}) : json;
+}
+
+function formatMetaApiError(error: any, fallback: string) {
+    if (!error) return fallback;
+    const parts = [
+        error.message,
+        error.error_user_msg,
+        error.error_data?.details,
+        error.code ? `code ${error.code}` : '',
+        error.error_subcode ? `subcode ${error.error_subcode}` : '',
+        error.fbtrace_id ? `trace ${error.fbtrace_id}` : ''
+    ].filter(Boolean);
+
+    return parts.length ? parts.join(' | ') : fallback;
+}
+
+async function updateMetaBusinessProfile(account: any, body: any, profilePictureHandle?: string | null) {
+    const token = account?.access_token_encrypted ? decryptToken(account.access_token_encrypted) : '';
+    if (!account?.phone_number_id || !token) throw new Error('Selected account is missing phone number ID or access token');
+
+    const payload: any = {
+        messaging_product: 'whatsapp'
+    };
+
+    for (const key of ['about', 'address', 'description', 'email', 'vertical']) {
+        if (Object.prototype.hasOwnProperty.call(body, key)) payload[key] = String(body[key] || '');
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'websites')) {
+        const raw = body.websites;
+        payload.websites = Array.isArray(raw)
+            ? raw.filter(Boolean)
+            : String(raw || '').split('\n').map((item) => item.trim()).filter(Boolean);
+    }
+
+    if (profilePictureHandle) payload.profile_picture_handle = profilePictureHandle;
+
+    const response = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${account.phone_number_id}/whatsapp_business_profile`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    });
+    const json: any = await response.json();
+    if (!response.ok || json.error) throw new Error(formatMetaApiError(json.error, 'Failed to update WhatsApp business profile'));
+    return json;
+}
+
+async function uploadMetaProfilePicture(file: Express.Multer.File, token: string) {
+    const appId = process.env.META_APP_ID;
+    if (!appId) throw new Error('META_APP_ID is required to upload a profile picture');
+    if (!file?.buffer?.length) throw new Error('Profile picture file is required');
+    if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
+        throw new Error('Profile picture must be a JPG or PNG image. WEBP is not accepted by Meta for WhatsApp profile pictures.');
+    }
+
+    const createUrl = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/${appId}/uploads`);
+    createUrl.searchParams.set('file_name', file.originalname || 'profile.jpg');
+    createUrl.searchParams.set('file_length', String(file.buffer.length));
+    createUrl.searchParams.set('file_type', file.mimetype || 'image/jpeg');
+    createUrl.searchParams.set('access_token', token);
+
+    const createRes = await fetch(createUrl, { method: 'POST' });
+    const createJson: any = await createRes.json();
+    if (!createRes.ok || createJson.error || !createJson.id) {
+        throw new Error(formatMetaApiError(createJson.error, 'Failed to create Meta upload session'));
+    }
+
+    const uploadRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${createJson.id}`, {
+        method: 'POST',
+        headers: {
+            Authorization: `OAuth ${token}`,
+            file_offset: '0',
+            'Content-Type': file.mimetype || 'application/octet-stream'
+        },
+        body: file.buffer as any
+    });
+    const uploadJson: any = await uploadRes.json();
+    if (!uploadRes.ok || uploadJson.error || !uploadJson.h) {
+        throw new Error(formatMetaApiError(uploadJson.error, 'Failed to upload profile picture to Meta'));
+    }
+
+    return uploadJson.h;
 }
 
 // ====== Auth Middleware (Supabase JWT) ======
@@ -483,6 +619,16 @@ function validateDynamicUrlButtonValue(templateUrl: string, value: any) {
     };
 }
 
+function resolveTemplateButtonUrl(templateUrl: string, value: any) {
+    const cleanTemplateUrl = String(templateUrl || '').trim();
+    if (!cleanTemplateUrl) return '';
+
+    const cleanValue = normalizeDynamicUrlButtonValue(cleanTemplateUrl, value);
+    if (!cleanTemplateUrl.includes('{{')) return cleanTemplateUrl;
+
+    return cleanTemplateUrl.replace(/\{\{\s*\d+\s*\}\}/g, cleanValue);
+}
+
 function formatIndianPhoneForDisplay(value: string | null | undefined): string {
     const key = normalizeIndianPhoneKey(value);
     if (!key) {
@@ -490,6 +636,45 @@ function formatIndianPhoneForDisplay(value: string | null | undefined): string {
         return digits ? digits : '';
     }
     return `+${key}`;
+}
+
+function toProfilePhotoJid(value: string | null | undefined) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    if (raw.includes('@g.us') || raw.includes('@newsletter')) return null;
+    if (raw.includes('@s.whatsapp.net')) return raw;
+    const digits = raw.replace(/\D+/g, '');
+    if (digits.length < 8 || digits.length > 15) return null;
+    return `${digits}@s.whatsapp.net`;
+}
+
+async function getCachedProfilePhotoUrl(waId: string | null | undefined) {
+    const jid = toProfilePhotoJid(waId);
+    if (!jid) return null;
+
+    const cached = profilePhotoCache.get(jid);
+    if (cached && Date.now() - cached.fetchedAt < PROFILE_PHOTO_TTL_MS) return cached.url;
+
+    let attempted = false;
+    for (const sock of sessions.values()) {
+        try {
+            if (!sock?.user?.id || typeof sock.profilePictureUrl !== 'function') continue;
+            attempted = true;
+            let url: string | null = null;
+            try {
+                url = await sock.profilePictureUrl(jid, 'image');
+            } catch {
+                url = await sock.profilePictureUrl(jid, 'preview');
+            }
+            profilePhotoCache.set(jid, { url: url || null, fetchedAt: Date.now() });
+            return url || null;
+        } catch {
+            // WhatsApp privacy settings or missing profile photos commonly land here.
+        }
+    }
+
+    if (attempted) profilePhotoCache.set(jid, { url: null, fetchedAt: Date.now() });
+    return null;
 }
 
 function sanitizeContactDisplayName(name: string | null | undefined, waId: string): string | null {
@@ -607,6 +792,99 @@ async function uploadMediaToStorage(params: {
     const diskPath = path.join(UPLOADS_DIR, localName);
     fs.writeFileSync(diskPath, params.buffer);
     return { path: `uploads/${localName}`, publicUrl: `${PUBLIC_BASE_URL}/uploads/${encodeURIComponent(localName)}` };
+}
+
+function formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const value = bytes / Math.pow(1024, index);
+    return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+}
+
+function normalizeKnowledgeDocument(doc: any) {
+    return {
+        id: String(doc?.id || crypto.randomUUID()),
+        name: String(doc?.name || 'Untitled document'),
+        mime_type: String(doc?.mime_type || 'application/octet-stream'),
+        size: Number(doc?.size || 0),
+        size_label: doc?.size_label || formatBytes(Number(doc?.size || 0)),
+        status: doc?.status || 'INDEXED',
+        content: String(doc?.content || '').slice(0, KNOWLEDGE_MAX_CONTEXT_CHARS),
+        created_at: doc?.created_at || new Date().toISOString(),
+        updated_at: doc?.updated_at || doc?.created_at || new Date().toISOString(),
+    };
+}
+
+async function getOrganizationSettings(organizationId: string): Promise<any> {
+    const { data, error } = await supabase
+        .from('organizations')
+        .select('settings')
+        .eq('id', organizationId)
+        .single();
+    if (error) throw error;
+    return data?.settings && typeof data.settings === 'object' ? data.settings : {};
+}
+
+async function getKnowledgeDocuments(organizationId: string) {
+    const settings = await getOrganizationSettings(organizationId);
+    const docs = Array.isArray(settings.knowledge_base_documents) ? settings.knowledge_base_documents : [];
+    return docs.map(normalizeKnowledgeDocument);
+}
+
+async function saveKnowledgeDocuments(organizationId: string, documents: any[]) {
+    const settings = await getOrganizationSettings(organizationId);
+    const nextDocuments = documents.map(normalizeKnowledgeDocument);
+    const nextSettings = {
+        ...settings,
+        knowledge_base_documents: nextDocuments,
+        knowledge_base_updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+        .from('organizations')
+        .update({ settings: nextSettings, updated_at: new Date().toISOString() })
+        .eq('id', organizationId);
+    if (error) throw error;
+    return nextDocuments;
+}
+
+async function extractKnowledgeText(file: Express.Multer.File): Promise<string> {
+    const mimeType = file.mimetype || '';
+    const ext = path.extname(file.originalname || '').toLowerCase();
+
+    if (['.txt', '.md', '.csv', '.json'].includes(ext) || mimeType.startsWith('text/') || mimeType === 'application/json') {
+        return file.buffer.toString('utf8');
+    }
+
+    if (ext === '.docx' || mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const mammoth: any = await import('mammoth');
+        const result = await mammoth.extractRawText({ buffer: file.buffer });
+        return result?.value || '';
+    }
+
+    if (ext === '.pdf' || mimeType === 'application/pdf') {
+        const pdfModule: any = await import('pdf-parse/lib/pdf-parse.js');
+        const pdfParse = pdfModule.default || pdfModule;
+        const result = await pdfParse(file.buffer);
+        return result?.text || '';
+    }
+
+    throw new Error('Unsupported file type. Upload PDF, DOCX, TXT, MD, CSV, or JSON.');
+}
+
+async function getOrganizationKnowledgeContext(organizationId: string): Promise<string> {
+    try {
+        const docs = await getKnowledgeDocuments(organizationId);
+        return docs
+            .filter((doc: any) => doc.status === 'INDEXED' && doc.content)
+            .map((doc: any) => `Source: ${doc.name}\n${doc.content}`)
+            .join('\n\n')
+            .slice(0, KNOWLEDGE_MAX_CONTEXT_CHARS);
+    } catch (err: any) {
+        console.warn('Failed to load organization knowledge base:', err?.message || err);
+        return '';
+    }
 }
 
 async function downloadMetaMedia(params: {
@@ -740,7 +1018,7 @@ app.get("/webhook", (req, res) => {
 
 // ====== Helper: send text message (Meta Cloud API) ======
 // ====== Helper: send text message (Meta Cloud API) ======
-async function sendTextMessage(to: string, body: string, phone_number_id: string | null = null) {
+async function sendTextMessage(to: string, body: string, phone_number_id: string | null = null, contextMessageId: string | null = null) {
     // If phone_number_id provided, fetch access token from DB
     let token = ACCESS_TOKEN;
     let fromId = PHONE_NUMBER_ID;
@@ -757,12 +1035,15 @@ async function sendTextMessage(to: string, body: string, phone_number_id: string
 
     const url = `https://graph.facebook.com/v21.0/${fromId}/messages`;
 
-    const payload = {
+    const payload: any = {
         messaging_product: "whatsapp",
         to,
         type: "text",
         text: { body },
     };
+    if (contextMessageId) {
+        payload.context = { message_id: contextMessageId };
+    }
 
     const r = await fetch(url, {
         method: "POST",
@@ -776,6 +1057,47 @@ async function sendTextMessage(to: string, body: string, phone_number_id: string
     const data = await r.json();
     if (!r.ok) {
         throw new Error(`Send failed: ${JSON.stringify(data)}`);
+    }
+    return data;
+}
+
+async function sendReactionMessage(to: string, targetMessageId: string, emoji: string | null, phone_number_id: string | null = null) {
+    let token = ACCESS_TOKEN;
+    let fromId = PHONE_NUMBER_ID;
+
+    if (phone_number_id && supabase) {
+        const { data } = await supabase.from('w_wa_accounts').select('access_token_encrypted').eq('phone_number_id', phone_number_id).single();
+        if (data?.access_token_encrypted) {
+            token = decryptToken(data.access_token_encrypted);
+            fromId = phone_number_id;
+        }
+    }
+
+    if (!fromId || !token) throw new Error("Missing WA creds for reaction");
+
+    const url = `https://graph.facebook.com/v21.0/${fromId}/messages`;
+    const payload = {
+        messaging_product: "whatsapp",
+        to,
+        type: "reaction",
+        reaction: {
+            message_id: targetMessageId,
+            emoji: emoji || "",
+        },
+    };
+
+    const r = await fetch(url, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+    });
+
+    const data = await r.json();
+    if (!r.ok) {
+        throw new Error(data?.error?.message || `Reaction failed: ${JSON.stringify(data)}`);
     }
     return data;
 }
@@ -1004,7 +1326,7 @@ async function upsertContact(organization_id: string, wa_account_id: string, wa_
     if (wa_key) {
         const { data, error } = await supabase
             .from('w_contacts')
-            .select('id,name,custom_name,phone,wa_id,wa_key,created_at')
+            .select('id,name,custom_name,phone,wa_id,wa_key,created_at,custom_fields')
             .eq('organization_id', organization_id)
             .eq('wa_key', wa_key);
         if (error) throw error;
@@ -1014,7 +1336,7 @@ async function upsertContact(organization_id: string, wa_account_id: string, wa_
     if (!candidates.length) {
         const { data, error } = await supabase
             .from('w_contacts')
-            .select('id,name,custom_name,phone,wa_id,wa_key,created_at')
+            .select('id,name,custom_name,phone,wa_id,wa_key,created_at,custom_fields')
             .eq('organization_id', organization_id)
             .eq('wa_id', wa_id)
             .limit(10);
@@ -1036,6 +1358,7 @@ async function upsertContact(organization_id: string, wa_account_id: string, wa_
     const nowIso = new Date().toISOString();
 
     const maybePhone = wa_key ? wa_key : derivePhoneForStorage(wa_id);
+    const profilePhotoUrl = await getCachedProfilePhotoUrl(maybePhone || wa_id);
 
     if (existing?.id) {
         const updates: any = {
@@ -1045,6 +1368,13 @@ async function upsertContact(organization_id: string, wa_account_id: string, wa_
         if (wa_key && !existing.wa_key) updates.wa_key = wa_key;
         if (!existing.phone && maybePhone) updates.phone = maybePhone;
         if (safeName && isInvalidStoredContactName(existing.name, wa_id)) updates.name = safeName;
+        if (profilePhotoUrl) {
+            updates.custom_fields = {
+                ...(existing.custom_fields && typeof existing.custom_fields === 'object' ? existing.custom_fields : {}),
+                profile_photo_url: profilePhotoUrl,
+                profile_photo_checked_at: nowIso
+            };
+        }
 
         const { data: updated, error: updErr } = await supabase
             .from('w_contacts')
@@ -1091,6 +1421,13 @@ async function upsertContact(organization_id: string, wa_account_id: string, wa_
         phone: maybePhone,
         contact_type,
     };
+
+    if (profilePhotoUrl) {
+        insertPayload.custom_fields = {
+            profile_photo_url: profilePhotoUrl,
+            profile_photo_checked_at: nowIso
+        };
+    }
 
     // Use upsert with ON CONFLICT to handle race conditions
     const { data: inserted, error: insErr } = await supabase
@@ -1430,12 +1767,13 @@ async function getBotAgentReply(params: {
         }
 
         // Build knowledge base context
-        let knowledgeContext = '';
+        let knowledgeContext = await getOrganizationKnowledgeContext(organization_id);
         if (targetAgent.knowledge_base_content && Array.isArray(targetAgent.knowledge_base_content)) {
-            knowledgeContext = targetAgent.knowledge_base_content
+            const agentKnowledgeContext = targetAgent.knowledge_base_content
                 .map((item: any) => item?.content || '')
                 .filter(Boolean)
                 .join('\n\n');
+            knowledgeContext = [knowledgeContext, agentKnowledgeContext].filter(Boolean).join('\n\n').slice(0, KNOWLEDGE_MAX_CONTEXT_CHARS);
         }
 
         // Call OpenAI
@@ -1870,6 +2208,45 @@ app.delete("/api/flow-sessions/:id", async (req, res) => {
     } catch(err: any) { res.status(500).json({ error: err.message }); }
 });
 
+app.get("/api/contacts/:id/profile-photo", authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    try {
+        const { data: contact, error } = await supabase
+            .from('w_contacts')
+            .select('id, phone, wa_id, custom_fields')
+            .eq('id', req.params.id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!contact) return res.status(404).json({ error: 'Contact not found' });
+
+        const url = await getCachedProfilePhotoUrl(contact.wa_id || contact.phone);
+        if (url) {
+            await supabase
+                .from('w_contacts')
+                .update({
+                    custom_fields: {
+                        ...(contact.custom_fields && typeof contact.custom_fields === 'object' ? contact.custom_fields : {}),
+                        profile_photo_url: url,
+                        profile_photo_checked_at: new Date().toISOString()
+                    }
+                })
+                .eq('id', contact.id);
+        }
+
+        res.json({
+            contact_id: contact.id,
+            has_photo: !!url,
+            profile_photo_url: url,
+            active_whatsapp_sessions: sessions.size,
+            jid: toProfilePhotoJid(contact.wa_id || contact.phone)
+        });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to fetch profile photo' });
+    }
+});
+
 app.get("/api/conversations", authMiddleware, async (req: any, res) => {
     const organization_id = req.organization_id;
     const wa_account_id = req.query.wa_account_id as string; // Optional filter
@@ -1885,7 +2262,7 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
             .from('w_conversations')
             .select(`
                 *,
-                contact:w_contacts(id, name, custom_name, phone, wa_id, wa_key, created_at, tags)
+                contact:w_contacts(id, name, custom_name, phone, wa_id, wa_key, created_at, tags, custom_fields)
             `)
             .eq("organization_id", organization_id)
             .order("last_message_at", { ascending: false });
@@ -1980,7 +2357,7 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
         }
 
         // Transform Data
-        const result = conversations.map((c: any) => {
+        const result = await Promise.all(conversations.map(async (c: any) => {
             const lastReadAt = readStatesMap.get(c.id);
             const userHasRead = lastReadAt ? new Date(lastReadAt) >= new Date(c.last_message_at) : false;
 
@@ -1998,6 +2375,23 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
                 if (!next.contact.wa_key) {
                     next.contact.wa_key = normalizeIndianPhoneKey(next.contact.wa_id) || null;
                 }
+                const storedPhoto = next.contact.custom_fields?.profile_photo_url || null;
+                next.contact.profile_photo_url = storedPhoto || await getCachedProfilePhotoUrl(next.contact.wa_id || next.contact.phone);
+                if (next.contact.profile_photo_url && next.contact.profile_photo_url !== storedPhoto && next.contact.id) {
+                    supabase
+                        .from('w_contacts')
+                        .update({
+                            custom_fields: {
+                                ...(next.contact.custom_fields && typeof next.contact.custom_fields === 'object' ? next.contact.custom_fields : {}),
+                                profile_photo_url: next.contact.profile_photo_url,
+                                profile_photo_checked_at: new Date().toISOString()
+                            }
+                        })
+                        .eq('id', next.contact.id)
+                        .then(({ error }) => {
+                            if (error) console.warn('Failed to persist profile photo URL:', error.message);
+                        });
+                }
             }
 
             return {
@@ -2005,7 +2399,7 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
                 user_has_read: userHasRead,
                 unread_for_user
             };
-        });
+        }));
 
         res.json(result);
     } catch (err: any) {
@@ -2193,6 +2587,87 @@ app.delete('/api/contacts/:id', authMiddleware, async (req: any, res) => {
     } catch (err: any) {
         console.error('Error deleting contact:', err);
         res.status(500).json({ error: err.message || 'Failed to delete contact' });
+    }
+});
+
+// ====== Organization Knowledge Base API ======
+app.get('/api/settings/knowledge-base', authMiddleware, async (req: any, res) => {
+    try {
+        const documents = await getKnowledgeDocuments(req.organization_id);
+        res.json({
+            documents: documents.map((doc: any) => ({
+                ...doc,
+                content_preview: doc.content ? doc.content.slice(0, 220) : '',
+                content: undefined,
+            })),
+            total_documents: documents.length,
+            total_characters: documents.reduce((sum: number, doc: any) => sum + String(doc.content || '').length, 0),
+        });
+    } catch (err: any) {
+        console.error('Knowledge base list error:', err);
+        res.status(500).json({ error: err.message || 'Failed to load knowledge base' });
+    }
+});
+
+app.post('/api/settings/knowledge-base', authMiddleware, upload.single('file'), async (req: any, res) => {
+    try {
+        const file = req.file as Express.Multer.File | undefined;
+        if (!file) return res.status(400).json({ error: 'File is required' });
+        if (file.size > KNOWLEDGE_MAX_FILE_SIZE) {
+            return res.status(400).json({ error: 'File must be 10MB or smaller' });
+        }
+
+        const ext = path.extname(file.originalname || '').toLowerCase();
+        const isAllowedExt = ['.pdf', '.docx', '.txt', '.md', '.csv', '.json'].includes(ext);
+        const isAllowedMime = KNOWLEDGE_ALLOWED_MIME_TYPES.has(file.mimetype || '') || (file.mimetype || '').startsWith('text/');
+        if (!isAllowedExt && !isAllowedMime) {
+            return res.status(400).json({ error: 'Unsupported file type. Upload PDF, DOCX, TXT, MD, CSV, or JSON.' });
+        }
+
+        const extracted = (await extractKnowledgeText(file)).replace(/\r/g, '').replace(/\n{4,}/g, '\n\n\n').trim();
+        if (!extracted) {
+            return res.status(400).json({ error: 'No readable text found in this file' });
+        }
+
+        const existing = await getKnowledgeDocuments(req.organization_id);
+        const now = new Date().toISOString();
+        const doc = normalizeKnowledgeDocument({
+            id: crypto.randomUUID(),
+            name: normalizeFilename(file.originalname || 'knowledge-document'),
+            mime_type: file.mimetype || 'application/octet-stream',
+            size: file.size,
+            size_label: formatBytes(file.size),
+            status: 'INDEXED',
+            content: extracted,
+            created_at: now,
+            updated_at: now,
+        });
+
+        const documents = await saveKnowledgeDocuments(req.organization_id, [doc, ...existing].slice(0, 50));
+        res.status(201).json({
+            document: {
+                ...doc,
+                content_preview: doc.content.slice(0, 220),
+                content: undefined,
+            },
+            total_documents: documents.length,
+        });
+    } catch (err: any) {
+        console.error('Knowledge base upload error:', err);
+        res.status(500).json({ error: err.message || 'Failed to upload knowledge document' });
+    }
+});
+
+app.delete('/api/settings/knowledge-base/:id', authMiddleware, async (req: any, res) => {
+    try {
+        const existing = await getKnowledgeDocuments(req.organization_id);
+        const next = existing.filter((doc: any) => doc.id !== req.params.id);
+        if (next.length === existing.length) return res.status(404).json({ error: 'Document not found' });
+        await saveKnowledgeDocuments(req.organization_id, next);
+        res.json({ success: true });
+    } catch (err: any) {
+        console.error('Knowledge base delete error:', err);
+        res.status(500).json({ error: err.message || 'Failed to delete knowledge document' });
     }
 });
 
@@ -2868,11 +3343,82 @@ app.get('/api/conversations/:id/messages', authMiddleware, async (req: any, res)
     }
 });
 
+app.post('/api/messages/:messageId/reaction', authMiddleware, async (req: any, res) => {
+    const { messageId } = req.params;
+    const orgId = req.organization_id;
+    const rawEmoji = typeof req.body?.emoji === 'string' ? req.body.emoji.trim() : null;
+    const emoji = rawEmoji || null;
+    const actor = req.user?.id || req.user?.email || 'dashboard';
+
+    try {
+        const { data: message, error: msgErr } = await supabase
+            .from('w_messages')
+            .select('id, organization_id, conversation_id, wa_message_id, reactions')
+            .eq('id', messageId)
+            .eq('organization_id', orgId)
+            .single();
+
+        if (msgErr) throw msgErr;
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+        if (!message.wa_message_id) return res.status(400).json({ error: 'This message cannot be reacted to yet. WhatsApp message id is missing.' });
+
+        const { data: conv, error: convErr } = await supabase
+            .from('w_conversations')
+            .select(`
+                id,
+                organization_id,
+                contact:w_contacts(id, wa_id, phone),
+                account:w_wa_accounts(id, phone_number_id, access_token_encrypted)
+            `)
+            .eq('id', message.conversation_id)
+            .eq('organization_id', orgId)
+            .single();
+
+        if (convErr) throw convErr;
+        if (!conv?.contact?.wa_id && !conv?.contact?.phone) {
+            return res.status(400).json({ error: 'Conversation contact is missing phone number' });
+        }
+        if (!conv?.account?.phone_number_id) {
+            return res.status(400).json({ error: 'Conversation account is missing phone number id' });
+        }
+
+        const nextReactions = applyReactionUpdate(message.reactions, emoji, actor);
+        const toMeta = normalizeWaIdToPhone(String(conv.contact.wa_id || conv.contact.phone || ''));
+        if (!toMeta) return res.status(400).json({ error: 'Invalid recipient phone number' });
+
+        if (conv.account.access_token_encrypted) {
+            await sendReactionMessage(toMeta, message.wa_message_id, emoji, String(conv.account.phone_number_id));
+        } else {
+            return res.status(409).json({ error: 'Reactions are currently available for Cloud API connected accounts.' });
+        }
+
+        const { error: updErr } = await supabase
+            .from('w_messages')
+            .update({ reactions: nextReactions })
+            .eq('id', message.id)
+            .eq('organization_id', orgId);
+
+        if (updErr) throw updErr;
+
+        io.emit('message_updated', {
+            conversation_id: message.conversation_id,
+            message_id: message.id,
+            wa_message_id: message.wa_message_id,
+            reactions: nextReactions,
+        });
+
+        res.json({ success: true, reactions: nextReactions });
+    } catch (err: any) {
+        console.error('Reaction update error:', err);
+        res.status(500).json({ error: err.message || 'Failed to update reaction' });
+    }
+});
+
 // Send Message (Outbound) - used by LiveChat UI
 app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: any, res) => {
     const { conversationId } = req.params;
     const orgId = req.organization_id;
-    const { text, session_id } = req.body as { text?: string; session_id?: string };
+    const { text, session_id, reply_to_message_id, forward_from_message_id } = req.body as { text?: string; session_id?: string; reply_to_message_id?: string; forward_from_message_id?: string };
 
     if (!text || !text.trim()) return res.status(400).json({ error: 'Text required' });
 
@@ -2905,7 +3451,7 @@ app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: 
         if (conv.account.access_token_encrypted) {
             const toMeta = normalizeWaIdToPhone(toPhone);
             if (!toMeta) throw new Error('Meta send requires a numeric recipient phone number');
-            sendResult = await sendTextMessage(toMeta, text, accountPhoneOrId); // sendTextMessage already decrypts internally
+            sendResult = await sendTextMessage(toMeta, text, accountPhoneOrId, reply_to_message_id || null); // sendTextMessage already decrypts internally
             wa_message_id = sendResult?.messages?.[0]?.id || null;
         } else {
             // Baileys
@@ -2950,6 +3496,22 @@ app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: 
             wa_message_id = sendResult?.key?.id || null;
         }
 
+        let quotedMessage: any = null;
+        if (reply_to_message_id) {
+            const { data: quotedMsg } = await supabase
+                .from('w_messages')
+                .select('id, text_body, type, content, wa_message_id, direction')
+                .eq('wa_message_id', reply_to_message_id)
+                .maybeSingle();
+            quotedMessage = {
+                wa_message_id: reply_to_message_id,
+                text: quotedMsg?.text_body || quotedMsg?.content?.text || null,
+                type: quotedMsg?.type || 'text',
+                direction: quotedMsg?.direction || null,
+                found: !!quotedMsg,
+            };
+        }
+
         // 2) Store in DB (with wa_message_id so status updates can match)
         const stored = await storeMessage({
             organization_id: orgId,
@@ -2958,7 +3520,7 @@ app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: 
             wa_message_id,
             direction: 'outbound',
             type: 'text',
-            content: { text },
+            content: { text, quoted: quotedMessage, forwarded: !!forward_from_message_id },
             status: 'sent'
         } as any);
 
@@ -2972,13 +3534,15 @@ app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: 
         io.emit('new_message', {
             from: toPhone,
             text,
+            quoted: quotedMessage,
             sender: 'agent',
             conversation_id: conv.id,
             contact_id: conv.contact.id,
             message_id: stored?.id || null,
             wa_message_id,
             created_at: stored?.created_at || new Date().toISOString(),
-            status: 'sent'
+            status: 'sent',
+            content: { text, quoted: quotedMessage, forwarded: !!forward_from_message_id }
         });
 
         res.json({
@@ -2992,7 +3556,7 @@ app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: 
                 contact_id: conv.contact.id,
                 direction: 'outbound',
                 type: 'text',
-                content: { text },
+                content: { text, quoted: quotedMessage, forwarded: !!forward_from_message_id },
                 status: 'sent',
             }
         });
@@ -3496,6 +4060,81 @@ app.get('/api/whatsapp/accounts/:id/diagnostics', authMiddleware, async (req: an
     }
 });
 
+app.get('/api/whatsapp/accounts/:id/business-profile', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const account = await getOrgWhatsappAccount(id, orgId);
+        if (!account?.id) return res.status(404).json({ error: 'WhatsApp account not found' });
+
+        const { access_token_encrypted, ...safeAccount } = account;
+        let profile: any = {};
+        let profileError: string | null = null;
+
+        try {
+            profile = await fetchMetaBusinessProfile(account);
+        } catch (err: any) {
+            profileError = err.message || 'Failed to fetch profile from Meta';
+        }
+
+        res.json({
+            account: safeAccount,
+            profile,
+            profile_error: profileError
+        });
+    } catch (err: any) {
+        console.error('Business profile fetch error:', err);
+        res.status(500).json({ error: err.message || 'Failed to fetch business profile' });
+    }
+});
+
+app.patch('/api/whatsapp/accounts/:id/business-profile', authMiddleware, upload.single('profile_picture'), async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const account = await getOrgWhatsappAccount(id, orgId);
+        if (!account?.id) return res.status(404).json({ error: 'WhatsApp account not found' });
+
+        const token = account.access_token_encrypted ? decryptToken(account.access_token_encrypted) : '';
+        if (!token) return res.status(400).json({ error: 'Selected account is missing a Meta access token' });
+
+        const localName = String(req.body.local_name || '').trim();
+        if (localName && localName !== account.name) {
+            const { error: nameErr } = await supabase
+                .from('w_wa_accounts')
+                .update({ name: localName })
+                .eq('id', id)
+                .eq('organization_id', orgId);
+            if (nameErr) throw nameErr;
+        }
+
+        let profilePictureHandle: string | null = null;
+        if (req.file) {
+            if (!['image/jpeg', 'image/png'].includes(String(req.file.mimetype || ''))) {
+                return res.status(400).json({ error: 'Profile picture must be a JPG or PNG image. WEBP is not accepted by Meta for WhatsApp profile pictures.' });
+            }
+            profilePictureHandle = await uploadMetaProfilePicture(req.file, token);
+        }
+
+        await updateMetaBusinessProfile(account, req.body, profilePictureHandle);
+
+        const refreshedAccount = await getOrgWhatsappAccount(id, orgId);
+        const profile = await fetchMetaBusinessProfile(refreshedAccount);
+        const { access_token_encrypted, ...safeAccount } = refreshedAccount;
+
+        res.json({
+            success: true,
+            account: safeAccount,
+            profile
+        });
+    } catch (err: any) {
+        console.error('Business profile update error:', err);
+        res.status(500).json({ error: err.message || 'Failed to update business profile' });
+    }
+});
+
 // ====== Templates API Connection ======
 
 // Get list of templates
@@ -3792,6 +4431,41 @@ app.post("/webhook", async (req, res) => {
             let type = msg.type;
             let text = "";
             let interactivePayload: any = null; // button/list reply ka raw data
+
+            if (type === 'reaction') {
+                const targetWaId = msg.reaction?.message_id || null;
+                const emoji = typeof msg.reaction?.emoji === 'string' ? msg.reaction.emoji.trim() : '';
+
+                if (targetWaId) {
+                    const { data: target, error: targetErr } = await supabase
+                        .from('w_messages')
+                        .select('id, conversation_id, reactions')
+                        .eq('organization_id', organization_id)
+                        .eq('wa_message_id', targetWaId)
+                        .maybeSingle();
+
+                    if (!targetErr && target) {
+                        const nextReactions = applyReactionUpdate(target.reactions, emoji || null, from);
+                        const { error: updErr } = await supabase
+                            .from('w_messages')
+                            .update({ reactions: nextReactions })
+                            .eq('id', target.id)
+                            .eq('organization_id', organization_id);
+
+                        if (updErr) {
+                            console.error('Failed to update Cloud reaction', updErr);
+                        } else {
+                            io.to(`org:${organization_id}`).emit('message_updated', {
+                                conversation_id: target.conversation_id,
+                                message_id: target.id,
+                                wa_message_id: targetWaId,
+                                reactions: nextReactions,
+                            });
+                        }
+                    }
+                }
+                return;
+            }
 
             // REPLACED: Updated type extraction logic for interactive/buttons
             if (type === 'text') {
@@ -5160,19 +5834,26 @@ async function processCampaign(campaign: any) {
                 addedButtonIndexes.add(item.index);
             }
 
-            const sortedKeys = Object.keys(mapping)
-                .filter(k => /^\d+$/.test(k))
-                .sort((a, b) => parseInt(a) - parseInt(b));
-            
-            for (const num of sortedKeys) {
-                const field = mapping[num];
+            const templateVariableKeys = Array.isArray(mapping._template_variables)
+                ? mapping._template_variables.map((key: any) => String(key).trim()).filter(Boolean)
+                : [...String(renderedText || '').matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)].map(match => String(match[1] || '').trim()).filter(Boolean);
+            const sortedKeys = [...new Set(templateVariableKeys.length
+                ? templateVariableKeys
+                : Object.keys(mapping).filter(k => /^\d+$/.test(k)).sort((a, b) => parseInt(a) - parseInt(b)))];
+
+            for (const key of sortedKeys) {
+                const field = mapping[key];
                 let text = '';
                 if (field === 'name') text = contact.custom_name || contact.name || '';
                 else if (field === 'phone') text = contact.phone || '';
                 else text = field || ''; 
                 
-                renderedText = renderedText.replace(`{{${num}}}`, text);
-                parameters.push({ type: 'text', text: text || ' ' });
+                renderedText = renderedText.replace(new RegExp(`\\{\\{\\s*${String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}\\}`, 'g'), text);
+                const parameter: any = { type: 'text', text: text || ' ' };
+                if (!/^\d+$/.test(String(key))) {
+                    parameter.parameter_name = String(key);
+                }
+                parameters.push(parameter);
             }
 
             if (parameters.length > 0) {
@@ -5245,15 +5926,42 @@ async function processCampaign(campaign: any) {
                         });
                         
                         if (conv && conv.id) {
+                            const templateButtons = Array.isArray(mapping._template_buttons)
+                                ? mapping._template_buttons.map((button: any) => {
+                                    const type = String(button?.type || '').toUpperCase();
+                                    const buttonValue = mapping[`_button_url_${button.index}`] || mapping[`button_url_${button.index}`] || '';
+                                    return {
+                                        index: button.index,
+                                        type,
+                                        text: button?.text || `Button ${Number(button.index || 0) + 1}`,
+                                        url: type === 'URL' ? resolveTemplateButtonUrl(button?.url, buttonValue) : '',
+                                        phone_number: type === 'PHONE_NUMBER' ? (button?.phone_number || '') : ''
+                                    };
+                                }).filter((button: any) => button.text)
+                                : [];
+
                             await storeMessage({
                                 organization_id: orgId,
                                 conversation_id: conv.id,
                                 contact_id: currentContactId,
                                 wa_message_id: wa_message_id || `broadcast-${Date.now()}`,
                                 direction: 'outbound',
-                                type: 'text',
+                                type: 'template',
                                 status: 'sent',
-                                content: { text: renderedText }
+                                content: {
+                                    text: renderedText,
+                                    template: {
+                                        name: campaign.template_name,
+                                        language: campaign.template_language,
+                                        body: renderedText,
+                                        footer: mapping._template_footer || '',
+                                        header: headerMediaUrl ? {
+                                            type: headerMediaType,
+                                            media_url: headerMediaUrl
+                                        } : null,
+                                        buttons: templateButtons
+                                    }
+                                }
                             });
                         }
                     }
@@ -5420,6 +6128,22 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
             }
             const header = template?.components?.find((component: any) => component.type === 'HEADER');
             const headerFormat = String(header?.format || '').toLowerCase();
+            const body = template?.components?.find((component: any) => component.type === 'BODY');
+            const footer = template?.components?.find((component: any) => component.type === 'FOOTER');
+            const templateButtons = template?.components?.find((component: any) => component.type === 'BUTTONS')?.buttons || [];
+
+            if (body?.text && !variableMapping._template_body) variableMapping._template_body = body.text;
+            if (footer?.text) variableMapping._template_footer = footer.text;
+            variableMapping._template_buttons = templateButtons
+                .map((button: any, index: number) => ({
+                    index,
+                    type: button?.type || '',
+                    text: button?.text || `Button ${index + 1}`,
+                    url: button?.url || '',
+                    phone_number: button?.phone_number || ''
+                }))
+                .filter((button: any) => button.text);
+
             if (['image', 'video', 'document'].includes(headerFormat)) {
                 const { type: headerMediaType, url: headerMediaUrl } = normalizeTemplateHeaderMedia(variableMapping, headerFormat);
                 if (headerMediaType !== headerFormat || !headerMediaUrl) {
@@ -5433,7 +6157,7 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
                 variableMapping.header_media_url = headerMediaUrl;
             }
 
-            const buttons = template?.components?.find((component: any) => component.type === 'BUTTONS')?.buttons || [];
+            const buttons = templateButtons;
             for (let index = 0; index < buttons.length; index++) {
                 const button = buttons[index];
                 const isDynamicUrlButton = String(button?.type || '').toUpperCase() === 'URL' && String(button?.url || '').includes('{{');

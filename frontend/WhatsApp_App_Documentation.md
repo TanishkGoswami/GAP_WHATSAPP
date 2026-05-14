@@ -1,4 +1,4 @@
-# WhatsApp Automation App - Complete Documentation
+  # WhatsApp Automation App - Complete Documentation
 
 ## Overview
 
