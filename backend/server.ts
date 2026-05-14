@@ -4514,6 +4514,7 @@ app.post("/webhook", async (req, res) => {
 
             // Quoted/Reply context extract karo
             let quotedMessage: any = null;
+            const isForwarded = !!(msg.context?.forwarded || msg.context?.frequently_forwarded);
             if (msg.context?.id) {
                 // DB mein quoted message dhundo
                 const { data: quotedMsg } = await supabase
@@ -4539,7 +4540,9 @@ app.post("/webhook", async (req, res) => {
             const enrichedContent: any = { 
                 text, 
                 raw: msg,
-                quoted: quotedMessage
+                quoted: quotedMessage,
+                forwarded: isForwarded,
+                frequently_forwarded: !!msg.context?.frequently_forwarded,
             };
 
             // C. Insert Message
@@ -4561,6 +4564,7 @@ app.post("/webhook", async (req, res) => {
                 phone: from,
                 text,
                 quoted: quotedMessage || null,
+                forwarded: isForwarded,
                 sender: 'user',
                 conversation_id: conv.id,
                 contact_id: contact.id,
@@ -4607,6 +4611,9 @@ app.post("/webhook", async (req, res) => {
                                 media_url: uploaded.publicUrl,
                                 mime_type: downloaded.mimeType,
                                 file_name: downloaded.fileName,
+                                quoted: quotedMessage,
+                                forwarded: isForwarded,
+                                frequently_forwarded: !!msg.context?.frequently_forwarded,
                                 raw: msg,
                             };
 
@@ -5070,6 +5077,16 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                         continue;
                     }
 
+                    const contextInfo =
+                        (msg.message as any)?.extendedTextMessage?.contextInfo ||
+                        (msg.message as any)?.imageMessage?.contextInfo ||
+                        (msg.message as any)?.videoMessage?.contextInfo ||
+                        (msg.message as any)?.documentMessage?.contextInfo ||
+                        (msg.message as any)?.audioMessage?.contextInfo ||
+                        (msg.message as any)?.stickerMessage?.contextInfo ||
+                        null;
+                    const isForwarded = !!(contextInfo?.isForwarded || Number(contextInfo?.forwardingScore || 0) > 0);
+
                     // Thread name (group/channel)
                     let threadName: string | null = null;
                     if (isGroup) {
@@ -5111,7 +5128,12 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                     });
 
                     // 3) Store Message (download media when possible)
-                    let enrichedContent: any = { text: captionText || null, rawType: msgType };
+                    let enrichedContent: any = {
+                        text: captionText || null,
+                        rawType: msgType,
+                        forwarded: isForwarded,
+                        forwarding_score: Number(contextInfo?.forwardingScore || 0) || 0,
+                    };
                     if (['image', 'video', 'document', 'audio', 'sticker'].includes(normalizedType) && msg.message) {
                         try {
                             let inner: any = null;
@@ -5164,6 +5186,8 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                                     file_name: fileName,
                                     duration_seconds: msgType === 'audioMessage' && Number.isFinite(Number(inner?.seconds)) ? Number(inner.seconds) : null,
                                     rawType: msgType,
+                                    forwarded: isForwarded,
+                                    forwarding_score: Number(contextInfo?.forwardingScore || 0) || 0,
                                 };
                             }
                         } catch {
@@ -5188,6 +5212,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                             from: contactWaId,
                             name: threadName || senderName,
                             text: captionText,
+                            forwarded: isForwarded,
                             type: normalizedType,
                             ...(enrichedContent?.media_url ? { media_url: enrichedContent.media_url } : {}),
                             ...(enrichedContent?.mime_type ? { mime_type: enrichedContent.mime_type } : {}),

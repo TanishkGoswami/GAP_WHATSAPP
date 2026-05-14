@@ -66,6 +66,29 @@ function WhatsAppSendIcon({ className = 'h-5 w-5' }) {
     );
 }
 
+function ForwardedIndicator() {
+    return (
+        <div className="mb-0.5 flex items-center gap-1 text-[12px] italic leading-4 text-[#667781]">
+            <svg
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+                focusable="false"
+                className="h-3.5 w-3.5 shrink-0 text-[#667781]"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.7"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+            >
+                <path d="M3 5.25h5.25c2.2 0 4 1.8 4 4v1.25" />
+                <path d="m9.75 2.75 2.5 2.5-2.5 2.5" />
+                <path d="M1.5 7.75h4.75c1.45 0 2.65.82 3.25 2" opacity=".65" />
+            </svg>
+            <span>Forwarded</span>
+        </div>
+    );
+}
+
 export default function LiveChat() {
     const { user, session, loginType, memberProfile, userRole } = useAuth()
     const isAdmin = userRole === 'admin' || userRole === 'owner'
@@ -105,6 +128,10 @@ export default function LiveChat() {
     const [replyingTo, setReplyingTo] = useState(null)
     const [activeMessageMenuId, setActiveMessageMenuId] = useState(null)
     const [messageMenuAnchor, setMessageMenuAnchor] = useState(null)
+    const [forwardingMessage, setForwardingMessage] = useState(null)
+    const [forwardSearch, setForwardSearch] = useState('')
+    const [forwardSelectedIds, setForwardSelectedIds] = useState([])
+    const [isForwarding, setIsForwarding] = useState(false)
 
     // Bot state
     const [botEnabled, setBotEnabled] = useState(false)
@@ -1391,6 +1418,11 @@ export default function LiveChat() {
 
             return (
                 <div className="w-full min-w-64 max-w-sm overflow-hidden rounded-lg bg-white text-gray-900 shadow-sm border border-gray-100">
+                    {msg.forwarded && (
+                        <div className="px-3 pt-2">
+                            <ForwardedIndicator />
+                        </div>
+                    )}
                     {headerUrl && headerType === 'image' && (
                         <img
                             src={headerUrl}
@@ -1452,6 +1484,9 @@ export default function LiveChat() {
                             })}
                         </div>
                     )}
+                    <div className="px-3 pb-2 pt-1">
+                        {renderMessageMeta(msg, 'mt-0')}
+                    </div>
                 </div>
             )
         }
@@ -1571,12 +1606,9 @@ export default function LiveChat() {
         }
 
         return (
-            <div className="space-y-1.5">
+            <div className={msg.forwarded ? 'space-y-0.5' : 'space-y-1.5'}>
                 {msg.forwarded && (
-                    <div className="flex items-center gap-1 text-[11px] italic text-gray-500">
-                        <Forward className="h-3 w-3" />
-                        Forwarded
-                    </div>
+                    <ForwardedIndicator />
                 )}
                 {quoted && (
                     <div className={`rounded-md border-l-4 px-2.5 py-1.5 text-xs ${msg.sender === 'agent'
@@ -1591,10 +1623,23 @@ export default function LiveChat() {
                         </div>
                     </div>
                 )}
-                {msg.text ? <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p> : null}
+                {msg.text ? <p className="text-[14px] leading-5 whitespace-pre-wrap">{msg.text}</p> : null}
             </div>
         )
     }
+
+    const renderMessageMeta = (msg, className = '') => (
+        <div className={`text-[10px] text-gray-400/80 text-right ${msg.forwarded ? 'mt-0.5' : 'mt-1'} ml-4 flex items-center justify-end gap-1 select-none ${className}`}>
+            {msg.time}
+            {msg.sender === 'agent' && (
+                msg.status === 'sending' ? <Clock className="h-3 w-3 text-gray-400" /> :
+                    msg.status === 'failed' ? <AlertCircle className="h-3 w-3 text-red-500" /> :
+                        msg.status === 'read' ? <CheckCheck className="h-3 w-3 text-blue-500" /> :
+                            msg.status === 'delivered' ? <CheckCheck className="h-3 w-3 text-gray-400" /> :
+                                <Check className="h-3 w-3 text-gray-400" />
+            )}
+        </div>
+    )
 
     const startReplyToMessage = (msg) => {
         setReplyingTo({
@@ -1608,30 +1653,99 @@ export default function LiveChat() {
         requestAnimationFrame(() => messageInputRef.current?.focus?.())
     }
 
-    const forwardMessage = async (msg) => {
-        if (!selectedChat) return
-        const text = msg.text || msg.fileName || ''
+    const getForwardableText = (msg) => {
+        const template = msg?.content?.template
+        if (template?.body) return template.body
+        if (msg?.content?.text) return msg.content.text
+        if (msg?.text) return msg.text
+        if (msg?.fileName) return msg.fileName
+        return ''
+    }
+
+    const forwardMessage = (msg) => {
+        const text = getForwardableText(msg)
         if (!text.trim()) {
             alert('Only text/caption messages can be forwarded right now.')
+            closeMessageMenu()
             return
         }
+
         closeMessageMenu()
+        setForwardingMessage(msg)
+        setForwardSearch('')
+        setForwardSelectedIds([])
+    }
+
+    const closeForwardModal = () => {
+        if (isForwarding) return
+        setForwardingMessage(null)
+        setForwardSearch('')
+        setForwardSelectedIds([])
+    }
+
+    const toggleForwardRecipient = (chatId) => {
+        setForwardSelectedIds(prev => (
+            prev.some(id => idsEqual(id, chatId))
+                ? prev.filter(id => !idsEqual(id, chatId))
+                : [...prev, chatId]
+        ))
+    }
+
+    const sendForwardedMessages = async () => {
+        if (!forwardingMessage || forwardSelectedIds.length === 0) return
+
+        const text = getForwardableText(forwardingMessage)
+        if (!text.trim()) return
+
+        setIsForwarding(true)
+        const activeWasTarget = selectedChat && forwardSelectedIds.some(id => idsEqual(id, selectedChat.id))
+        const optimisticId = `forward-${Date.now()}`
+        if (activeWasTarget) {
+            setMessages(prev => [...prev, {
+                id: optimisticId,
+                text,
+                sender: 'agent',
+                time: format(new Date(), 'h:mm a'),
+                type: 'text',
+                messageType: 'text',
+                agentName: 'You',
+                status: 'sending',
+                forwarded: true,
+                content: { text, forwarded: true },
+            }])
+            requestAnimationFrame(() => scrollToBottom('smooth'))
+        }
         try {
             const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session'
-            const res = await fetch(`${API_BASE}/conversations/${selectedChat.id}/send`, {
-                method: 'POST',
-                headers: { ...authHeaders, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, session_id: sessionId, forward_from_message_id: msg.wa_message_id || msg.id })
-            })
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}))
-                throw new Error(err?.error || 'Failed to forward message')
+            for (const conversationId of forwardSelectedIds) {
+                const res = await fetch(`${API_BASE}/conversations/${conversationId}/send`, {
+                    method: 'POST',
+                    headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text,
+                        session_id: sessionId,
+                        forward_from_message_id: forwardingMessage.wa_message_id || forwardingMessage.id
+                    })
+                })
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}))
+                    throw new Error(err?.error || 'Failed to forward message')
+                }
             }
-            await fetchMessages(selectedChat)
+
+            if (activeWasTarget) await fetchMessages(selectedChat)
             await fetchChats()
+            setForwardingMessage(null)
+            setForwardSearch('')
+            setForwardSelectedIds([])
         } catch (err) {
             console.error('Forward failed:', err)
+            if (activeWasTarget) {
+                setMessages(prev => prev.map(m => idsEqual(m.id, optimisticId) ? { ...m, status: 'failed' } : m))
+            }
             alert(err?.message || 'Failed to forward message')
+        } finally {
+            setIsForwarding(false)
         }
     }
 
@@ -1693,6 +1807,22 @@ export default function LiveChat() {
             return haystack.includes(query)
         })
     }, [chats, chatFilter, chatSearch])
+
+    const forwardRecipientChats = useMemo(() => {
+        const query = forwardSearch.trim().toLowerCase()
+        return chats.filter(chat => {
+            if (!query) return true
+            const haystack = [
+                chat.name,
+                chat.phone,
+                chat.waId,
+                chat.lastMessage,
+                ...(Array.isArray(chat.tags) ? chat.tags : [])
+            ].filter(Boolean).join(' ').toLowerCase()
+
+            return haystack.includes(query)
+        })
+    }, [chats, forwardSearch])
 
     const renderedThread = useMemo(() => {
         const items = []
@@ -2208,21 +2338,12 @@ export default function LiveChat() {
                                                         <ChevronDown className="h-4 w-4" />
                                                     </button>
                                                 </div>
-                                                {row.msg.sender === 'agent' && (
+                                                {row.msg.sender === 'agent' && !row.msg.forwarded && (
                                                     <div className="text-[10px] font-bold text-indigo-600 mb-0.5">{row.msg.agentName}</div>
                                                 )}
                                                 {renderMessageBody(row.msg)}
                                                 {renderReactionsPill(row.msg)}
-                                                <div className="text-[10px] text-gray-400/80 text-right mt-1 ml-4 flex items-center justify-end gap-1 select-none">
-                                                    {row.msg.time}
-                                                    {row.msg.sender === 'agent' && (
-                                                        row.msg.status === 'sending' ? <Clock className="h-3 w-3 text-gray-400" /> :
-                                                            row.msg.status === 'failed' ? <AlertCircle className="h-3 w-3 text-red-500" /> :
-                                                                row.msg.status === 'read' ? <CheckCheck className="h-3 w-3 text-blue-500" /> :
-                                                                    row.msg.status === 'delivered' ? <CheckCheck className="h-3 w-3 text-gray-400" /> :
-                                                                        <Check className="h-3 w-3 text-gray-400" />
-                                                    )}
-                                                </div>
+                                                {!row.msg.content?.template && renderMessageMeta(row.msg)}
                                             </div>
                                         )}
                                     </div>
@@ -2322,6 +2443,102 @@ export default function LiveChat() {
                                 <ArrowDown className="h-4 w-4" />
                                 New messages ({newMessagesPending})
                             </button>
+                        )}
+
+                        {forwardingMessage && (
+                            <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 px-4 py-6">
+                                <div className="flex max-h-[86vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                                    <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
+                                        <button
+                                            type="button"
+                                            onClick={closeForwardModal}
+                                            className="flex h-9 w-9 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100"
+                                            title="Close"
+                                        >
+                                            <X className="h-5 w-5" />
+                                        </button>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-base font-semibold text-gray-900">Forward to</div>
+                                            <div className="truncate text-xs text-gray-500">
+                                                {forwardSelectedIds.length > 0 ? `${forwardSelectedIds.length} selected` : 'Select one or more chats'}
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={sendForwardedMessages}
+                                            disabled={forwardSelectedIds.length === 0 || isForwarding}
+                                            className="flex h-10 w-10 items-center justify-center rounded-full bg-green-600 text-white shadow-md transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none"
+                                            title="Forward"
+                                        >
+                                            {isForwarding ? <Clock className="h-5 w-5 animate-spin" /> : <WhatsAppSendIcon className="h-5 w-5" />}
+                                        </button>
+                                    </div>
+
+                                    <div className="border-b border-gray-100 px-4 py-3">
+                                        <div className="relative">
+                                            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                                            <input
+                                                type="text"
+                                                value={forwardSearch}
+                                                onChange={(e) => setForwardSearch(e.target.value)}
+                                                placeholder="Search chats"
+                                                className="w-full rounded-full border-0 bg-gray-100 py-2.5 pl-11 pr-4 text-sm text-gray-700 outline-none transition focus:bg-white focus:ring-1 focus:ring-green-500/40"
+                                                autoFocus
+                                            />
+                                        </div>
+                                        <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+                                            <div className="flex items-center gap-1 text-[11px] italic text-gray-500">
+                                                <Forward className="h-3 w-3" />
+                                                Forwarded
+                                            </div>
+                                            <div className="mt-1 line-clamp-2 text-sm text-gray-800">
+                                                {getForwardableText(forwardingMessage)}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="min-h-0 flex-1 overflow-y-auto py-1">
+                                        {forwardRecipientChats.length === 0 ? (
+                                            <div className="px-6 py-10 text-center text-sm text-gray-500">No chats found.</div>
+                                        ) : (
+                                            forwardRecipientChats.map(chat => {
+                                                const selected = forwardSelectedIds.some(id => idsEqual(id, chat.id))
+                                                return (
+                                                    <button
+                                                        key={chat.id}
+                                                        type="button"
+                                                        onClick={() => toggleForwardRecipient(chat.id)}
+                                                        className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${selected ? 'bg-green-50' : 'hover:bg-gray-50'}`}
+                                                    >
+                                                        <div className="relative shrink-0">
+                                                            {chat.profilePhotoUrl ? (
+                                                                <img
+                                                                    src={chat.profilePhotoUrl}
+                                                                    alt={chat.name}
+                                                                    className="h-11 w-11 rounded-full object-cover"
+                                                                    loading="lazy"
+                                                                />
+                                                            ) : (
+                                                                <div className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600">
+                                                                    <User className="h-6 w-6" />
+                                                                </div>
+                                                            )}
+                                                            <div className={`absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white ${selected ? 'bg-green-500 text-white' : 'bg-white text-transparent ring-1 ring-gray-300'}`}>
+                                                                <Check className="h-3.5 w-3.5" />
+                                                            </div>
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="truncate text-sm font-semibold text-gray-900">{chat.name}</div>
+                                                            <div className="truncate text-[11px] font-mono text-gray-400">{formatPhoneForDisplay(chat.phone || chat.waId)}</div>
+                                                            <div className="truncate text-xs text-gray-500">{chat.lastMessage}</div>
+                                                        </div>
+                                                    </button>
+                                                )
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
                         )}
 
                         {/* Input Area */}
