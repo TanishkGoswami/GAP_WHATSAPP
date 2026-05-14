@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
 
@@ -17,8 +17,67 @@ function parseVars(components) {
     return [...new Set((body.match(/\{\{(\d+)\}\}/g) || []).map(m => m.replace(/\D/g, '')))]
 }
 
+function parseDynamicUrlButtons(components) {
+    const buttons = components?.find(c => c.type === 'BUTTONS')?.buttons || []
+    return buttons
+        .map((button, index) => ({
+            index,
+            text: button.text || `Button ${index + 1}`,
+            url: button.url || ''
+        }))
+        .filter(button => String(button.url).includes('{{'))
+}
+
+function normalizeDynamicUrlButtonValue(button, value) {
+    let cleanValue = String(value || '').trim()
+    const templateUrl = String(button?.url || '')
+    const placeholderIndex = templateUrl.indexOf('{{')
+    const staticPrefix = placeholderIndex >= 0 ? templateUrl.slice(0, placeholderIndex) : ''
+
+    if (staticPrefix && cleanValue.startsWith(staticPrefix)) {
+        cleanValue = cleanValue.slice(staticPrefix.length)
+    }
+
+    if (staticPrefix.endsWith('/') && cleanValue.startsWith('/')) {
+        cleanValue = cleanValue.slice(1)
+    }
+
+    return cleanValue
+}
+
+function validateDynamicUrlButtonValue(button, value) {
+    const rawValue = String(value || '').trim()
+    const templateUrl = String(button?.url || '')
+    const placeholderIndex = templateUrl.indexOf('{{')
+    const staticPrefix = placeholderIndex >= 0 ? templateUrl.slice(0, placeholderIndex) : ''
+    const normalizedValue = normalizeDynamicUrlButtonValue(button, rawValue)
+    const isAbsoluteUrl = /^https?:\/\//i.test(rawValue)
+
+    if (staticPrefix && isAbsoluteUrl && !rawValue.startsWith(staticPrefix)) {
+        return {
+            ok: false,
+            value: normalizedValue,
+            message: `Button "${button.text}" is approved for ${staticPrefix}... Enter only the placeholder part for that approved URL, or create a new Meta template for this different domain.`
+        }
+    }
+
+    if (staticPrefix && /^https?:\/\//i.test(normalizedValue)) {
+        return {
+            ok: false,
+            value: normalizedValue,
+            message: `Button "${button.text}" needs only the URL placeholder value, not a full URL.`
+        }
+    }
+
+    return {
+        ok: !!normalizedValue,
+        value: normalizedValue,
+        message: `Button "${button.text}" needs the dynamic part of the URL, not the full approved URL. Example: ads, contact, or ?utm_source=whatsapp`
+    }
+}
+
 export default function Broadcast() {
-    const { session } = useAuth()
+    const { session, apiCall } = useAuth()
     const token = session?.access_token
 
     const [activeTab, setActiveTab] = useState('new') // 'new' | 'history'
@@ -51,6 +110,12 @@ export default function Broadcast() {
 
     const selectedTemplate = templates.find(t => t.name === campaign.template_name)
     const variables = selectedTemplate ? parseVars(selectedTemplate.components) : []
+    const dynamicUrlButtons = selectedTemplate ? parseDynamicUrlButtons(selectedTemplate.components) : []
+    const selectedHeader = selectedTemplate?.components?.find(c => c.type === 'HEADER')
+    const selectedHeaderFormat = String(selectedHeader?.format || '').toUpperCase()
+    const needsHeaderMedia = ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(selectedHeaderFormat)
+    const [headerMediaUrl, setHeaderMediaUrl] = useState('')
+    const [isHeaderUploading, setIsHeaderUploading] = useState(false)
     
     const filteredContacts = campaign.audience_tag === 'CSV_UPLOAD'
         ? (csvData || [])
@@ -61,23 +126,23 @@ export default function Broadcast() {
     useEffect(() => {
         if (!token) return;
 
-        fetch(`${API_URL}/api/whatsapp/accounts`, { headers: { Authorization: `Bearer ${token}` } })
+        apiCall(`${API_URL}/api/whatsapp/accounts`)
             .then(res => res.json())
             .then(data => { setWaAccounts(Array.isArray(data) ? data : []); setIsLoading(p => ({ ...p, accounts: false })) })
             .catch(() => setIsLoading(p => ({ ...p, accounts: false })));
 
-        fetch(`${API_URL}/api/broadcast/tags`, { headers: { Authorization: `Bearer ${token}` } })
+        apiCall(`${API_URL}/api/broadcast/tags`)
             .then(res => res.json())
             .then(data => { setTags(data?.tags || []); setIsLoading(p => ({ ...p, tags: false })) })
             .catch(() => setIsLoading(p => ({ ...p, tags: false })));
 
-        fetch(`${API_URL}/api/whatsapp/templates`, { headers: { Authorization: `Bearer ${token}` } })
+        apiCall(`${API_URL}/api/whatsapp/templates`)
             .then(res => res.json())
             .then(data => { setTemplates(Array.isArray(data) ? data : []); setIsLoading(p => ({ ...p, templates: false })) })
             .catch(() => setIsLoading(p => ({ ...p, templates: false })));
 
         setIsLoading(p => ({ ...p, contacts: true }));
-        fetch(`${API_URL}/api/contacts`, { headers: { Authorization: `Bearer ${token}` } })
+        apiCall(`${API_URL}/api/contacts`)
             .then(res => res.json())
             .then(data => { 
                 const individuals = (data?.contacts || data || []).filter(c => c.contact_type === 'individual');
@@ -89,7 +154,7 @@ export default function Broadcast() {
 
     const fetchCampaignHistory = (silent = false) => {
         if (!silent) setIsLoadingHistory(true);
-        fetch(`${API_URL}/api/broadcast/campaigns`, { headers: { Authorization: `Bearer ${token}` } })
+        apiCall(`${API_URL}/api/broadcast/campaigns`)
             .then(res => res.json())
             .then(data => {
                 setCampaignsList(data.campaigns || []);
@@ -117,9 +182,8 @@ export default function Broadcast() {
     const deleteCampaign = async (id) => {
         if (!window.confirm('Are you sure you want to cancel and delete this scheduled campaign?')) return;
         try {
-            const res = await fetch(`${API_URL}/api/broadcast/campaigns/${id}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${token}` }
+            const res = await apiCall(`${API_URL}/api/broadcast/campaigns/${id}`, {
+                method: 'DELETE'
             });
             if (res.ok) {
                 fetchCampaignHistory();
@@ -178,6 +242,73 @@ export default function Broadcast() {
         }));
     };
 
+    const validateHeaderMediaUrl = () => {
+        if (!needsHeaderMedia) return true
+        const url = headerMediaUrl.trim()
+        if (!url) {
+            alert(`This template has a ${selectedHeaderFormat.toLowerCase()} header. Upload media or paste a public URL before sending.`)
+            return false
+        }
+        if (!/^https?:\/\/.+\..+/.test(url)) {
+            alert('Header media URL must be a public http/https URL.')
+            return false
+        }
+        if (/^https?:\/\/example\.com\//i.test(url)) {
+            alert('Please replace the example URL with your actual public media URL.')
+            return false
+        }
+        return true
+    }
+
+    const syncHeaderMediaUrl = (url) => {
+        const cleanUrl = String(url || '').trim()
+        const mediaType = selectedHeaderFormat?.toLowerCase() || 'image'
+        setHeaderMediaUrl(cleanUrl)
+        setCampaign(prev => ({
+            ...prev,
+            variable_mapping: {
+                ...prev.variable_mapping,
+                _header_media_type: mediaType,
+                _header_media_url: cleanUrl,
+                header_media_type: mediaType,
+                header_media_url: cleanUrl
+            }
+        }))
+    }
+
+    const handleButtonUrlParamChange = (buttonIndex, value) => {
+        const button = dynamicUrlButtons.find(item => item.index === buttonIndex)
+        const cleanValue = normalizeDynamicUrlButtonValue(button, value)
+        setCampaign(prev => ({
+            ...prev,
+            variable_mapping: {
+                ...prev.variable_mapping,
+                [`_button_url_${buttonIndex}`]: cleanValue,
+                [`button_url_${buttonIndex}`]: cleanValue
+            }
+        }))
+    }
+
+    const handleHeaderMediaUpload = async (file) => {
+        if (!file) return
+        const formData = new FormData()
+        formData.append('file', file)
+        setIsHeaderUploading(true)
+        try {
+            const res = await apiCall(`${API_URL}/api/broadcast/header-media`, {
+                method: 'POST',
+                body: formData
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Failed to upload header media')
+            syncHeaderMediaUrl(data.publicUrl || '')
+        } catch (err) {
+            alert(err.message)
+        } finally {
+            setIsHeaderUploading(false)
+        }
+    }
+
     const handleNext = () => {
         if (currentStep === 1) {
             if (!campaign.name || !campaign.wa_account_id) return alert('Campaign Name and WA Account are required.');
@@ -190,6 +321,13 @@ export default function Broadcast() {
         }
         if (currentStep === 3) {
             if (!campaign.template_name) return alert('Please select a template.');
+            if (!validateHeaderMediaUrl()) return;
+            for (const button of dynamicUrlButtons) {
+                const validation = validateDynamicUrlButtonValue(button, campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`])
+                if (!validation.ok) {
+                    return alert(validation.message);
+                }
+            }
             for (let v of variables) {
                 if (!campaign.variable_mapping[v] && !customTexts[v]) {
                     return alert(`Please map variable {{${v}}}.`);
@@ -202,6 +340,7 @@ export default function Broadcast() {
     const handleBack = () => setCurrentStep(p => Math.max(1, p - 1));
 
     const handleLaunch = async () => {
+        if (!validateHeaderMediaUrl()) return;
         setIsSending(true);
         setSendResult(null);
 
@@ -212,6 +351,17 @@ export default function Broadcast() {
             }
         });
         finalMapping._template_body = selectedTemplate?.components?.find(c => c.type === 'BODY')?.text || `[Template: ${campaign.template_name}]`;
+        if (needsHeaderMedia) {
+            finalMapping._header_media_type = selectedHeaderFormat.toLowerCase();
+            finalMapping._header_media_url = headerMediaUrl.trim();
+            finalMapping.header_media_type = selectedHeaderFormat.toLowerCase();
+            finalMapping.header_media_url = headerMediaUrl.trim();
+        }
+        dynamicUrlButtons.forEach(button => {
+            const value = validateDynamicUrlButtonValue(button, finalMapping[`_button_url_${button.index}`] || finalMapping[`button_url_${button.index}`]).value;
+            finalMapping[`_button_url_${button.index}`] = value;
+            finalMapping[`button_url_${button.index}`] = value;
+        });
 
         let formattedScheduledAt = null;
         if (campaign.scheduled_at) {
@@ -223,16 +373,15 @@ export default function Broadcast() {
             scheduled_at: formattedScheduledAt,
             audience_tag: campaign.audience_tag === 'CSV_UPLOAD' ? null : campaign.audience_tag,
             csv_data: campaign.audience_tag === 'CSV_UPLOAD' ? csvData : null,
-            variable_mapping: finalMapping
+            variable_mapping: finalMapping,
+            required_header_type: needsHeaderMedia ? selectedHeaderFormat.toLowerCase() : undefined,
+            header_media_type: needsHeaderMedia ? selectedHeaderFormat.toLowerCase() : undefined,
+            header_media_url: needsHeaderMedia ? headerMediaUrl.trim() : undefined
         };
 
         try {
-            const res = await fetch(`${API_URL}/api/broadcast/send`, {
+            const res = await apiCall(`${API_URL}/api/broadcast/send`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify(payload)
             });
             const data = await res.json();
@@ -652,6 +801,7 @@ export default function Broadcast() {
                                                     key={tpl.id || tpl.name}
                                                     onClick={() => {
                                                         setCampaign({ ...campaign, template_name: tpl.name, template_language: tpl.language });
+                                                        syncHeaderMediaUrl('');
                                                     }}
                                                     className={`p-4 rounded-lg border cursor-pointer transition-colors ${campaign.template_name === tpl.name
                                                             ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
@@ -678,6 +828,60 @@ export default function Broadcast() {
                                     <h2 className="text-lg font-medium text-gray-900 mb-4">Map Variables</h2>
                                     {selectedTemplate ? (
                                         <div className="space-y-4 bg-gray-50 p-6 rounded-xl border border-gray-100">
+                                            {needsHeaderMedia && (
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-red-600 uppercase mb-1">
+                                                        Required header {selectedHeaderFormat.toLowerCase()}
+                                                    </label>
+                                                    <label className="mb-3 flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-indigo-300 bg-white px-4 py-4 text-center hover:bg-indigo-50">
+                                                        {isHeaderUploading ? (
+                                                            <Loader2 className="h-6 w-6 animate-spin text-indigo-600" />
+                                                        ) : (
+                                                            <Upload className="h-6 w-6 text-indigo-600" />
+                                                        )}
+                                                        <span className="mt-2 text-sm font-medium text-indigo-700">
+                                                            {isHeaderUploading ? 'Uploading...' : `Upload ${selectedHeaderFormat.toLowerCase()}`}
+                                                        </span>
+                                                        <span className="mt-1 text-xs text-gray-500">or paste a public URL below</span>
+                                                        <input
+                                                            type="file"
+                                                            className="hidden"
+                                                            accept={selectedHeaderFormat === 'IMAGE' ? 'image/*' : selectedHeaderFormat === 'VIDEO' ? 'video/mp4,video/*' : '*/*'}
+                                                            disabled={isHeaderUploading}
+                                                            onChange={(e) => handleHeaderMediaUpload(e.target.files?.[0])}
+                                                        />
+                                                    </label>
+                                                    <input
+                                                        type="url"
+                                                        required
+                                                        placeholder="Paste actual public media URL"
+                                                        className={`w-full rounded-md text-sm ${headerMediaUrl.trim() ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                                                        value={headerMediaUrl}
+                                                        onChange={(e) => syncHeaderMediaUrl(e.target.value)}
+                                                    />
+                                                    <p className="mt-1 text-xs text-red-600">
+                                                        Placeholder text is not sent. This field must contain an uploaded or public media URL.
+                                                    </p>
+                                                </div>
+                                            )}
+                                            {dynamicUrlButtons.map((button) => (
+                                                <div key={`button-url-${button.index}`}>
+                                                    <label className="block text-xs font-semibold text-red-600 uppercase mb-1">
+                                                        Required URL button value
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        required
+                                                        placeholder={`Value for "${button.text}" URL`}
+                                                        className={`w-full rounded-md text-sm ${(campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`]) ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                                                        value={campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`] || ''}
+                                                        onChange={(e) => handleButtonUrlParamChange(button.index, e.target.value)}
+                                                    />
+                                                    <p className="mt-1 text-xs text-gray-500">
+                                                        Approved URL: {button.url}. Enter only the placeholder value, for example ads or ?utm_source=whatsapp.
+                                                    </p>
+                                                </div>
+                                            ))}
                                             {variables.length > 0 ? variables.map((v) => (
                                                 <div key={v}>
                                                     <label className="block text-xs font-medium text-gray-500 uppercase mb-1">

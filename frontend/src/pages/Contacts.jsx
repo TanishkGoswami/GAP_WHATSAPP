@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Filter, MoreHorizontal, Upload, Phone, Calendar, Tag, Edit2, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
@@ -8,10 +8,15 @@ const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
 
 export default function Contacts() {
-    const { session } = useAuth()
+    const { session, apiCall } = useAuth()
     const [selectedContact, setSelectedContact] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [tagFilter, setTagFilter] = useState('');
     const [showProfileModal, setShowProfileModal] = useState(false);
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [newContact, setNewContact] = useState({ name: '', phone: '', tags: '' });
+    const [importStatus, setImportStatus] = useState('');
+    const fileInputRef = useRef(null);
     const [customNameDraft, setCustomNameDraft] = useState('')
 
 
@@ -32,9 +37,7 @@ export default function Contacts() {
         queryKey: ['contacts', session?.access_token],
         queryFn: async () => {
             if (!session?.access_token) return []
-            const res = await fetch(`${API_BASE}/contacts`, {
-                headers: { Authorization: `Bearer ${session.access_token}` }
-            })
+            const res = await apiCall(`${API_BASE}/contacts`)
             if (!res.ok) {
                 const body = await res.text().catch(() => '')
                 throw new Error(`Failed to fetch contacts: ${res.status} ${body}`)
@@ -52,12 +55,8 @@ export default function Contacts() {
     const mutation = useMutation({
         mutationFn: async (updatedContact) => {
             if (!session?.access_token) return
-            const res = await fetch(`${API_BASE}/contacts/${updatedContact.id}`, {
+            const res = await apiCall(`${API_BASE}/contacts/${updatedContact.id}`, {
                 method: 'PATCH',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                },
                 body: JSON.stringify({ custom_name: customNameDraft }),
             })
             if (!res.ok) {
@@ -129,17 +128,132 @@ export default function Contacts() {
 
     const getPhone = (c) => formatPhoneForDisplay(c?.phone || c?.wa_id) || ''
 
-    const filteredContacts = contacts.filter(contact =>
-        String(getDisplayName(contact)).toLowerCase().includes(searchTerm.toLowerCase()) ||
-        String(getPhone(contact)).includes(searchTerm) ||
-        String(contact.wa_id || '').includes(searchTerm)
-    );
+    const allTags = useMemo(() => {
+        const tags = new Set()
+        contacts.forEach((contact) => (contact.tags || []).forEach((tag) => tags.add(tag)))
+        return Array.from(tags).sort()
+    }, [contacts])
+
+    const filteredContacts = contacts.filter(contact => {
+        const matchesSearch =
+            String(getDisplayName(contact)).toLowerCase().includes(searchTerm.toLowerCase()) ||
+            String(getPhone(contact)).includes(searchTerm) ||
+            String(contact.wa_id || '').includes(searchTerm)
+        const matchesTag = !tagFilter || (contact.tags || []).includes(tagFilter)
+        return matchesSearch && matchesTag
+    });
 
     const handleViewContact = (contact) => {
         setSelectedContact(contact);
         setCustomNameDraft(String(contact?.custom_name || ''))
         setShowProfileModal(true);
     };
+
+    const parseCsvLine = (line) => {
+        const values = []
+        let current = ''
+        let inQuotes = false
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i]
+            if (ch === '"' && line[i + 1] === '"') {
+                current += '"'
+                i++
+            } else if (ch === '"') {
+                inQuotes = !inQuotes
+            } else if (ch === ',' && !inQuotes) {
+                values.push(current.trim())
+                current = ''
+            } else {
+                current += ch
+            }
+        }
+        values.push(current.trim())
+        return values
+    }
+
+    const createContact = async (payload) => {
+        const res = await apiCall(`${API_BASE}/contacts`, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        })
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}))
+            throw new Error(body.error || `Failed to create contact (${res.status})`)
+        }
+        return res.json()
+    }
+
+    const handleAddContact = async (e) => {
+        e.preventDefault()
+        try {
+            await createContact(newContact)
+            setShowAddModal(false)
+            setNewContact({ name: '', phone: '', tags: '' })
+            queryClient.invalidateQueries({ queryKey: ['contacts'] })
+        } catch (err) {
+            alert(err.message)
+        }
+    }
+
+    const handleImportCsv = async (event) => {
+        const file = event.target.files?.[0]
+        event.target.value = ''
+        if (!file) return
+
+        try {
+            setImportStatus('Importing CSV...')
+            const text = await file.text()
+            const lines = text.split(/\r?\n/).filter((line) => line.trim())
+            if (lines.length < 2) throw new Error('CSV must include a header row and at least one contact')
+
+            const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase())
+            const nameIdx = headers.findIndex((h) => h.includes('name'))
+            const phoneIdx = headers.findIndex((h) => h.includes('phone') || h.includes('mobile') || h.includes('number'))
+            const tagsIdx = headers.findIndex((h) => h.includes('tag'))
+            if (phoneIdx === -1) throw new Error('CSV needs a phone/mobile/number column')
+
+            let imported = 0
+            let failed = 0
+            for (const line of lines.slice(1)) {
+                const cols = parseCsvLine(line)
+                const phone = cols[phoneIdx]
+                if (!phone) continue
+                try {
+                    await createContact({
+                        name: nameIdx >= 0 ? cols[nameIdx] : '',
+                        phone,
+                        tags: tagsIdx >= 0 ? cols[tagsIdx] : ''
+                    })
+                    imported++
+                } catch {
+                    failed++
+                }
+            }
+
+            setImportStatus(`Imported ${imported} contact${imported === 1 ? '' : 's'}${failed ? `, skipped ${failed}` : ''}.`)
+            queryClient.invalidateQueries({ queryKey: ['contacts'] })
+        } catch (err) {
+            setImportStatus('')
+            alert(err.message)
+        }
+    }
+
+    const handleDeleteContact = async () => {
+        if (!selectedContact?.id) return
+        if (!confirm(`Delete ${getDisplayName(selectedContact)}?`)) return
+        try {
+            const res = await apiCall(`${API_BASE}/contacts/${selectedContact.id}`, { method: 'DELETE' })
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}))
+                throw new Error(body.error || 'Failed to delete contact')
+            }
+            setShowProfileModal(false)
+            setSelectedContact(null)
+            queryClient.invalidateQueries({ queryKey: ['contacts'] })
+        } catch (err) {
+            alert(err.message)
+        }
+    }
 
     return (
         <div className="space-y-6">            {/* Page Header */}
@@ -149,16 +263,37 @@ export default function Contacts() {
                     <p className="text-sm text-gray-500 mt-1">Manage your audience and customer data</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors shadow-sm">
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".csv,text/csv"
+                        className="hidden"
+                        onChange={handleImportCsv}
+                    />
+                    <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
+                    >
                         <Upload className="h-4 w-4" />
                         Import CSV
                     </button>
-                    <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 rounded-lg text-sm font-medium text-white hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100">
+                    <button
+                        type="button"
+                        onClick={() => setShowAddModal(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600 rounded-lg text-sm font-medium text-white hover:bg-indigo-700 transition-colors shadow-md shadow-indigo-100"
+                    >
                         <Plus className="h-4 w-4" />
                         Add Contact
                     </button>
                 </div>
             </div>
+
+            {importStatus && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-700">
+                    {importStatus}
+                </div>
+            )}
 
             {mutation.error && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 flex items-center gap-3">
@@ -194,9 +329,26 @@ export default function Contacts() {
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none transition-all"
                     />
                 </div>
-                <button className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium">
+                <select
+                    value={tagFilter}
+                    onChange={(e) => setTagFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-gray-700 bg-white font-medium outline-none focus:ring-2 focus:ring-green-500"
+                >
+                    <option value="">All tags</option>
+                    {allTags.map((tag) => (
+                        <option key={tag} value={tag}>{tag}</option>
+                    ))}
+                </select>
+                <button
+                    type="button"
+                    onClick={() => {
+                        setSearchTerm('')
+                        setTagFilter('')
+                    }}
+                    className="inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 font-medium"
+                >
                     <Filter className="h-4 w-4" />
-                    Filters
+                    Reset
                 </button>
             </div>
 
@@ -402,12 +554,71 @@ export default function Contacts() {
                                 <Edit2 className="h-4 w-4" />
                                 {isSavingName ? 'Saving...' : 'Save alias'}
                             </button>
-                            <button className="px-4 py-2 border border-red-300 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 flex items-center gap-2">
+                            <button
+                                onClick={handleDeleteContact}
+                                className="px-4 py-2 border border-red-300 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 flex items-center gap-2"
+                            >
                                 <Trash2 className="h-4 w-4" />
                                 Delete
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {showAddModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <form onSubmit={handleAddContact} className="bg-white rounded-xl max-w-md w-full shadow-xl">
+                        <div className="p-6 border-b border-gray-200">
+                            <h2 className="text-lg font-bold text-gray-900">Add Contact</h2>
+                            <p className="text-sm text-gray-500 mt-1">Use a WhatsApp number with country code, or a 10 digit India number.</p>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                                <input
+                                    value={newContact.name}
+                                    onChange={(e) => setNewContact({ ...newContact, name: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+                                    placeholder="Customer name"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                                <input
+                                    required
+                                    value={newContact.phone}
+                                    onChange={(e) => setNewContact({ ...newContact, phone: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+                                    placeholder="+91 98765 43210"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                                <input
+                                    value={newContact.tags}
+                                    onChange={(e) => setNewContact({ ...newContact, tags: e.target.value })}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+                                    placeholder="lead, vip"
+                                />
+                            </div>
+                        </div>
+                        <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setShowAddModal(false)}
+                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                className="px-4 py-2 bg-indigo-600 rounded-lg text-sm font-medium text-white hover:bg-indigo-700"
+                            >
+                                Add Contact
+                            </button>
+                        </div>
+                    </form>
                 </div>
             )}
         </div>

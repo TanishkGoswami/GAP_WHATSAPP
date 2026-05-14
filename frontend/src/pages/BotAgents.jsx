@@ -6,7 +6,7 @@ const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`;
 
 export default function BotAgents() {
-    const { session } = useAuth();
+    const { session, apiCall } = useAuth();
     const [agents, setAgents] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedAgent, setSelectedAgent] = useState(null);
@@ -39,9 +39,7 @@ export default function BotAgents() {
         try {
             setIsLoading(true);
             setFetchError(null);
-            const res = await fetch(`${API_BASE}/agents`, {
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
-            });
+            const res = await apiCall(`${API_BASE}/agents`);
             if (res.ok) {
                 const data = await res.json();
                 // Transform data to match UI format
@@ -76,9 +74,7 @@ export default function BotAgents() {
     const fetchApiSettings = async () => {
         if (!session?.access_token) return;
         try {
-            const res = await fetch(`${API_BASE}/settings/openai`, {
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
-            });
+            const res = await apiCall(`${API_BASE}/settings/openai`);
             if (res.ok) {
                 const data = await res.json();
                 setApiKeyConfigured(data.configured || data.hasEnvKey);
@@ -111,12 +107,8 @@ export default function BotAgents() {
                 is_active: true
             };
 
-            const res = await fetch(`${API_BASE}/agents`, {
+            const res = await apiCall(`${API_BASE}/agents`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                },
                 body: JSON.stringify(payload)
             });
 
@@ -173,12 +165,8 @@ export default function BotAgents() {
                 is_active: editingAgent.isActive
             };
 
-            const res = await fetch(`${API_BASE}/agents/${editingAgent.id}`, {
+            const res = await apiCall(`${API_BASE}/agents/${editingAgent.id}`, {
                 method: 'PATCH',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                },
                 body: JSON.stringify(payload)
             });
 
@@ -203,12 +191,8 @@ export default function BotAgents() {
         if (!agent) return;
 
         try {
-            const res = await fetch(`${API_BASE}/agents/${id}`, {
+            const res = await apiCall(`${API_BASE}/agents/${id}`, {
                 method: 'PATCH',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                },
                 body: JSON.stringify({ is_active: !agent.isActive })
             });
 
@@ -226,9 +210,8 @@ export default function BotAgents() {
         if (!confirm('Are you sure you want to delete this agent?')) return;
 
         try {
-            const res = await fetch(`${API_BASE}/agents/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${session.access_token}` }
+            const res = await apiCall(`${API_BASE}/agents/${id}`, {
+                method: 'DELETE'
             });
 
             if (res.ok) {
@@ -251,12 +234,8 @@ export default function BotAgents() {
 
         setIsSaving(true);
         try {
-            const res = await fetch(`${API_BASE}/settings/openai`, {
+            const res = await apiCall(`${API_BASE}/settings/openai`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
-                },
                 body: JSON.stringify({ api_key: apiKey })
             });
 
