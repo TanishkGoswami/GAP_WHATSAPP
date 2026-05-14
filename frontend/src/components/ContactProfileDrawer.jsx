@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { X, MessageSquare, Phone, Mail, Calendar, Tag, Edit, Clock, Send } from 'lucide-react'
+import { X, MessageSquare, Phone, Mail, Calendar, Tag, Edit, Clock, Send, User, Video, Search } from 'lucide-react'
 import { format } from 'date-fns'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -79,6 +79,8 @@ export default function ContactProfileDrawer({
         return formatPhoneForDisplay(raw)
     }, [contact])
 
+    const profilePhotoUrl = contact?.profile_photo_url || contact?.profilePhotoUrl || contact?.photo_url || ''
+
     useEffect(() => {
         setCustomName(String(contact?.custom_name || ''))
         setSaveError('')
@@ -151,41 +153,65 @@ export default function ContactProfileDrawer({
             <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={onClose} />
 
             <div className="absolute inset-y-0 right-0 flex max-w-full pl-10">
-                <div className="w-screen max-w-md transform transition-all ease-in-out duration-500 sm:duration-700 bg-white shadow-xl flex flex-col h-full">
+                <div className="w-screen max-w-md transform transition-all ease-in-out duration-500 sm:duration-700 bg-white shadow-2xl flex flex-col h-full">
 
                     {/* Header */}
-                    <div className="px-4 py-6 bg-gray-900 sm:px-6">
-                        <div className="flex items-start justify-between">
-                            <h2 className="text-lg font-medium text-white">Contact Profile</h2>
-                            <div className="ml-3 flex h-7 items-center">
+                    <div className="bg-white px-5 pb-5 pt-5">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
                                 <button
                                     onClick={onClose}
-                                    className="rounded-md bg-gray-900 text-gray-200 hover:text-white focus:ring-2 focus:ring-white"
+                                    className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 text-gray-700 transition-colors hover:border-green-500 hover:bg-green-50 hover:text-gray-900"
+                                    title="Close"
                                 >
-                                    <X className="h-6 w-6" />
+                                    <X className="h-5 w-5" />
                                 </button>
+                                <h2 className="text-base font-semibold text-gray-900">Contact info</h2>
                             </div>
+                            <button
+                                onClick={() => onEdit(contact)}
+                            className="rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                                title="Edit contact"
+                            >
+                                <Edit className="h-5 w-5" />
+                            </button>
                         </div>
-                        <div className="mt-6 flex items-center">
-                            <div className="h-16 w-16 rounded-full bg-indigo-500 flex items-center justify-center text-2xl font-bold text-white uppercase border-2 border-white">
-                                {avatarText}
-                            </div>
-                            <div className="ml-4">
-                                <h3 className="text-xl font-bold text-white">{displayName}</h3>
-                                <div className="text-sm text-gray-300 font-mono mt-0.5">{phoneDisplay || 'No phone'}</div>
-                                <div className="mt-2 flex gap-2">
-                                    {(contact.tags || []).map(tag => (
-                                        <span key={tag} className="inline-flex items-center rounded-full bg-indigo-400/20 px-2 py-0.5 text-xs font-medium text-indigo-100 ring-1 ring-inset ring-indigo-400/30">
-                                            {tag}
-                                        </span>
-                                    ))}
+
+                        <div className="mt-7 flex flex-col items-center text-center">
+                            {profilePhotoUrl ? (
+                                <img
+                                    src={profilePhotoUrl}
+                                    alt={displayName}
+                                    className="h-28 w-28 rounded-full object-cover shadow-sm ring-1 ring-gray-200"
+                                />
+                            ) : (
+                                <div className="flex h-28 w-28 items-center justify-center rounded-full bg-rose-50 text-rose-600 ring-1 ring-rose-200">
+                                    <User className="h-14 w-14" />
                                 </div>
+                            )}
+                            <h3 className="mt-4 text-2xl font-semibold text-gray-900">{displayName}</h3>
+                            <div className="mt-1 text-sm text-gray-500 font-mono">{phoneDisplay || 'No phone'}</div>
+                            <div className="mt-5 grid w-full grid-cols-3 gap-2.5">
+                                {[
+                                    { icon: Phone, label: 'Voice' },
+                                    { icon: Video, label: 'Video' },
+                                    { icon: Search, label: 'Search' },
+                                ].map(action => (
+                                    <button
+                                        key={action.label}
+                                        type="button"
+                                        className="flex h-16 flex-col items-center justify-center gap-1 rounded-xl border border-gray-200 bg-white text-sm text-gray-800 transition-colors hover:border-green-200 hover:bg-green-50"
+                                    >
+                                        <action.icon className="h-5 w-5 text-green-600" />
+                                        {action.label}
+                                    </button>
+                                ))}
                             </div>
                         </div>
                     </div>
 
                     {/* Tabs */}
-                    <div className="border-b border-gray-200">
+                    <div className="border-y border-gray-200 bg-white">
                         <nav className="-mb-px flex px-6" aria-label="Tabs">
                             {['overview', 'chat', 'notes'].map((tab) => (
                                 <button
@@ -194,7 +220,7 @@ export default function ContactProfileDrawer({
                                     className={`
                                         w-1/3 py-4 px-1 text-center border-b-2 text-sm font-medium capitalize
                                         ${activeTab === tab
-                                            ? 'border-indigo-500 text-indigo-600'
+                                            ? 'border-green-500 text-green-700'
                                             : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'}
                                     `}
                                 >
@@ -205,7 +231,7 @@ export default function ContactProfileDrawer({
                     </div>
 
                     {/* Content */}
-                    <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 bg-gray-50">
+                    <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 bg-gray-50">
 
                         {activeTab === 'overview' && (
                             <div className="space-y-6">
@@ -213,11 +239,11 @@ export default function ContactProfileDrawer({
                                 <div className="flex gap-3">
                                     <button
                                         onClick={() => onEdit(contact)}
-                                        className="flex-1 flex items-center justify-center gap-2 bg-white border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm"
+                                        className="flex-1 flex items-center justify-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 shadow-sm"
                                     >
                                         <Edit className="h-4 w-4" /> Edit Details
                                     </button>
-                                    <button className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-indigo-700 shadow-sm">
+                                    <button className="flex-1 flex items-center justify-center gap-2 bg-green-600 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-green-700 shadow-sm">
                                         <MessageSquare className="h-4 w-4" /> Send Message
                                     </button>
                                 </div>
@@ -225,13 +251,16 @@ export default function ContactProfileDrawer({
                                 {/* Manual alias */}
                                 <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                                     <div className="px-4 py-5 sm:p-6 space-y-3">
-                                        <div className="text-sm font-medium text-gray-900">Your name (alias)</div>
+                                        <div>
+                                            <div className="text-sm font-semibold text-gray-900">Chat alias</div>
+                                            <p className="mt-0.5 text-xs text-gray-500">Private display name for this workspace.</p>
+                                        </div>
                                         <input
                                             ref={aliasInputRef}
                                             value={customName}
                                             onChange={(e) => setCustomName(e.target.value)}
                                             placeholder="Type a name you want to see in chat"
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                                            className="w-full rounded-xl border border-gray-300 px-3 py-2.5 text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/20"
                                         />
                                         {saveError ? (
                                             <div className="text-xs text-red-600">{saveError}</div>
@@ -241,7 +270,7 @@ export default function ContactProfileDrawer({
                                                 type="button"
                                                 onClick={saveCustomName}
                                                 disabled={isSaving}
-                                                className="inline-flex items-center justify-center rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                                                className="inline-flex items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
                                             >
                                                 {isSaving ? 'Saving...' : 'Save'}
                                             </button>
@@ -269,7 +298,7 @@ export default function ContactProfileDrawer({
 
                                 {/* Automation Status */}
                                 <div>
-                                    <h4 className="text-sm font-medium text-gray-900 mb-3 ml-1">Automation Status</h4>
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-3 ml-1">Automation Status</h4>
                                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                                         <div className="px-4 py-3 flex justify-between items-center text-sm border-b border-gray-100">
                                             <span className="text-gray-500 flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Bot Auto Reply</span>
@@ -287,7 +316,7 @@ export default function ContactProfileDrawer({
                                             <div className="flex items-center gap-2">
                                                 {flowSession ? (
                                                     <>
-                                                        <span className="font-semibold px-2 py-0.5 rounded-md text-xs bg-indigo-100 text-indigo-700 max-w-[120px] truncate" title={flowSession?.flows?.name}>
+                                                        <span className="font-semibold px-2 py-0.5 rounded-md text-xs bg-green-100 text-green-700 max-w-[120px] truncate" title={flowSession?.flows?.name}>
                                                             {flowSession?.flows?.name || 'In Progress'}
                                                         </span>
                                                         <button 
@@ -308,7 +337,7 @@ export default function ContactProfileDrawer({
 
                                 {/* Custom Attributes */}
                                 <div>
-                                    <h4 className="text-sm font-medium text-gray-900 mb-3 ml-1">Custom Attributes</h4>
+                                    <h4 className="text-sm font-semibold text-gray-900 mb-3 ml-1">Custom Attributes</h4>
                                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm divide-y divide-gray-100">
                                         {Object.entries(contact.custom_fields || {}).length > 0 ? (
                                             Object.entries(contact.custom_fields).map(([key, value]) => (
@@ -331,7 +360,7 @@ export default function ContactProfileDrawer({
                                     <p className="text-sm text-gray-500">Today</p>
                                 </div>
                                 <div className="flex gap-3 justify-end">
-                                    <div className="bg-indigo-600 text-white rounded-l-xl rounded-t-xl p-3 text-sm max-w-[80%] shadow-sm">
+                                    <div className="bg-green-600 text-white rounded-l-xl rounded-t-xl p-3 text-sm max-w-[80%] shadow-sm">
                                         Your order #1024 has been shipped! 📦
                                     </div>
                                 </div>
@@ -339,7 +368,7 @@ export default function ContactProfileDrawer({
                                     <div className="text-xs text-gray-400">10:42 AM • Sent</div>
                                 </div>
                                 <div className="flex gap-3">
-                                    <div className="h-8 w-8 rounded-full bg-indigo-100 flex-shrink-0 flex items-center justify-center text-xs font-bold text-indigo-600">
+                                    <div className="h-8 w-8 rounded-full bg-green-100 flex-shrink-0 flex items-center justify-center text-xs font-bold text-green-700">
                                         {avatarText}
                                     </div>
                                     <div className="bg-white border border-gray-200 rounded-r-xl rounded-t-xl p-3 text-sm max-w-[80%] shadow-sm text-gray-800">
@@ -355,7 +384,7 @@ export default function ContactProfileDrawer({
                         {activeTab === 'notes' && (
                             <div className="space-y-4">
                                 <textarea
-                                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                    className="w-full rounded-lg border-gray-300 shadow-sm focus:border-green-500 focus:ring-green-500"
                                     rows={4}
                                     placeholder="Add a private note about this contact..."
                                 />

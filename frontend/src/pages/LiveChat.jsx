@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ArrowDown, FileText, Mic, Pencil, Bot, User } from 'lucide-react'
+import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ChevronDown, ArrowDown, FileText, Mic, Pencil, Bot, User, ExternalLink, Reply, Forward, X, Copy, Trash2 } from 'lucide-react'
 import { format, isToday, isYesterday } from 'date-fns'
 import { io } from "socket.io-client";
 import QRCode from 'react-qr-code'
@@ -22,6 +22,50 @@ const socket = io(BACKEND_BASE, {
 });
 const API_BASE = `${BACKEND_BASE}/api`;
 
+const TWEMOJI_ASSET_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg';
+const QUICK_REACTIONS = [
+    { emoji: '\u{1F44D}', label: 'Thumbs up', asset: '1f44d.svg' },
+    { emoji: '\u2764\uFE0F', label: 'Heart', asset: '2764.svg' },
+    { emoji: '\u{1F602}', label: 'Laugh', asset: '1f602.svg' },
+    { emoji: '\u{1F62E}', label: 'Wow', asset: '1f62e.svg' },
+    { emoji: '\u{1F622}', label: 'Sad', asset: '1f622.svg' },
+    { emoji: '\u{1F64F}', label: 'Prayer', asset: '1f64f.svg' },
+];
+const REACTION_ASSET_BY_EMOJI = QUICK_REACTIONS.reduce((acc, item) => {
+    acc[item.emoji] = item.asset;
+    acc[item.emoji.replace(/\uFE0F/g, '')] = item.asset;
+    return acc;
+}, {});
+
+function EmojiAsset({ emoji, label = 'Emoji', className = 'h-5 w-5' }) {
+    const key = String(emoji || '');
+    const asset = REACTION_ASSET_BY_EMOJI[key] || REACTION_ASSET_BY_EMOJI[key.replace(/\uFE0F/g, '')];
+    if (!asset) return <span className={className}>{emoji}</span>;
+
+    return (
+        <img
+            src={`${TWEMOJI_ASSET_BASE}/${asset}`}
+            alt={label}
+            className={`${className} select-none object-contain`}
+            draggable="false"
+        />
+    );
+}
+
+function WhatsAppSendIcon({ className = 'h-5 w-5' }) {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            focusable="false"
+            className={className}
+            fill="currentColor"
+        >
+            <path d="M3.55 20.98 21.22 12 3.55 3.02v6.98L15.1 12 3.55 14v6.98Z" />
+        </svg>
+    );
+}
+
 export default function LiveChat() {
     const { user, session, loginType, memberProfile, userRole } = useAuth()
     const isAdmin = userRole === 'admin' || userRole === 'owner'
@@ -32,6 +76,10 @@ export default function LiveChat() {
     }), [session, loginType]);
     const [chats, setChats] = useState([])
     const chatsRef = useRef([])
+    const [chatSearch, setChatSearch] = useState('')
+    const [chatFilter, setChatFilter] = useState('all')
+    const [isChatFilterMenuOpen, setIsChatFilterMenuOpen] = useState(false)
+    const [isAssignMenuOpen, setIsAssignMenuOpen] = useState(false)
     const [selectedChat, setSelectedChat] = useState(null)
     const selectedChatRef = useRef(null)
     const [messageText, setMessageText] = useState('')
@@ -39,6 +87,8 @@ export default function LiveChat() {
     const [messages, setMessages] = useState([])
     const messagesEndRef = useRef(null)
     const messagesListRef = useRef(null)
+    const messageInputRef = useRef(null)
+    const profilePhotoFetchRef = useRef(new Set())
 
     const [hasMoreMessages, setHasMoreMessages] = useState(true)
     const [isLoadingOlder, setIsLoadingOlder] = useState(false)
@@ -52,6 +102,9 @@ export default function LiveChat() {
     const [isEmojiOpen, setIsEmojiOpen] = useState(false)
     const [isContactDrawerOpen, setIsContactDrawerOpen] = useState(false)
     const [focusAliasOnOpen, setFocusAliasOnOpen] = useState(false)
+    const [replyingTo, setReplyingTo] = useState(null)
+    const [activeMessageMenuId, setActiveMessageMenuId] = useState(null)
+    const [messageMenuAnchor, setMessageMenuAnchor] = useState(null)
 
     // Bot state
     const [botEnabled, setBotEnabled] = useState(false)
@@ -86,16 +139,29 @@ export default function LiveChat() {
         selectedChatRef.current = selectedChat
     }, [selectedChat])
 
-    // Close bot menu when clicking outside
+    // Close floating menus when clicking outside
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (showBotMenu && !e.target.closest('[data-bot-menu]')) {
                 setShowBotMenu(false)
             }
+            if (isAssignMenuOpen && !e.target.closest('[data-assign-menu]')) {
+                setIsAssignMenuOpen(false)
+            }
+            if (isChatFilterMenuOpen && !e.target.closest('[data-chat-filter-menu]')) {
+                setIsChatFilterMenuOpen(false)
+            }
+            if (isAutoAssignMenuOpen && !e.target.closest('[data-auto-assign-menu]')) {
+                setIsAutoAssignMenuOpen(false)
+            }
+            if (activeMessageMenuId && !e.target.closest('[data-message-menu]')) {
+                setActiveMessageMenuId(null)
+                setMessageMenuAnchor(null)
+            }
         }
         document.addEventListener('click', handleClickOutside)
         return () => document.removeEventListener('click', handleClickOutside)
-    }, [showBotMenu])
+    }, [showBotMenu, isAssignMenuOpen, isChatFilterMenuOpen, isAutoAssignMenuOpen, activeMessageMenuId])
 
     const isNearBottom = () => {
         const el = messagesListRef.current
@@ -107,6 +173,16 @@ export default function LiveChat() {
     const scrollToBottom = (behavior = 'auto') => {
         messagesEndRef.current?.scrollIntoView({ behavior })
     }
+
+    useEffect(() => {
+        const el = messageInputRef.current
+        if (!el) return
+
+        el.style.height = 'auto'
+        const nextHeight = Math.min(el.scrollHeight, 168)
+        el.style.height = `${nextHeight}px`
+        el.style.overflowY = el.scrollHeight > 168 ? 'auto' : 'hidden'
+    }, [messageText, isInternalNote])
 
     // Account Selection
     const [connectedAccounts, setConnectedAccounts] = useState([]);
@@ -219,6 +295,65 @@ export default function LiveChat() {
         return colors[h % colors.length]
     }
 
+    const getProfilePhotoUrl = (contact) => (
+        contact?.profile_photo_url ||
+        contact?.profilePhotoUrl ||
+        contact?.photo_url ||
+        contact?.avatar_url ||
+        contact?.custom_fields?.profile_photo_url ||
+        ''
+    )
+
+    const fetchMissingProfilePhotos = async (chatRows) => {
+        if (!session?.access_token) return
+        const rows = (Array.isArray(chatRows) ? chatRows : [])
+            .filter(chat => chat.contactId && !chat.profilePhotoUrl && !profilePhotoFetchRef.current.has(chat.contactId))
+            .slice(0, 12)
+
+        if (rows.length === 0) return
+
+        await Promise.all(rows.map(async (chat) => {
+            profilePhotoFetchRef.current.add(chat.contactId)
+            try {
+                const res = await fetch(`${API_BASE}/contacts/${chat.contactId}/profile-photo`, {
+                    headers: authHeaders
+                })
+                if (!res.ok) return
+                const data = await res.json()
+                const photoUrl = data?.profile_photo_url
+                if (!photoUrl) return
+
+                setChats(prev => prev.map(item => {
+                    if (!idsEqual(item.contactId, chat.contactId)) return item
+                    const nextContact = {
+                        ...(item.contact || {}),
+                        profile_photo_url: photoUrl,
+                        custom_fields: {
+                            ...(item.contact?.custom_fields || {}),
+                            profile_photo_url: photoUrl,
+                        }
+                    }
+                    return { ...item, contact: nextContact, profilePhotoUrl: photoUrl }
+                }))
+
+                setSelectedChat(prev => {
+                    if (!prev || !idsEqual(prev.contactId, chat.contactId)) return prev
+                    const nextContact = {
+                        ...(prev.contact || {}),
+                        profile_photo_url: photoUrl,
+                        custom_fields: {
+                            ...(prev.contact?.custom_fields || {}),
+                            profile_photo_url: photoUrl,
+                        }
+                    }
+                    return { ...prev, contact: nextContact, profilePhotoUrl: photoUrl }
+                })
+            } catch (err) {
+                console.warn('Failed to fetch profile photo:', err)
+            }
+        }))
+    }
+
     const formatMessageFromDb = (m) => {
         const createdAt = m.created_at ? new Date(m.created_at) : new Date()
 
@@ -253,6 +388,9 @@ export default function LiveChat() {
             account: null,
             status: m.status,
             reactions: Array.isArray(m.reactions) ? m.reactions : [],
+            content: m.content || {},
+            quoted: m.content?.quoted || null,
+            forwarded: !!m.content?.forwarded,
         }
     }
 
@@ -353,6 +491,7 @@ export default function LiveChat() {
                     status: conv.status,
                     tags: conv.labels || [],
                     assigned_to: conv.assigned_to,
+                    profilePhotoUrl: getProfilePhotoUrl(conv.contact),
                     type: 'text'
                 }));
                 // Sort by time (newest first)
@@ -362,6 +501,7 @@ export default function LiveChat() {
                     return bTime - aTime;
                 });
                 setChats(formatted);
+                fetchMissingProfilePhotos(formatted);
             } else {
                 const body = await res.text().catch(() => '')
                 console.error('Failed to fetch chats:', res.status, body)
@@ -456,17 +596,21 @@ export default function LiveChat() {
                 method: 'PATCH',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`
+                    ...authHeaders
                 },
                 body: JSON.stringify({ agent_id: agentId || null })
             });
             if (res.ok) {
+                const normalizedAgentId = agentId || null
                 setChats(prev => prev.map(c => 
-                    c.id === conversationId ? { ...c, assigned_to: agentId } : c
+                    c.id === conversationId ? { ...c, assigned_to: normalizedAgentId } : c
                 ));
                 if (selectedChat?.id === conversationId) {
-                    setSelectedChat(prev => ({ ...prev, assigned_to: agentId }));
+                    setSelectedChat(prev => ({ ...prev, assigned_to: normalizedAgentId }));
                 }
+            } else {
+                const body = await res.text().catch(() => '')
+                console.error("Failed to assign agent:", res.status, body)
             }
         } catch (err) {
             console.error("Failed to assign agent:", err);
@@ -757,6 +901,9 @@ export default function LiveChat() {
                         account: msg.connectedAccount,
                         status: msg.status,
                         reactions: Array.isArray(msg.reactions) ? msg.reactions : [],
+                        content: msg.content || {},
+                        quoted: msg.quoted || msg.content?.quoted || null,
+                        forwarded: !!(msg.forwarded || msg.content?.forwarded),
                     };
 
                     setMessages(prev => {
@@ -820,6 +967,7 @@ export default function LiveChat() {
                     phone: updated?.phone || c.phone,
                     contact: nextContact,
                     name: getDisplayName(nextContact),
+                    profilePhotoUrl: getProfilePhotoUrl(nextContact),
                 }
             }))
 
@@ -835,8 +983,21 @@ export default function LiveChat() {
                         phone: updated?.phone || prev.phone,
                         contact: nextContact,
                         name: getDisplayName(nextContact),
+                        profilePhotoUrl: getProfilePhotoUrl(nextContact),
                     }
                 })
+            }
+        }
+
+        const handleConversationAssigned = (payload) => {
+            const conversationId = payload?.conversation_id
+            const assignedTo = payload?.assigned_to || null
+            if (!conversationId) return
+
+            setChats(prev => prev.map(c => idsEqual(c.id, conversationId) ? { ...c, assigned_to: assignedTo } : c))
+            const active = selectedChatRef.current
+            if (active && idsEqual(active.id, conversationId)) {
+                setSelectedChat(prev => prev ? { ...prev, assigned_to: assignedTo } : prev)
             }
         }
 
@@ -845,6 +1006,7 @@ export default function LiveChat() {
 
         socket.on('new_message', handleNewMessage);
         socket.on('contact_updated', handleContactUpdated)
+        socket.on('conversation_assigned', handleConversationAssigned)
 
         socket.on('message_updated', (update) => {
             const targetId = update?.message_id || null
@@ -921,6 +1083,7 @@ export default function LiveChat() {
             socket.off('connect_error', handleConnectError)
             socket.off('new_message', handleNewMessage);
             socket.off('contact_updated', handleContactUpdated)
+            socket.off('conversation_assigned', handleConversationAssigned)
             socket.off('message_updated');
             socket.off('message_status_update');
             socket.off('connected_account');
@@ -944,16 +1107,90 @@ export default function LiveChat() {
         if (counts.size === 0) return null
 
         return (
-            <div className="mt-1 flex justify-end">
-                <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/80 border border-gray-200 shadow-sm text-[11px] text-gray-800">
-                    {[...counts.entries()].slice(0, 6).map(([emoji, count]) => (
-                        <span key={emoji} className="leading-none">
-                            {emoji}{count > 1 ? <span className="text-[10px] text-gray-500 ml-0.5">{count}</span> : null}
+            <div className="pointer-events-none absolute -bottom-3 right-2 z-10">
+                <div className="inline-flex min-h-5 items-center gap-0.5 rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[11px] leading-none text-gray-800 shadow-sm">
+                    {[...counts.entries()].slice(0, 4).map(([emoji, count]) => (
+                        <span key={emoji} className="inline-flex items-center leading-none">
+                            <EmojiAsset emoji={emoji} className="h-3.5 w-3.5" />
+                            {count > 1 ? <span className="ml-0.5 text-[10px] font-semibold text-gray-500">{count}</span> : null}
                         </span>
                     ))}
                 </div>
             </div>
         )
+    }
+
+    const closeMessageMenu = () => {
+        setActiveMessageMenuId(null)
+        setMessageMenuAnchor(null)
+    }
+
+    const openMessageMenu = (event, msg) => {
+        event.stopPropagation()
+
+        if (activeMessageMenuId === msg.id) {
+            closeMessageMenu()
+            return
+        }
+
+        const rect = event.currentTarget.getBoundingClientRect()
+        const menuWidth = 224
+        const menuHeight = 246
+        const gap = 8
+        const pagePadding = 12
+        const spaceBelow = window.innerHeight - rect.bottom
+        const shouldOpenUp = spaceBelow < menuHeight + gap + pagePadding
+
+        const rawTop = shouldOpenUp ? rect.top - menuHeight - gap : rect.bottom + gap
+        const top = Math.max(pagePadding, Math.min(rawTop, window.innerHeight - menuHeight - pagePadding))
+
+        const alignRight = msg.sender === 'agent'
+        const rawLeft = alignRight ? rect.right - menuWidth : rect.left
+        const left = Math.max(pagePadding, Math.min(rawLeft, window.innerWidth - menuWidth - pagePadding))
+
+        setActiveMessageMenuId(msg.id)
+        setMessageMenuAnchor({ top, left, placement: shouldOpenUp ? 'top' : 'bottom' })
+    }
+
+    const updateMessageReactions = (messageId, waMessageId, reactions) => {
+        setMessages(prev => prev.map(m => {
+            const match = (messageId && idsEqual(m.id, messageId)) || (waMessageId && m.wa_message_id && m.wa_message_id === waMessageId)
+            return match ? { ...m, reactions: Array.isArray(reactions) ? reactions : [] } : m
+        }))
+    }
+
+    const sendReaction = async (msg, emoji) => {
+        if (!msg?.id || !session?.access_token) return
+
+        const from = user?.id || 'me'
+        const now = new Date().toISOString()
+        const current = Array.isArray(msg.reactions) ? msg.reactions : []
+        const alreadySame = current.some(r => r?.from === from && r?.emoji === emoji)
+        const optimistic = current.filter(r => r?.from !== from)
+        if (!alreadySame) optimistic.push({ emoji, from, at: now })
+
+        closeMessageMenu()
+        updateMessageReactions(msg.id, msg.wa_message_id, optimistic)
+
+        try {
+            const res = await fetch(`${API_BASE}/messages/${msg.id}/reaction`, {
+                method: 'POST',
+                headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emoji: alreadySame ? null : emoji })
+            })
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}))
+                throw new Error(err?.error || 'Failed to update reaction')
+            }
+
+            const data = await res.json()
+            updateMessageReactions(msg.id, msg.wa_message_id, data.reactions || [])
+        } catch (err) {
+            console.error('Reaction failed:', err)
+            updateMessageReactions(msg.id, msg.wa_message_id, current)
+            alert(err?.message || 'Failed to update reaction')
+        }
     }
 
     const handleSendMessage = async (e) => {
@@ -972,6 +1209,7 @@ export default function LiveChat() {
             }
             setMessages(prev => [...prev, newMessage])
             setMessageText('')
+            setReplyingTo(null)
             return
         }
 
@@ -998,6 +1236,7 @@ export default function LiveChat() {
 
             const captionToSend = messageText
             setMessageText('')
+            setReplyingTo(null)
             setPendingAudio(null)
             setIsAudioPanelOpen(false)
 
@@ -1057,6 +1296,7 @@ export default function LiveChat() {
 
             const captionToSend = messageText
             setMessageText('')
+            setReplyingTo(null)
             setSelectedFile(null)
 
             try {
@@ -1095,11 +1335,20 @@ export default function LiveChat() {
             time: format(new Date(), 'h:mm a'),
             type: 'text',
             agentName: 'You',
-            status: 'sent'
+            status: 'sent',
+            quoted: replyingTo ? {
+                wa_message_id: replyingTo.wa_message_id,
+                text: replyingTo.text,
+                type: replyingTo.type,
+                direction: replyingTo.sender === 'agent' ? 'outbound' : 'inbound',
+                found: true,
+            } : null
         }
         setMessages(prev => [...prev, optimisticMessage])
         const textToSend = messageText
+        const replyToSend = replyingTo
         setMessageText('')
+        setReplyingTo(null)
 
         try {
             const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session'
@@ -1109,7 +1358,7 @@ export default function LiveChat() {
                     ...authHeaders,
                     'Content-Type': 'application/json' 
                 },
-                body: JSON.stringify({ text: textToSend, session_id: sessionId })
+                body: JSON.stringify({ text: textToSend, session_id: sessionId, reply_to_message_id: replyToSend?.wa_message_id || null })
             })
 
             if (!res.ok) {
@@ -1129,6 +1378,83 @@ export default function LiveChat() {
 
     const renderMessageBody = (msg) => {
         const t = msg.messageType || (msg.sender === 'agent' ? 'text' : 'text')
+        const template = msg.content?.template
+        const quoted = msg.quoted || msg.content?.quoted || null
+        const quotedText = quoted?.text || (quoted?.type && quoted.type !== 'text' ? `[${quoted.type}]` : '')
+
+        if (template) {
+            const headerUrl = template.header?.media_url
+                ? (String(template.header.media_url).startsWith('http') ? template.header.media_url : `${BACKEND_BASE}${template.header.media_url}`)
+                : null
+            const headerType = String(template.header?.type || '').toLowerCase()
+            const buttons = Array.isArray(template.buttons) ? template.buttons.filter(button => button?.text) : []
+
+            return (
+                <div className="w-full min-w-64 max-w-sm overflow-hidden rounded-lg bg-white text-gray-900 shadow-sm border border-gray-100">
+                    {headerUrl && headerType === 'image' && (
+                        <img
+                            src={headerUrl}
+                            alt={template.name || 'Template header'}
+                            className="h-48 w-full object-cover"
+                            loading="lazy"
+                        />
+                    )}
+                    {headerUrl && headerType === 'video' && (
+                        <video
+                            src={headerUrl}
+                            controls
+                            className="h-48 w-full object-cover"
+                        />
+                    )}
+                    {headerUrl && headerType === 'document' && (
+                        <a
+                            href={headerUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-2 border-b border-gray-100 px-3 py-3 text-sm font-medium text-indigo-700"
+                        >
+                            <FileText className="h-4 w-4" />
+                            View document
+                        </a>
+                    )}
+                    <div className="space-y-3 px-3 py-2.5">
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{template.body || msg.text}</p>
+                        {template.footer && (
+                            <p className="text-xs text-gray-500">{template.footer}</p>
+                        )}
+                    </div>
+                    {buttons.length > 0 && (
+                        <div className="divide-y divide-gray-100 border-t border-gray-100">
+                            {buttons.map((button, index) => {
+                                const type = String(button.type || '').toUpperCase()
+                                const href = type === 'URL' ? button.url : type === 'PHONE_NUMBER' ? `tel:${button.phone_number || ''}` : ''
+                                const Icon = type === 'PHONE_NUMBER' ? Phone : ExternalLink
+
+                                return href ? (
+                                    <a
+                                        key={`${button.text}-${index}`}
+                                        href={href}
+                                        target={type === 'URL' ? '_blank' : undefined}
+                                        rel={type === 'URL' ? 'noreferrer' : undefined}
+                                        className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                                    >
+                                        <Icon className="h-4 w-4" />
+                                        {button.text}
+                                    </a>
+                                ) : (
+                                    <div
+                                        key={`${button.text}-${index}`}
+                                        className="flex items-center justify-center px-3 py-2 text-sm font-semibold text-emerald-700"
+                                    >
+                                        {button.text}
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    )}
+                </div>
+            )
+        }
 
         const resolvedUrl = msg.mediaUrl
             ? (String(msg.mediaUrl).startsWith('http') ? msg.mediaUrl : `${BACKEND_BASE}${msg.mediaUrl}`)
@@ -1244,7 +1570,91 @@ export default function LiveChat() {
             )
         }
 
-        return msg.text ? <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p> : null
+        return (
+            <div className="space-y-1.5">
+                {msg.forwarded && (
+                    <div className="flex items-center gap-1 text-[11px] italic text-gray-500">
+                        <Forward className="h-3 w-3" />
+                        Forwarded
+                    </div>
+                )}
+                {quoted && (
+                    <div className={`rounded-md border-l-4 px-2.5 py-1.5 text-xs ${msg.sender === 'agent'
+                        ? 'border-green-500 bg-green-100/80 text-gray-700'
+                        : 'border-indigo-500 bg-gray-50 text-gray-700'
+                    }`}>
+                        <div className="mb-0.5 font-semibold text-indigo-600">
+                            {quoted.direction === 'outbound' ? 'You' : (selectedChat?.name || 'Contact')}
+                        </div>
+                        <div className="line-clamp-2 whitespace-pre-wrap text-gray-600">
+                            {quotedText || 'Original message'}
+                        </div>
+                    </div>
+                )}
+                {msg.text ? <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.text}</p> : null}
+            </div>
+        )
+    }
+
+    const startReplyToMessage = (msg) => {
+        setReplyingTo({
+            id: msg.id,
+            wa_message_id: msg.wa_message_id,
+            text: msg.text || msg.fileName || `[${msg.type || 'message'}]`,
+            type: msg.type || 'text',
+            sender: msg.sender,
+        })
+        closeMessageMenu()
+        requestAnimationFrame(() => messageInputRef.current?.focus?.())
+    }
+
+    const forwardMessage = async (msg) => {
+        if (!selectedChat) return
+        const text = msg.text || msg.fileName || ''
+        if (!text.trim()) {
+            alert('Only text/caption messages can be forwarded right now.')
+            return
+        }
+        closeMessageMenu()
+        try {
+            const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session'
+            const res = await fetch(`${API_BASE}/conversations/${selectedChat.id}/send`, {
+                method: 'POST',
+                headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text, session_id: sessionId, forward_from_message_id: msg.wa_message_id || msg.id })
+            })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}))
+                throw new Error(err?.error || 'Failed to forward message')
+            }
+            await fetchMessages(selectedChat)
+            await fetchChats()
+        } catch (err) {
+            console.error('Forward failed:', err)
+            alert(err?.message || 'Failed to forward message')
+        }
+    }
+
+    const copyMessageText = async (msg) => {
+        const text = msg.text || msg.fileName || ''
+        if (!text) return
+        try {
+            await navigator.clipboard?.writeText(text)
+        } catch {
+            const area = document.createElement('textarea')
+            area.value = text
+            document.body.appendChild(area)
+            area.select()
+            document.execCommand('copy')
+            document.body.removeChild(area)
+        }
+        closeMessageMenu()
+    }
+
+    const deleteMessageLocal = (msg) => {
+        if (!confirm('Delete this message from this view?')) return
+        setMessages(prev => prev.filter(item => item.id !== msg.id))
+        closeMessageMenu()
     }
 
     const filteredMessages = messages.filter(msg => {
@@ -1252,6 +1662,37 @@ export default function LiveChat() {
         if (!msg.account) return true
         return normalizeAccountKey(msg.account) === normalizeAccountKey(selectedAccount)
     });
+
+    const chatFilterCounts = useMemo(() => ({
+        all: chats.length,
+        read: chats.filter(chat => (Number(chat.unread) || 0) === 0).length,
+        unread: chats.filter(chat => (Number(chat.unread) || 0) > 0).length,
+        assigned: chats.filter(chat => !!chat.assigned_to).length,
+        unassigned: chats.filter(chat => !chat.assigned_to).length,
+    }), [chats])
+
+    const visibleChats = useMemo(() => {
+        const query = chatSearch.trim().toLowerCase()
+
+        return chats.filter(chat => {
+            const unreadCount = Number(chat.unread) || 0
+            if (chatFilter === 'read' && unreadCount > 0) return false
+            if (chatFilter === 'unread' && unreadCount === 0) return false
+            if (chatFilter === 'assigned' && !chat.assigned_to) return false
+            if (chatFilter === 'unassigned' && chat.assigned_to) return false
+
+            if (!query) return true
+            const haystack = [
+                chat.name,
+                chat.phone,
+                chat.waId,
+                chat.lastMessage,
+                ...(Array.isArray(chat.tags) ? chat.tags : [])
+            ].filter(Boolean).join(' ').toLowerCase()
+
+            return haystack.includes(query)
+        })
+    }, [chats, chatFilter, chatSearch])
 
     const renderedThread = useMemo(() => {
         const items = []
@@ -1289,6 +1730,10 @@ export default function LiveChat() {
         const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session';
         socket.emit('request_qr', sessionId);
     };
+
+    const activeMenuMessage = activeMessageMenuId
+        ? messages.find(m => idsEqual(m.id, activeMessageMenuId))
+        : null;
 
     // Render Simplified Connect Prompt if no accounts connected
     if (!isConnected && connectedAccounts.length === 0) {
@@ -1331,12 +1776,75 @@ export default function LiveChat() {
                         </select>
                     </div>
                     <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                         <input
                             type="text"
-                            placeholder="Search chats..."
-                            className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 transition-all"
+                            placeholder="Search or start a new chat"
+                            value={chatSearch}
+                            onChange={(e) => setChatSearch(e.target.value)}
+                            className="w-full rounded-full border-0 bg-gray-100 py-2.5 pl-11 pr-4 text-sm text-gray-700 placeholder:text-gray-500 outline-none transition-colors focus:bg-white focus:ring-1 focus:ring-green-500/40"
                         />
+                    </div>
+                    <div className="relative mt-2 flex items-center gap-2" data-chat-filter-menu>
+                        {[
+                            { id: 'all', label: 'All' },
+                            { id: 'read', label: 'Read' },
+                            { id: 'unread', label: 'Unread' },
+                        ].map(filter => {
+                            const active = chatFilter === filter.id
+                            return (
+                                <button
+                                    key={filter.id}
+                                    type="button"
+                                    onClick={() => {
+                                        setChatFilter(filter.id)
+                                        setIsChatFilterMenuOpen(false)
+                                    }}
+                                    className={`h-8 shrink-0 rounded-full border px-3 text-sm font-medium shadow-sm transition-colors ${active
+                                        ? 'border-green-500 bg-green-100 text-green-800'
+                                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {filter.label} {chatFilterCounts[filter.id] > 0 ? chatFilterCounts[filter.id] : ''}
+                                </button>
+                            )
+                        })}
+                        <button
+                            type="button"
+                            onClick={() => setIsChatFilterMenuOpen(v => !v)}
+                            className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors ${['assigned', 'unassigned'].includes(chatFilter)
+                                ? 'border-green-500 bg-green-100 text-green-800'
+                                : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                            }`}
+                            title="More filters"
+                        >
+                            <ChevronDown className="h-4 w-4" />
+                        </button>
+
+                        {isChatFilterMenuOpen && (
+                            <div className="absolute right-0 top-10 z-20 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
+                                {[
+                                    { id: 'assigned', label: 'Assigned' },
+                                    { id: 'unassigned', label: 'Unassigned' },
+                                ].map(filter => (
+                                    <button
+                                        key={filter.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setChatFilter(filter.id)
+                                            setIsChatFilterMenuOpen(false)
+                                        }}
+                                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${chatFilter === filter.id
+                                            ? 'bg-green-50 text-green-800'
+                                            : 'text-gray-700 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        <span>{filter.label}</span>
+                                        <span className="text-xs text-gray-500">{chatFilterCounts[filter.id]}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -1345,24 +1853,37 @@ export default function LiveChat() {
                         <div className="p-8 text-center text-gray-400 text-sm">
                             No chats yet. Messages you receive will appear here.
                         </div>
+                    ) : visibleChats.length === 0 ? (
+                        <div className="p-8 text-center text-gray-400 text-sm">
+                            No chats match this filter.
+                        </div>
                     ) : (
-                        chats.map(chat => (
+                        visibleChats.map(chat => (
                             <div
                                 key={chat.id}
                                 onClick={() => setSelectedChat(chat)}
-                                className={`flex items-start gap-3 p-3 lg:p-4 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-all duration-200 ${selectedChat?.id === chat.id ? 'bg-indigo-50/60 border-indigo-100' : ''}`}
+                                className={`flex items-start gap-3 px-4 py-3.5 border-b border-gray-100 cursor-pointer transition-all duration-200 ${selectedChat?.id === chat.id ? 'bg-green-50/70 border-green-100' : 'hover:bg-gray-50'}`}
                             >
                                 <div className="relative shrink-0">
-                                    <div
-                                        className={`h-11 w-11 rounded-full flex items-center justify-center font-bold text-lg shadow-sm text-white ${avatarColorClass(chat.name || chat.phone || chat.waId || chat.id)} ${selectedChat?.id === chat.id ? 'ring-2 ring-indigo-300 ring-offset-2 ring-offset-white' : ''}`}
-                                    >
-                                        {getAvatarText(chat.name)}
-                                    </div>
+                                    {chat.profilePhotoUrl ? (
+                                        <img
+                                            src={chat.profilePhotoUrl}
+                                            alt={chat.name}
+                                            className={`h-11 w-11 rounded-full object-cover shadow-sm ${selectedChat?.id === chat.id ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-white' : ''}`}
+                                            loading="lazy"
+                                        />
+                                    ) : (
+                                        <div
+                                            className={`h-11 w-11 rounded-full flex items-center justify-center shadow-sm ${selectedChat?.id === chat.id ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-white' : ''} bg-rose-50 text-rose-600 border border-rose-200`}
+                                        >
+                                            <User className="h-6 w-6" />
+                                        </div>
+                                    )}
                                     {/* Presence is not reliably available from WhatsApp APIs; hide fake online dot */}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex justify-between items-baseline mb-0.5">
-                                        <h3 className={`text-sm font-semibold truncate ${selectedChat?.id === chat.id ? 'text-indigo-900' : 'text-gray-900'}`}>
+                                        <h3 className={`text-sm font-semibold truncate ${selectedChat?.id === chat.id ? 'text-green-950' : 'text-gray-900'}`}>
                                             {chat.name}
                                         </h3>
                                         <span className="text-[10px] font-medium text-gray-400">{chat.time}</span>
@@ -1414,9 +1935,17 @@ export default function LiveChat() {
                                 <button onClick={() => setSelectedChat(null)} className="lg:hidden p-1 -ml-1 text-gray-600">
                                     <ChevronLeft className="h-6 w-6" />
                                 </button>
-                                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-200 flex items-center justify-center font-semibold text-indigo-700">
-                                    {getAvatarText(selectedChat?.name)}
-                                </div>
+                                {selectedChat?.profilePhotoUrl ? (
+                                    <img
+                                        src={selectedChat.profilePhotoUrl}
+                                        alt={selectedChat?.name || 'Contact'}
+                                        className="h-9 w-9 rounded-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="h-9 w-9 rounded-full bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center">
+                                        <User className="h-5 w-5" />
+                                    </div>
+                                )}
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <h3 className="text-sm font-bold text-gray-900 leading-tight">{selectedChat?.name}</h3>
@@ -1437,27 +1966,58 @@ export default function LiveChat() {
                                     </p>
                                 </div>
                             </div>
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2.5">
                                     {/* Assign Agent Dropdown */}
-                                    <div className="flex items-center gap-2">
-                                        <User className="h-4 w-4 text-gray-400" />
-                                        <select
-                                            value={selectedChat?.assigned_to || ''}
-                                            onChange={(e) => assignAgent(selectedChat.id, e.target.value)}
-                                            className="text-xs border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer"
+                                    <div className="relative" data-assign-menu>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsAssignMenuOpen(v => !v)}
+                                            className="inline-flex h-10 min-w-[150px] items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                                            title="Assign chat"
                                         >
-                                            <option value="">Unassigned</option>
-                                            {teamMembers.map(m => (
-                                                <option key={m.user_id} value={m.user_id}>{m.name}</option>
-                                            ))}
-                                        </select>
+                                            <span className="flex min-w-0 items-center gap-2">
+                                                <User className="h-4 w-4 shrink-0 text-gray-400" />
+                                                <span className="truncate">{getAgentName(selectedChat?.assigned_to)}</span>
+                                            </span>
+                                            <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
+                                        </button>
+                                        {isAssignMenuOpen && (
+                                            <div className="absolute right-0 top-11 z-50 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        assignAgent(selectedChat.id, '')
+                                                        setIsAssignMenuOpen(false)
+                                                    }}
+                                                    className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm ${!selectedChat?.assigned_to ? 'bg-green-50 text-green-800' : 'text-gray-700 hover:bg-gray-50'}`}
+                                                >
+                                                    <span>Unassigned</span>
+                                                    {!selectedChat?.assigned_to && <Check className="h-4 w-4" />}
+                                                </button>
+                                                <div className="my-1 border-t border-gray-100" />
+                                                {teamMembers.map(m => (
+                                                    <button
+                                                        key={m.user_id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            assignAgent(selectedChat.id, m.user_id)
+                                                            setIsAssignMenuOpen(false)
+                                                        }}
+                                                        className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm ${selectedChat?.assigned_to === m.user_id ? 'bg-green-50 text-green-800' : 'text-gray-700 hover:bg-gray-50'}`}
+                                                    >
+                                                        <span className="truncate">{m.name}</span>
+                                                        {selectedChat?.assigned_to === m.user_id && <Check className="h-4 w-4" />}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Bot Toggle Button */}
                                     <div className="relative" data-bot-menu>
                                     <button
                                         onClick={() => setShowBotMenu(!showBotMenu)}
-                                        className={`p-2 rounded-lg transition-colors flex items-center gap-1.5 ${
+                                        className={`h-10 rounded-xl px-3 transition-colors flex items-center gap-1.5 ${
                                             botEnabled 
                                                 ? 'bg-green-100 text-green-700 hover:bg-green-200' 
                                                 : 'text-gray-500 hover:bg-gray-100'
@@ -1555,21 +2115,21 @@ export default function LiveChat() {
                                         setFocusAliasOnOpen(false)
                                         setIsContactDrawerOpen(true)
                                     }}
-                                    className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                                    className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
                                     title="Contact info"
                                 >
                                     <Info className="h-5 w-5" />
                                 </button>
                                 {isAdmin && (
-                                    <div className="relative">
+                                    <div className="relative" data-auto-assign-menu>
                                         <button 
                                             onClick={() => setIsAutoAssignMenuOpen(!isAutoAssignMenuOpen)}
-                                            className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                                            className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
                                         >
                                             <MoreVertical className="h-5 w-5" />
                                         </button>
                                         {isAutoAssignMenuOpen && (
-                                            <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 overflow-hidden">
+                                            <div className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl z-50">
                                                 <button
                                                     onClick={() => { 
                                                         setDraftAutoAssignSettings({ enabled: autoAssignSettings.enabled, batch_size: autoAssignSettings.batch_size });
@@ -1606,6 +2166,7 @@ export default function LiveChat() {
                             onScroll={() => {
                                 const el = messagesListRef.current
                                 if (!el) return
+                                if (activeMessageMenuId) closeMessageMenu()
                                 if (el.scrollTop < 80) loadOlder()
                                 if (isNearBottom()) setNewMessagesPending(0)
                             }}
@@ -1622,7 +2183,7 @@ export default function LiveChat() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div key={row.key} className={`flex ${row.msg.sender === 'user' ? 'justify-start' : 'justify-end'} ${row.grouped ? 'mt-1' : 'mt-3'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                                    <div key={row.key} className={`flex ${row.msg.sender === 'user' ? 'justify-start' : 'justify-end'} ${row.grouped ? 'mt-1' : 'mt-3'} ${Array.isArray(row.msg.reactions) && row.msg.reactions.some(r => r?.emoji) ? 'mb-3' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                                         {row.msg.type === 'note' ? (
                                             <div className="w-full flex justify-center my-2">
                                                 <div className="bg-amber-50 border border-amber-100 text-amber-800 text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
@@ -1632,10 +2193,21 @@ export default function LiveChat() {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className={`relative max-w-[85%] lg:max-w-[65%] rounded-2xl px-3 py-2 shadow-sm ${row.msg.sender === 'user'
+                                            <div className={`group relative max-w-[85%] lg:max-w-[65%] rounded-2xl ${row.msg.content?.template ? 'bg-transparent p-0 shadow-none border-0' : `px-3 py-2 shadow-sm ${row.msg.sender === 'user'
                                                 ? (row.grouped ? 'bg-white text-gray-900 border border-gray-100' : 'bg-white text-gray-900 rounded-tl-none border border-gray-100')
                                                 : (row.grouped ? 'bg-[#d9fdd3] text-gray-900 border border-green-100' : 'bg-[#d9fdd3] text-gray-900 rounded-tr-none border border-green-100')
+                                                }`
                                                 }`}>
+                                                <div className={`absolute top-1 ${row.msg.sender === 'user' ? '-right-9' : '-left-9'} opacity-0 transition-opacity group-hover:opacity-100 ${activeMessageMenuId === row.msg.id ? 'opacity-100' : ''}`} data-message-menu>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => openMessageMenu(e, row.msg)}
+                                                        className={`flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-gray-600 shadow-sm ring-1 transition hover:text-gray-900 ${activeMessageMenuId === row.msg.id ? 'ring-gray-900' : 'ring-gray-200'}`}
+                                                        title="Message actions"
+                                                    >
+                                                        <ChevronDown className="h-4 w-4" />
+                                                    </button>
+                                                </div>
                                                 {row.msg.sender === 'agent' && (
                                                     <div className="text-[10px] font-bold text-indigo-600 mb-0.5">{row.msg.agentName}</div>
                                                 )}
@@ -1659,6 +2231,85 @@ export default function LiveChat() {
                             <div ref={messagesEndRef} />
                         </div>
 
+                        {activeMenuMessage && messageMenuAnchor && (
+                            <div
+                                data-message-menu
+                                className="fixed z-[80] w-56 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+                                style={{
+                                    top: `${messageMenuAnchor.top}px`,
+                                    left: `${messageMenuAnchor.left}px`,
+                                }}
+                            >
+                                <div className="flex items-center justify-between gap-1 border-b border-gray-100 px-3 py-2">
+                                    {QUICK_REACTIONS.map(item => (
+                                        <button
+                                            key={item.label}
+                                            type="button"
+                                            onClick={() => sendReaction(activeMenuMessage, item.emoji)}
+                                            className="flex h-8 w-8 items-center justify-center rounded-full transition hover:scale-110 hover:bg-gray-100"
+                                            title={item.label}
+                                        >
+                                            <EmojiAsset emoji={item.emoji} label={item.label} className="h-5 w-5" />
+                                        </button>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        onClick={closeMessageMenu}
+                                        className="flex h-8 w-8 items-center justify-center rounded-full text-xl leading-none text-gray-900 transition hover:bg-gray-100"
+                                        title="More reactions"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                                <div className="hidden">
+                                    {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                                        <button
+                                            key={emoji}
+                                            type="button"
+                                            onClick={() => sendReaction(activeMenuMessage, emoji)}
+                                            className="flex h-8 w-8 items-center justify-center rounded-full transition hover:scale-110 hover:bg-gray-100"
+                                            title={`React ${emoji}`}
+                                        >
+                                            {emoji}
+                                        </button>
+                                    ))}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => startReplyToMessage(activeMenuMessage)}
+                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
+                                >
+                                    <Reply className="h-4 w-4" />
+                                    Reply
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => copyMessageText(activeMenuMessage)}
+                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
+                                >
+                                    <Copy className="h-4 w-4" />
+                                    Copy
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => forwardMessage(activeMenuMessage)}
+                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
+                                >
+                                    <Forward className="h-4 w-4" />
+                                    Forward
+                                </button>
+                                <div className="my-1 border-t border-gray-100" />
+                                <button
+                                    type="button"
+                                    onClick={() => deleteMessageLocal(activeMenuMessage)}
+                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                    Delete
+                                </button>
+                            </div>
+                        )}
+
                         {newMessagesPending > 0 && (
                             <button
                                 type="button"
@@ -1674,9 +2325,9 @@ export default function LiveChat() {
                         )}
 
                         {/* Input Area */}
-                        <div className={`p-3 lg:p-4 bg-gray-50 border-t ${isInternalNote ? 'border-amber-200 bg-amber-50/50' : 'border-gray-200'}`}>
-                            <form onSubmit={handleSendMessage} className="flex gap-3 max-w-4xl mx-auto">
-                                <div className="flex gap-1 items-end pb-2">
+                        <div className={`px-3 py-2 lg:px-4 bg-gray-50 border-t ${isInternalNote ? 'border-amber-200 bg-amber-50/50' : 'border-gray-200'}`}>
+                            <form onSubmit={handleSendMessage} className="flex items-end gap-3 max-w-4xl mx-auto">
+                                <div className="flex gap-1 items-center pb-1">
                                     <div className="relative">
                                         <button
                                             type="button"
@@ -1714,7 +2365,7 @@ export default function LiveChat() {
                                         <Paperclip className="h-6 w-6" />
                                     </button>
                                 </div>
-                                <div className="flex-1 bg-white rounded-2xl border border-gray-300 shadow-sm focus-within:shadow-md focus-within:border-green-500 focus-within:ring-1 focus-within:ring-green-500 transition-all overflow-hidden flex flex-col">
+                                <div className="flex-1 bg-white rounded-2xl border border-gray-300 shadow-sm focus-within:shadow-md focus-within:border-gray-300 transition-all overflow-hidden flex flex-col">
                                     <input
                                         ref={fileInputRef}
                                         type="file"
@@ -1757,11 +2408,30 @@ export default function LiveChat() {
                                             Internal Note (Private)
                                         </div>
                                     )}
-                                    <input
+                                    {replyingTo && !isInternalNote && (
+                                        <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-green-50 px-3 py-2">
+                                            <div className="min-w-0 border-l-4 border-green-500 pl-2">
+                                                <div className="text-xs font-semibold text-green-800">
+                                                    Replying to {replyingTo.sender === 'agent' ? 'You' : (selectedChat?.name || 'contact')}
+                                                </div>
+                                                <div className="truncate text-xs text-gray-600">{replyingTo.text || 'Original message'}</div>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => setReplyingTo(null)}
+                                                className="rounded-full p-1 text-gray-500 hover:bg-white hover:text-gray-800"
+                                            >
+                                                <X className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    )}
+                                    <textarea
+                                        ref={messageInputRef}
                                         value={messageText}
                                         onChange={e => setMessageText(e.target.value)}
                                         placeholder={isInternalNote ? "Type an internal note..." : "Type a message..."}
-                                        className="w-full border-none p-3 text-sm focus:ring-0 max-h-32 bg-transparent"
+                                        rows={1}
+                                        className="w-full min-h-[44px] max-h-42 resize-none border-0 px-4 py-3 text-sm leading-5 bg-transparent outline-none focus:outline-none focus:ring-0 focus:border-transparent"
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter' && !e.shiftKey) {
                                                 e.preventDefault();
@@ -1770,7 +2440,7 @@ export default function LiveChat() {
                                         }}
                                     />
                                 </div>
-                                <div className="flex flex-col justify-end gap-2 pb-1">
+                                <div className="flex items-center gap-2 pb-0.5">
                                     <button
                                         type="button"
                                         onClick={() => {
@@ -1786,7 +2456,7 @@ export default function LiveChat() {
 
                                     {(messageText.trim() || selectedFile || pendingAudio?.file) ? (
                                         <button type="submit" className="p-3 bg-green-600 text-white rounded-full hover:bg-green-700 shadow-lg hover:shadow-xl transition-all scale-100 active:scale-95 duration-200">
-                                            <Send className="h-5 w-5 ml-0.5" />
+                                            <WhatsAppSendIcon className="h-6 w-6" />
                                         </button>
                                     ) : (
                                         <button
@@ -1823,6 +2493,7 @@ export default function LiveChat() {
                     name: selectedChat.contact.name || selectedChat?.name || 'Unknown',
                     phone: selectedChat.contact.phone || selectedChat?.phone || selectedChat?.waId || '',
                     wa_id: selectedChat.contact.wa_id || selectedChat?.waId || '',
+                    profile_photo_url: selectedChat.contact.profile_photo_url || selectedChat?.profilePhotoUrl || '',
                     tags: selectedChat.contact.tags || [],
                     custom_fields: selectedChat.contact.custom_fields || {},
                 } : {
@@ -1831,6 +2502,7 @@ export default function LiveChat() {
                     custom_name: null,
                     phone: selectedChat?.phone || selectedChat?.waId || '',
                     wa_id: selectedChat?.waId || '',
+                    profile_photo_url: selectedChat?.profilePhotoUrl || '',
                     tags: selectedChat?.contact?.tags || [],
                     created_at: selectedChat?.contact?.created_at || null,
                     custom_fields: selectedChat?.contact?.custom_fields || {},
@@ -1842,12 +2514,12 @@ export default function LiveChat() {
                         const sameByWa = updated?.wa_id && String(c?.waId || '') === String(updated.wa_id)
                         if (!sameById && !sameByWa) return c
                         const nextContact = { ...(c.contact || {}), ...updated }
-                        return { ...c, contact: nextContact, name: getDisplayName(nextContact) }
+                        return { ...c, contact: nextContact, name: getDisplayName(nextContact), profilePhotoUrl: getProfilePhotoUrl(nextContact) }
                     }))
                     setSelectedChat(prev => {
                         if (!prev) return prev
                         const nextContact = { ...(prev.contact || {}), ...updated }
-                        return { ...prev, contact: nextContact, name: getDisplayName(nextContact) }
+                        return { ...prev, contact: nextContact, name: getDisplayName(nextContact), profilePhotoUrl: getProfilePhotoUrl(nextContact) }
                     })
                 }}
             />

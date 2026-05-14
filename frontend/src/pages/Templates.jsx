@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone } from 'lucide-react'
+import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone, AlertCircle, RefreshCw } from 'lucide-react'
 import Modal from '../components/Modal'
 import { useAuth } from '../context/AuthContext'
 
@@ -43,8 +43,11 @@ export default function Templates() {
     const [templates, setTemplates] = useState([])
     const [loading, setLoading] = useState(true)
     const [hasConnectedAccount, setHasConnectedAccount] = useState(false)
+    const [fetchError, setFetchError] = useState('')
 
     const fetchData = async () => {
+        setLoading(true)
+        setFetchError('')
         try {
             // Check if account is connected
             const accRes = await apiCall(`${API_URL}/api/whatsapp/accounts`);
@@ -60,9 +63,11 @@ export default function Templates() {
                 setTemplates(tplData || []);
             } else {
                 console.error('Error validating access token:', tplData.error);
+                setFetchError(tplData.error || 'Could not load templates from Meta.')
             }
         } catch (error) {
             console.error('Error fetching data:', error);
+            setFetchError(error?.message || 'Could not load templates.')
         } finally {
             setLoading(false);
         }
@@ -127,7 +132,35 @@ export default function Templates() {
                 ))}
             </div>
 
+            {fetchError && (
+                <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <div className="flex-1">
+                        <div className="font-medium">Templates could not be refreshed</div>
+                        <div className="mt-0.5">{fetchError}</div>
+                    </div>
+                    <button onClick={fetchData} className="inline-flex items-center gap-1 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-amber-800 ring-1 ring-amber-200 hover:bg-amber-100">
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Retry
+                    </button>
+                </div>
+            )}
+
+            {loading && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {[0, 1, 2].map(i => (
+                        <div key={i} className="h-56 animate-pulse rounded-xl border border-gray-200 bg-white p-5">
+                            <div className="h-10 w-10 rounded-lg bg-gray-100" />
+                            <div className="mt-5 h-4 w-36 rounded bg-gray-100" />
+                            <div className="mt-3 h-16 rounded bg-gray-100" />
+                            <div className="mt-5 h-3 w-full rounded bg-gray-100" />
+                        </div>
+                    ))}
+                </div>
+            )}
+
             {/* Grid */}
+            {!loading && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {[...templates, ...(hasConnectedAccount ? [] : DEMO_TEMPLATES)].filter(t => activeTab === 'ALL' || t.category === activeTab).map((template) => (
                     <div 
@@ -195,6 +228,7 @@ export default function Templates() {
                     <p className="text-xs text-gray-500 mt-1">Marketing, Utility, or Auth</p>
                 </button>
             </div>
+            )}
 
             <CreateTemplateModal isOpen={iscreateOpen} onClose={() => setIsCreateOpen(false)} onSuccess={fetchData} apiCall={apiCall} />
             <ViewTemplateModal template={selectedTemplate} onClose={() => setSelectedTemplate(null)} />
