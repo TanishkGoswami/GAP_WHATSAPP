@@ -14,6 +14,7 @@ import Broadcast from './pages/Broadcast'
 import LiveChat from './pages/LiveChat'
 import BotAgents from './pages/BotAgents'
 import Settings from './pages/Settings'
+import SSOLogin from './pages/SSOLogin'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,6 +37,7 @@ export default function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/agent-login" element={<AgentLogin />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/sso" element={<SSOLogin />} />
             <Route path="/" element={<Layout />}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
