@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ChevronDown, ArrowDown, FileText, Mic, Pencil, Bot, User, ExternalLink, Reply, Forward, X, Copy, Trash2 } from 'lucide-react'
+import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ChevronDown, ArrowDown, FileText, Mic, Pencil, Bot, User, ExternalLink, Reply, Forward, X, Copy, Trash2, Bell, BellOff } from 'lucide-react'
 import { format, isToday, isYesterday } from 'date-fns'
 import { io } from "socket.io-client";
 import QRCode from 'react-qr-code'
@@ -8,6 +8,7 @@ import ContactProfileDrawer from '../components/ContactProfileDrawer'
 import { AudioPlayerProvider } from '../components/AudioPlayerManager'
 import AudioMessageBubble from '../components/AudioMessageBubble'
 import AudioRecorderOrUploader from '../components/AudioRecorderOrUploader'
+import { useNotificationSound } from '../hooks/useNotificationSound'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -180,6 +181,9 @@ export default function LiveChat() {
         }) || null
     ), [availableBots])
     const effectiveBotEnabled = botEnabled || !!workspaceAutoReplyBot
+
+    // Notification sound hook
+    const { playNotification, isMuted, toggleMute } = useNotificationSound()
 
     useEffect(() => {
         chatsRef.current = chats
@@ -857,6 +861,20 @@ export default function LiveChat() {
             const pageFocused = typeof document !== 'undefined'
                 ? (!document.hidden && (typeof document.hasFocus === 'function' ? document.hasFocus() : true))
                 : true
+
+            // ---- Notification Sound Logic ----
+            // Play sound if:
+            //   1. Message is inbound (not sent by agent)
+            //   2. AND (the conversation is different from the currently open one
+            //           OR the page/tab is not focused)
+            const isInbound = (msg?.sender || 'user') !== 'agent'
+            const isSameChat = activeChat && convId && idsEqual(activeChat.id, convId)
+            const isActiveAndFocused = isSameChat && pageFocused
+
+            if (isInbound && !isActiveAndFocused) {
+                playNotification()
+            }
+            // ----------------------------------
 
             if (convId) {
                 setChats(prev => {
@@ -1911,22 +1929,36 @@ export default function LiveChat() {
     return (
         <AudioPlayerProvider>
         <div className="flex h-full min-h-0 bg-white overflow-hidden">
-            {/* Left Cone: Chat List */}
+            {/* Left Panel: Chat List */}
             <div className={`${selectedChat ? 'hidden lg:flex' : 'flex'} w-full lg:w-80 border-r border-gray-200 flex-col bg-white overflow-hidden`}>
                 {/* Header / Account Switcher */}
                 <div className="p-3 border-b border-gray-200 bg-gray-50/50">
                     <div className="flex items-center justify-between mb-2">
                         <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Inbox</label>
-                        <select
-                            value={selectedAccount}
-                            onChange={(e) => setSelectedAccount(e.target.value)}
-                            className="bg-transparent text-xs font-medium text-indigo-600 focus:outline-none cursor-pointer"
-                        >
-                            <option value="All">All Accounts</option>
-                            {connectedAccounts.map(acc => (
-                                <option key={acc} value={acc}>{acc} (Active)</option>
-                            ))}
-                        </select>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                onClick={toggleMute}
+                                title={isMuted ? 'Unmute notifications' : 'Mute notifications'}
+                                className={`flex items-center justify-center h-7 w-7 rounded-full transition-colors ${
+                                    isMuted
+                                        ? 'bg-red-50 text-red-400 hover:bg-red-100'
+                                        : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                                }`}
+                            >
+                                {isMuted ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
+                            </button>
+                            <select
+                                value={selectedAccount}
+                                onChange={(e) => setSelectedAccount(e.target.value)}
+                                className="bg-transparent text-xs font-medium text-indigo-600 focus:outline-none cursor-pointer"
+                            >
+                                <option value="All">All Accounts</option>
+                                {connectedAccounts.map(acc => (
+                                    <option key={acc} value={acc}>{acc} (Active)</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
