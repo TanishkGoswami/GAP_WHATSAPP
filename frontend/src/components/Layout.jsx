@@ -1,16 +1,20 @@
 import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Sidebar from './Sidebar'
 import Modal from './Modal'
-import { Bell, User, LogOut, AlertCircle } from 'lucide-react'
+import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 export default function Layout() {
-    const { user, userRole, loading, isProfileLoading, signOut } = useAuth()
+    const { user, userRole, loading, isProfileLoading, memberProfile, signOut, updateMyProfile } = useAuth()
     const navigate = useNavigate()
     const location = useLocation()
     const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
     const [isLoggingOut, setIsLoggingOut] = useState(false)
+    const [isProfileOpen, setIsProfileOpen] = useState(false)
+    const [isSavingProfile, setIsSavingProfile] = useState(false)
+    const [profileError, setProfileError] = useState('')
+    const [profileDraft, setProfileDraft] = useState({ name: '', avatar_color: '#4f46e5' })
 
     if (loading) return null // wait only for the initial auth check, never block on profile re-fetch
     if (!user) return <Navigate to="/login" replace />
@@ -47,7 +51,47 @@ export default function Layout() {
         setIsLogoutConfirmOpen(false)
     }
 
-    const displayName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'
+    const displayName = memberProfile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'
+    const avatarColor = memberProfile?.avatar_color || user?.user_metadata?.avatar_color || '#4f46e5'
+    const userEmail = memberProfile?.email || user?.email || ''
+    const roleLabel = userRole ? userRole.charAt(0).toUpperCase() + userRole.slice(1) : 'User'
+    const avatarInitials = useMemo(() => {
+        const parts = String(displayName || 'User').trim().split(/\s+/).filter(Boolean)
+        return (parts[0]?.[0] || 'U') + (parts.length > 1 ? parts[parts.length - 1][0] : '')
+    }, [displayName])
+
+    useEffect(() => {
+        if (!isProfileOpen) return
+        setProfileDraft({
+            name: displayName,
+            avatar_color: avatarColor,
+        })
+        setProfileError('')
+    }, [isProfileOpen, displayName, avatarColor])
+
+    const avatarColors = ['#4f46e5', '#16a34a', '#0891b2', '#dc2626', '#db2777', '#ea580c']
+
+    const handleSaveProfile = async (e) => {
+        e.preventDefault()
+        const name = profileDraft.name.trim()
+        if (!name) {
+            setProfileError('Name is required.')
+            return
+        }
+        setIsSavingProfile(true)
+        setProfileError('')
+        try {
+            await updateMyProfile({
+                name,
+                avatar_color: profileDraft.avatar_color
+            })
+            setIsProfileOpen(false)
+        } catch (err) {
+            setProfileError(err?.message || 'Failed to update profile.')
+        } finally {
+            setIsSavingProfile(false)
+        }
+    }
 
     return (
         <div className="flex h-screen bg-gray-50">
@@ -66,12 +110,20 @@ export default function Layout() {
                             <Bell className="h-5 w-5" />
                         </button>
                         <div className="relative flex items-center gap-3">
-                            <div className="flex items-center gap-2 rounded-full bg-gray-100 p-1 pr-3">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 shrink-0">
-                                    <User className="h-5 w-5" />
+                            <button
+                                type="button"
+                                onClick={() => setIsProfileOpen(true)}
+                                className="flex items-center gap-2 rounded-full bg-gray-100 p-1 pr-3 transition-colors hover:bg-gray-200"
+                                title="Edit profile"
+                            >
+                                <div
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                                    style={{ backgroundColor: avatarColor }}
+                                >
+                                    {isProfileLoading ? <User className="h-4 w-4" /> : avatarInitials.toUpperCase()}
                                 </div>
                                 <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate capitalize">{displayName}</span>
-                            </div>
+                            </button>
                             <button
                                 onClick={handleLogoutClick}
                                 className="flex items-center gap-2 rounded-full bg-red-50 text-red-600 px-3 py-1.5 text-sm font-medium hover:bg-red-100 transition-colors"
@@ -89,6 +141,97 @@ export default function Layout() {
                 </main>
 
                 {/* Logout Confirmation Modal */}
+                <Modal
+                    isOpen={isProfileOpen}
+                    onClose={() => !isSavingProfile && setIsProfileOpen(false)}
+                    title="My Profile"
+                    maxWidth="max-w-lg"
+                >
+                    <form onSubmit={handleSaveProfile} className="space-y-5">
+                        <div className="flex items-center gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                            <div
+                                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white shadow-sm"
+                                style={{ backgroundColor: profileDraft.avatar_color }}
+                            >
+                                {String(profileDraft.name || displayName || 'U').trim().charAt(0).toUpperCase() || 'U'}
+                            </div>
+                            <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-gray-900">{profileDraft.name || displayName}</div>
+                                <div className="truncate text-xs text-gray-500">{userEmail}</div>
+                            </div>
+                        </div>
+
+                        {profileError && (
+                            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {profileError}
+                            </div>
+                        )}
+
+                        <label className="block">
+                            <span className="mb-1.5 block text-sm font-medium text-gray-700">Display name</span>
+                            <input
+                                value={profileDraft.name}
+                                onChange={(e) => setProfileDraft(prev => ({ ...prev, name: e.target.value }))}
+                                maxLength={80}
+                                className="h-11 w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                placeholder="Your name"
+                            />
+                        </label>
+
+                        <div>
+                            <div className="mb-2 text-sm font-medium text-gray-700">Avatar color</div>
+                            <div className="flex flex-wrap gap-2">
+                                {avatarColors.map(color => (
+                                    <button
+                                        key={color}
+                                        type="button"
+                                        onClick={() => setProfileDraft(prev => ({ ...prev, avatar_color: color }))}
+                                        className={`h-9 w-9 rounded-full border-2 transition-transform hover:scale-105 ${profileDraft.avatar_color === color ? 'border-gray-900' : 'border-white ring-1 ring-gray-200'}`}
+                                        style={{ backgroundColor: color }}
+                                        aria-label={`Use avatar color ${color}`}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div className="rounded-lg border border-gray-200 bg-white p-3">
+                                <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+                                    <Mail className="h-3.5 w-3.5" />
+                                    Email
+                                </div>
+                                <div className="truncate text-sm text-gray-700">{userEmail || 'Not available'}</div>
+                            </div>
+                            <div className="rounded-lg border border-gray-200 bg-white p-3">
+                                <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+                                    <Shield className="h-3.5 w-3.5" />
+                                    Role
+                                </div>
+                                <div className="text-sm text-gray-700">{roleLabel}</div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setIsProfileOpen(false)}
+                                disabled={isSavingProfile}
+                                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={isSavingProfile}
+                                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                            >
+                                {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                Save profile
+                            </button>
+                        </div>
+                    </form>
+                </Modal>
+
                 <Modal 
                     isOpen={isLogoutConfirmOpen} 
                     onClose={handleCancelLogout}

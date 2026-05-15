@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Loader2, Mail, Lock, UserCheck, Eye, EyeOff } from 'lucide-react'
@@ -11,13 +11,13 @@ export default function AgentLogin() {
     const [error, setError] = useState('')
     const { signIn } = useAuth()
     const navigate = useNavigate()
+    const autoLoginStarted = useRef(false)
 
-    const handleSubmit = async (e) => {
-        e.preventDefault()
+    const loginAgent = async (loginEmail, loginPassword) => {
         setLoading(true)
         setError('')
         try {
-            const { error } = await signIn({ email, password }, 'agent')
+            const { error } = await signIn({ email: loginEmail.trim(), password: loginPassword }, 'agent')
             if (error) throw error
             navigate('/') // The auth middleware will route them appropriately
         } catch (err) {
@@ -29,6 +29,30 @@ export default function AgentLogin() {
         } finally {
             setLoading(false)
         }
+    }
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search)
+        const linkEmail = params.get('email') || ''
+        const linkPassword = params.get('password') || ''
+        const shouldAutoLogin = params.get('autoLogin') === '1'
+
+        if (!linkEmail && !linkPassword) return
+
+        setEmail(linkEmail)
+        setPassword(linkPassword)
+
+        window.history.replaceState({}, document.title, window.location.pathname)
+
+        if (shouldAutoLogin && linkEmail && linkPassword && !autoLoginStarted.current) {
+            autoLoginStarted.current = true
+            loginAgent(linkEmail, linkPassword)
+        }
+    }, [])
+
+    const handleSubmit = async (e) => {
+        e.preventDefault()
+        await loginAgent(email, password)
     }
 
     return (

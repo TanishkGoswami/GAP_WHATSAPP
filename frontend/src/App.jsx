@@ -15,6 +15,7 @@ import LiveChat from './pages/LiveChat'
 import BotAgents from './pages/BotAgents'
 import Settings from './pages/Settings'
 import SSOLogin from './pages/SSOLogin'
+import AcceptInvite from './pages/AcceptInvite'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,6 +37,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/agent-login" element={<AgentLogin />} />
+            <Route path="/accept-invite" element={<AcceptInvite />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/sso" element={<SSOLogin />} />
             <Route path="/" element={<Layout />}>

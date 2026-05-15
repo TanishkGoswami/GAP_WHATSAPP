@@ -378,7 +378,7 @@ async function authMiddleware(req: any, res: any, next: any) {
         // Fetch member role and org
         const { data: member } = await supabase
             .from('organization_members')
-            .select('role, organization_id')
+            .select('role, organization_id, is_active')
             .eq('user_id', user.id)
             .maybeSingle();
         
@@ -388,6 +388,12 @@ async function authMiddleware(req: any, res: any, next: any) {
         const dbRole = member?.role;
 
         if (portal === 'agent') {
+            if (!member) {
+                return res.status(403).json({ error: 'Forbidden - Agent profile was not found' });
+            }
+            if (member.is_active === false) {
+                return res.status(403).json({ error: 'Forbidden - Agent invitation is pending or expired' });
+            }
             // Force agent role if logging into agent portal
             req.role = 'agent';
         } else {
@@ -486,6 +492,7 @@ function decodeSupabaseJwtRole(token: string | null | undefined): string | null 
 }
 
 const SUPABASE_KEY_ROLE = decodeSupabaseJwtRole(SUPABASE_SERVICE_ROLE_KEY);
+const INVITE_TTL_HOURS = Number(process.env.TEAM_INVITE_TTL_HOURS || 24);
 
 console.log("Checking Env:", {
     SUPABASE_URL_PRESENT: !!SUPABASE_URL,
@@ -885,6 +892,76 @@ async function getOrganizationKnowledgeContext(organizationId: string): Promise<
         console.warn('Failed to load organization knowledge base:', err?.message || err);
         return '';
     }
+}
+
+const AGENT_SETTINGS_ITEM_TYPE = '__agent_settings';
+
+function getAgentAutomationSettings(agent: any) {
+    const content = Array.isArray(agent?.knowledge_base_content) ? agent.knowledge_base_content : [];
+    const item = content.find((entry: any) => entry?.type === AGENT_SETTINGS_ITEM_TYPE);
+    const settings = item?.settings && typeof item.settings === 'object' ? item.settings : {};
+    return {
+        reply_on_keywords: settings.reply_on_keywords !== false,
+        auto_reply_unknown: settings.auto_reply_unknown === true,
+        default_for_new_chats: settings.default_for_new_chats === true,
+        handoff_on_human_reply: settings.handoff_on_human_reply !== false,
+    };
+}
+
+function stripAgentMetadataItems(items: any[]) {
+    return (Array.isArray(items) ? items : []).filter((entry: any) => entry?.type !== AGENT_SETTINGS_ITEM_TYPE);
+}
+
+async function buildAgentKnowledgePayload(organizationId: string, params: any) {
+    const docs = await getKnowledgeDocuments(organizationId);
+    const selectedIds = Array.isArray(params.selected_knowledge_document_ids)
+        ? params.selected_knowledge_document_ids.map((id: any) => String(id))
+        : null;
+    const selectedDocs = selectedIds
+        ? docs.filter((doc: any) => selectedIds.includes(String(doc.id)))
+        : docs.filter((doc: any) => (Array.isArray(params.knowledge_base) ? params.knowledge_base : []).includes(doc.name));
+
+    const uploadedContent = stripAgentMetadataItems(params.knowledge_base_content || []);
+    const docContent = selectedDocs.map((doc: any) => ({
+        id: doc.id,
+        name: doc.name,
+        size: doc.size,
+        size_label: doc.size_label,
+        status: doc.status,
+        content: doc.content,
+        source: 'workspace_knowledge_base',
+        updated_at: doc.updated_at,
+    }));
+
+    const automationSettings = {
+        reply_on_keywords: params.automation_settings?.reply_on_keywords !== false,
+        auto_reply_unknown: params.automation_settings?.auto_reply_unknown === true,
+        default_for_new_chats: params.automation_settings?.default_for_new_chats === true,
+        handoff_on_human_reply: params.automation_settings?.handoff_on_human_reply !== false,
+    };
+
+    const knowledgeBaseContent = [
+        ...docContent,
+        ...uploadedContent,
+        {
+            type: AGENT_SETTINGS_ITEM_TYPE,
+            settings: automationSettings,
+            selected_knowledge_document_ids: selectedDocs.map((doc: any) => doc.id),
+            trained_at: new Date().toISOString(),
+            training: {
+                document_count: selectedDocs.length + uploadedContent.length,
+                character_count: [...docContent, ...uploadedContent].reduce((sum: number, item: any) => sum + String(item?.content || '').length, 0),
+            }
+        }
+    ];
+
+    return {
+        knowledge_base: [
+            ...selectedDocs.map((doc: any) => doc.name),
+            ...uploadedContent.map((item: any) => item?.name).filter(Boolean),
+        ],
+        knowledge_base_content: knowledgeBaseContent,
+    };
 }
 
 async function downloadMetaMedia(params: {
@@ -1466,7 +1543,7 @@ async function performAutoAssignment(organization_id: string, conversation_id: s
             .from('organization_members')
             .select('user_id')
             .eq('organization_id', organization_id)
-            .in('role', ['agent', 'owner', 'admin'])
+            .eq('role', 'agent')
             .eq('is_active', true);
         
         if (memErr || !members || members.length === 0) return;
@@ -1706,8 +1783,6 @@ async function getBotAgentReply(params: {
             .single();
 
         if (convErr) throw convErr;
-        
-        if (conv?.bot_enabled === false) return null; // Explicitly bypassed by UI toggle
 
         // If no bot enabled for this conversation, check for globally active bots
         let targetAgent = null;
@@ -1733,14 +1808,24 @@ async function getBotAgentReply(params: {
 
             if (agentsErr) throw agentsErr;
 
-            // Find the first agent with matching keywords
+            // Find the first agent with matching keywords.
             for (const agent of agents || []) {
+                const settings = getAgentAutomationSettings(agent);
+                if (!settings.reply_on_keywords) continue;
                 const keywords: string[] = agent.trigger_keywords || [];
                 const hit = keywords.some((k: string) => normalized.includes(String(k).toLowerCase()));
                 if (hit) {
                     targetAgent = agent;
                     break;
                 }
+            }
+
+            // If no keyword matched, use a default/unknown-chat agent when configured.
+            if (!targetAgent) {
+                targetAgent = (agents || []).find((agent: any) => {
+                    const settings = getAgentAutomationSettings(agent);
+                    return settings.default_for_new_chats || settings.auto_reply_unknown;
+                }) || null;
             }
         }
 
@@ -1769,7 +1854,7 @@ async function getBotAgentReply(params: {
         // Build knowledge base context
         let knowledgeContext = await getOrganizationKnowledgeContext(organization_id);
         if (targetAgent.knowledge_base_content && Array.isArray(targetAgent.knowledge_base_content)) {
-            const agentKnowledgeContext = targetAgent.knowledge_base_content
+            const agentKnowledgeContext = stripAgentMetadataItems(targetAgent.knowledge_base_content)
                 .map((item: any) => item?.content || '')
                 .filter(Boolean)
                 .join('\n\n');
@@ -2208,6 +2293,74 @@ app.delete("/api/flow-sessions/:id", async (req, res) => {
     } catch(err: any) { res.status(500).json({ error: err.message }); }
 });
 
+function createInviteToken() {
+    return crypto.randomBytes(32).toString('base64url');
+}
+
+function hashInviteToken(token: string) {
+    return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function createTemporaryPassword() {
+    return `Flow-${crypto.randomBytes(6).toString('base64url')}`;
+}
+
+function getInviteExpiryDate() {
+    return new Date(Date.now() + INVITE_TTL_HOURS * 60 * 60 * 1000);
+}
+
+function getFrontendBaseUrl() {
+    return process.env.FRONTEND_URL || 'http://localhost:3000';
+}
+
+function getMemberInviteState(member: any) {
+    if (member?.invite_accepted_at || member?.is_active) return 'active';
+    const expiresAt = member?.invite_expires_at ? new Date(member.invite_expires_at) : null;
+    if (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now()) return 'expired';
+    return 'pending';
+}
+
+async function sendTeamInviteEmail(params: {
+    email: string;
+    name: string;
+    role: string;
+    password: string;
+    inviteLink: string;
+    expiresAt: Date;
+}) {
+    await sendEmail(
+        params.email,
+        `Invitation to join FlowsApp Team`,
+        `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
+            <h2 style="color: #25D366;">You've been invited!</h2>
+            <p>Hello <strong>${params.name}</strong>,</p>
+            <p>You have been invited to join the <strong>FlowsApp</strong> team as an <strong>${params.role}</strong>.</p>
+            <p>Accept this invitation to activate your account and open your agent workspace.</p>
+            
+            <div style="background-color: #f9f9f9; padding: 15px; border-radius: 6px; margin: 20px 0;">
+                <h3 style="margin-top: 0;">Invitation Details:</h3>
+                <p>
+                    <strong>Invite Link:</strong>
+                    <a href="${params.inviteLink}" style="color: #0b66c3; font-weight: 600; text-decoration: none;">Click to open</a>
+                    <span style="color: #777;">or right-click / long-press to copy</span>
+                </p>
+                <p><strong>Email ID:</strong> ${params.email}</p>
+                <p><strong>Password:</strong> ${params.password}</p>
+                <p><strong>Expires:</strong> ${params.expiresAt.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+            </div>
+
+            <div style="margin: 30px 0;">
+                <a href="${params.inviteLink}" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Accept Invitation</a>
+            </div>
+            <p style="color: #666; font-size: 14px;">For security, this invitation expires in ${INVITE_TTL_HOURS} hour${INVITE_TTL_HOURS === 1 ? '' : 's'}.</p>
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            <p style="color: #999; font-size: 12px;">This invitation was sent from the FlowsApp Dashboard.</p>
+        </div>
+        `
+    );
+}
+
 app.get("/api/contacts/:id/profile-photo", authMiddleware, async (req: any, res) => {
     const orgId = req.organization_id;
     try {
@@ -2419,7 +2572,7 @@ app.get('/api/contacts', authMiddleware, async (req: any, res) => {
     try {
         let query = supabase
             .from('w_contacts')
-            .select('id, name, custom_name, phone, wa_id, wa_key, tags, created_at, last_active, contact_type')
+            .select('id, name, custom_name, phone, wa_id, wa_key, wa_account_id, tags, custom_fields, created_at, last_active, contact_type')
             .eq('organization_id', organization_id)
             .order('created_at', { ascending: false });
 
@@ -2453,7 +2606,7 @@ app.get('/api/contacts', authMiddleware, async (req: any, res) => {
 
 app.post('/api/contacts', authMiddleware, async (req: any, res) => {
     const organization_id = req.organization_id;
-    const { name, phone, tags = [] } = req.body || {};
+    const { name, phone, custom_name, tags = [], custom_fields = {}, wa_account_id = null } = req.body || {};
 
     try {
         if (!organization_id) {
@@ -2470,6 +2623,24 @@ app.post('/api/contacts', authMiddleware, async (req: any, res) => {
         const normalizedTags = Array.isArray(tags)
             ? tags.map((tag: any) => String(tag).trim()).filter(Boolean)
             : String(tags || '').split(',').map((tag) => tag.trim()).filter(Boolean);
+        const normalizedCustomFields = custom_fields && typeof custom_fields === 'object' && !Array.isArray(custom_fields)
+            ? Object.fromEntries(Object.entries(custom_fields)
+                .map(([key, value]) => [String(key).trim(), value == null ? '' : String(value).trim()])
+                .filter(([key]) => Boolean(key)))
+            : {};
+
+        let normalizedAccountId: string | null = null;
+        if (wa_account_id) {
+            const { data: account, error: accountErr } = await supabase
+                .from('w_wa_accounts')
+                .select('id')
+                .eq('id', String(wa_account_id))
+                .eq('organization_id', organization_id)
+                .maybeSingle();
+            if (accountErr) throw accountErr;
+            if (!account?.id) return res.status(400).json({ error: 'Selected WhatsApp account was not found' });
+            normalizedAccountId = account.id;
+        }
 
         const { data: existing, error: existingErr } = await supabase
             .from('w_contacts')
@@ -2486,14 +2657,17 @@ app.post('/api/contacts', authMiddleware, async (req: any, res) => {
             .from('w_contacts')
             .insert({
                 organization_id,
+                wa_account_id: normalizedAccountId,
                 name: String(name || '').trim() || normalizedPhone,
+                custom_name: typeof custom_name === 'string' && custom_name.trim() ? custom_name.trim() : null,
                 phone: normalizedPhone,
                 wa_id: normalizedPhone,
                 wa_key,
                 tags: normalizedTags,
+                custom_fields: normalizedCustomFields,
                 contact_type: 'individual'
             })
-            .select('id, name, custom_name, phone, wa_id, wa_key, tags, created_at, last_active, contact_type')
+            .select('id, name, custom_name, phone, wa_id, wa_key, wa_account_id, tags, custom_fields, created_at, last_active, contact_type')
             .single();
         if (error) throw error;
 
@@ -2514,13 +2688,9 @@ app.patch('/api/contacts/:id', authMiddleware, async (req: any, res) => {
             return res.status(400).json({ error: 'organization_id is required' });
         }
 
-        const raw = (req.body?.custom_name ?? null);
-        const custom_name = typeof raw === 'string' ? raw.trim() : null;
-        const normalizedCustomName = custom_name ? custom_name : null;
-
         const { data: existing, error: findErr } = await supabase
             .from('w_contacts')
-            .select('id, organization_id, wa_key')
+            .select('id, organization_id, wa_key, custom_fields')
             .eq('id', contactId)
             .maybeSingle();
         if (findErr) throw findErr;
@@ -2529,11 +2699,71 @@ app.patch('/api/contacts/:id', authMiddleware, async (req: any, res) => {
             return res.status(403).json({ error: 'Forbidden' });
         }
 
-        // Apply to all duplicates sharing the same wa_key to keep UI consistent.
-        if (existing.wa_key) {
+        const updates: any = {};
+
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'custom_name')) {
+            const raw = (req.body?.custom_name ?? null);
+            const custom_name = typeof raw === 'string' ? raw.trim() : null;
+            updates.custom_name = custom_name ? custom_name : null;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'name')) {
+            updates.name = String(req.body?.name || '').trim() || null;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'phone')) {
+            const phoneDigits = normalizeWaIdToPhone(req.body?.phone);
+            if (!phoneDigits) return res.status(400).json({ error: 'Valid phone number is required' });
+            const wa_key = normalizeIndianPhoneKey(phoneDigits) || phoneDigits;
+            updates.phone = wa_key;
+            updates.wa_id = wa_key;
+            updates.wa_key = wa_key;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'tags')) {
+            updates.tags = Array.isArray(req.body.tags)
+                ? req.body.tags.map((tag: any) => String(tag).trim()).filter(Boolean)
+                : String(req.body.tags || '').split(',').map((tag: string) => tag.trim()).filter(Boolean);
+        }
+
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'custom_fields')) {
+            const incoming = req.body.custom_fields && typeof req.body.custom_fields === 'object' && !Array.isArray(req.body.custom_fields)
+                ? Object.fromEntries(Object.entries(req.body.custom_fields)
+                    .map(([key, value]) => [String(key).trim(), value == null ? '' : String(value).trim()])
+                    .filter(([key]) => Boolean(key)))
+                : {};
+            const currentFields = existing.custom_fields && typeof existing.custom_fields === 'object' ? existing.custom_fields : {};
+            const protectedFields = ['profile_photo_url', 'profile_photo_checked_at'].reduce((acc: any, key) => {
+                if (currentFields[key]) acc[key] = currentFields[key];
+                return acc;
+            }, {});
+            updates.custom_fields = { ...incoming, ...protectedFields };
+        }
+
+        if (Object.prototype.hasOwnProperty.call(req.body || {}, 'wa_account_id')) {
+            const nextAccountId = req.body.wa_account_id ? String(req.body.wa_account_id) : null;
+            if (nextAccountId) {
+                const { data: account, error: accountErr } = await supabase
+                    .from('w_wa_accounts')
+                    .select('id')
+                    .eq('id', nextAccountId)
+                    .eq('organization_id', organization_id)
+                    .maybeSingle();
+                if (accountErr) throw accountErr;
+                if (!account?.id) return res.status(400).json({ error: 'Selected WhatsApp account was not found' });
+            }
+            updates.wa_account_id = nextAccountId;
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({ error: 'No contact fields were provided' });
+        }
+
+        // Apply alias to duplicates sharing the same wa_key to keep chat names consistent.
+        if (existing.wa_key && Object.prototype.hasOwnProperty.call(updates, 'custom_name')) {
             const { error: updAllErr } = await supabase
                 .from('w_contacts')
-                .update({ custom_name: normalizedCustomName })
+                .update({ custom_name: updates.custom_name })
                 .eq('organization_id', organization_id)
                 .eq('wa_key', existing.wa_key);
             if (updAllErr) throw updAllErr;
@@ -2541,9 +2771,9 @@ app.patch('/api/contacts/:id', authMiddleware, async (req: any, res) => {
 
         const { data: updated, error: updErr } = await supabase
             .from('w_contacts')
-            .update({ custom_name: normalizedCustomName })
+            .update(updates)
             .eq('id', contactId)
-            .select('id, name, custom_name, phone, wa_id, wa_key, tags, created_at, last_active')
+            .select('id, name, custom_name, phone, wa_id, wa_key, wa_account_id, tags, custom_fields, created_at, last_active, contact_type')
             .single();
         if (updErr) throw updErr;
 
@@ -2598,6 +2828,7 @@ app.get('/api/settings/knowledge-base', authMiddleware, async (req: any, res) =>
             documents: documents.map((doc: any) => ({
                 ...doc,
                 content_preview: doc.content ? doc.content.slice(0, 220) : '',
+                character_count: String(doc.content || '').length,
                 content: undefined,
             })),
             total_documents: documents.length,
@@ -2684,7 +2915,10 @@ app.get('/api/team/members', authMiddleware, async (req: any, res) => {
             .order('created_at', { ascending: true });
         
         if (error) throw error;
-        res.json(data || []);
+        res.json((data || []).map((member: any) => ({
+            ...member,
+            invite_status: getMemberInviteState(member)
+        })));
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
@@ -2694,112 +2928,247 @@ app.get('/api/team/members', authMiddleware, async (req: any, res) => {
 app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
     const orgId = req.organization_id;
     const { email, name, role, password } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
 
-    if (!email || !name || !password) return res.status(400).json({ error: 'Email, name and password are required' });
+    if (!normalizedEmail || !name || !password) return res.status(400).json({ error: 'Email, name and password are required' });
 
     try {
+        const inviteToken = createInviteToken();
+        const inviteExpiresAt = getInviteExpiryDate();
+        const temporaryPassword = password || createTemporaryPassword();
+
         // 1. Check if user already member
         const { data: existing } = await supabase
             .from('organization_members')
-            .select('id')
+            .select('*')
             .eq('organization_id', orgId)
-            .eq('email', email)
+            .ilike('email', normalizedEmail)
             .maybeSingle();
-
-        if (existing) return res.status(400).json({ error: 'Member already exists' });
 
         // 2. Create user via Supabase Admin (Requires service_role key)
         let userId: string;
-        const { data: inviteData, error: inviteErr } = await supabase.auth.admin.createUser({
-            email,
-            password,
-            email_confirm: true,
-            user_metadata: { organization_id: orgId, role, name }
-        });
-
-        if (inviteErr) {
-            // If user already exists, we might get an error. Try to find the user instead.
-            if (inviteErr.message.includes('already been registered') || inviteErr.status === 422) {
-                let page = 1;
-                let existingUser;
-                while (true) {
-                    const { data: users, error: listErr } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
-                    if (listErr) throw listErr;
-                    if (!users?.users?.length) break;
-                    
-                    existingUser = users.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
-                    if (existingUser) break;
-                    
-                    if (users.users.length < 1000) break;
-                    page++;
-                }
-
-                if (!existingUser) throw new Error('User already registered but could not be found');
-                userId = existingUser.id;
-            } else {
-                throw inviteErr;
-            }
+        if (existing?.user_id) {
+            userId = existing.user_id;
+            const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
+                password: temporaryPassword,
+                email_confirm: true,
+                user_metadata: { organization_id: orgId, role: role || 'agent', name }
+            });
+            if (updateErr) throw updateErr;
         } else {
-            userId = inviteData.user.id;
+            const { data: inviteData, error: inviteErr } = await supabase.auth.admin.createUser({
+                email: normalizedEmail,
+                password: temporaryPassword,
+                email_confirm: true,
+                user_metadata: { organization_id: orgId, role, name }
+            });
+
+            if (inviteErr) {
+                // If user already exists, we might get an error. Try to find the user instead.
+                if (inviteErr.message.includes('already been registered') || inviteErr.status === 422) {
+                    let page = 1;
+                    let existingUser;
+                    while (true) {
+                        const { data: users, error: listErr } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+                        if (listErr) throw listErr;
+                        if (!users?.users?.length) break;
+                        
+                        existingUser = users.users.find((u: any) => u.email?.toLowerCase() === normalizedEmail);
+                        if (existingUser) break;
+                        
+                        if (users.users.length < 1000) break;
+                        page++;
+                    }
+
+                    if (!existingUser) throw new Error('User already registered but could not be found');
+                    userId = existingUser.id;
+
+                    const { error: updateErr } = await supabase.auth.admin.updateUserById(userId, {
+                        password: temporaryPassword,
+                        email_confirm: true,
+                        user_metadata: {
+                            ...(existingUser.user_metadata || {}),
+                            organization_id: orgId,
+                            role: role || 'agent',
+                            name
+                        }
+                    });
+                    if (updateErr) throw updateErr;
+                } else {
+                    throw inviteErr;
+                }
+            } else {
+                userId = inviteData.user.id;
+            }
         }
 
-        // 3. Insert into organization_members
-        const { error: insertErr } = await supabase
-            .from('organization_members')
-            .insert({
-                organization_id: orgId,
-                user_id: userId,
-                email,
-                name,
-                role: role || 'agent',
-                is_active: true
-            });
+        // 3. Insert/update organization_members
+        const memberPayload = {
+            organization_id: orgId,
+            user_id: userId,
+            email: normalizedEmail,
+            name,
+            role: role || 'agent',
+            is_active: false,
+            invite_token_hash: hashInviteToken(inviteToken),
+            invite_expires_at: inviteExpiresAt.toISOString(),
+            invite_sent_at: new Date().toISOString(),
+            invite_accepted_at: null,
+            invite_temp_password_encrypted: encryptToken(temporaryPassword)
+        };
+
+        const memberQuery = existing?.id
+            ? supabase.from('organization_members').update(memberPayload).eq('id', existing.id).eq('organization_id', orgId)
+            : supabase.from('organization_members').insert(memberPayload);
+
+        const { error: insertErr } = await memberQuery;
 
         if (insertErr) throw insertErr;
 
         // 4. Send custom invitation email
         try {
-            // Fix: Only use FRONTEND_URL or localhost for frontend links, NOT the backend's PUBLIC_BASE_URL
-            const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-            const loginLink = `${baseUrl}/agent-login`;
-            await sendEmail(
-                email,
-                `Invitation to join FlowsApp Team`,
-                `
-                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
-                    <h2 style="color: #25D366;">You've been invited!</h2>
-                    <p>Hello <strong>${name}</strong>,</p>
-                    <p>You have been invited to join the <strong>FlowsApp</strong> team as an <strong>${role || 'agent'}</strong>.</p>
-                    <p>As a team member, you'll be able to manage WhatsApp chats and help automate customer interactions.</p>
-                    
-                    <div style="background-color: #f9f9f9; padding: 15px; border-radius: 6px; margin: 20px 0;">
-                        <h3 style="margin-top: 0;">Your Login Credentials:</h3>
-                        <p><strong>Login URL:</strong> <a href="${loginLink}">${loginLink}</a></p>
-                        <p><strong>Email ID:</strong> ${email}</p>
-                        <p><strong>Password:</strong> ${password}</p>
-                    </div>
-
-                    <div style="margin: 30px 0;">
-                        <a href="${loginLink}" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Go to Login Page</a>
-                    </div>
-                    <p style="color: #666; font-size: 14px;">If you already have an account, your existing password will continue to work.</p>
-                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                    <p style="color: #999; font-size: 12px;">This invitation was sent from the FlowsApp Dashboard.</p>
-                </div>
-                `
-            );
+            const inviteLink = `${getFrontendBaseUrl()}/accept-invite?token=${encodeURIComponent(inviteToken)}`;
+            await sendTeamInviteEmail({
+                email: normalizedEmail,
+                name,
+                role: role || 'agent',
+                password: temporaryPassword,
+                inviteLink,
+                expiresAt: inviteExpiresAt
+            });
         } catch (mailErr) {
             console.error("Failed to send invitation email:", mailErr);
             // We don't throw here so the user is still created/invited in the DB
         }
 
-        res.json({ success: true, message: 'Member invited successfully and email sent' });
+        res.json({ success: true, message: 'Member invited successfully and email sent', expires_at: inviteExpiresAt.toISOString() });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
 });
 
 // 2C. PATCH /api/team/members/:id — Role/Status update karo
+app.post('/api/team/invite/accept', async (req: any, res) => {
+    const { token } = req.body || {};
+    if (!token) return res.status(400).json({ error: 'Invitation token is required' });
+
+    try {
+        const tokenHash = hashInviteToken(String(token));
+        const { data: member, error } = await supabase
+            .from('organization_members')
+            .select('*')
+            .eq('invite_token_hash', tokenHash)
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!member) return res.status(404).json({ error: 'Invitation link is invalid or has already been used' });
+        if (member.invite_accepted_at) return res.status(409).json({ error: 'Invitation has already been accepted' });
+
+        const expiresAt = member.invite_expires_at ? new Date(member.invite_expires_at) : null;
+        if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+            await supabase
+                .from('organization_members')
+                .update({ is_active: false })
+                .eq('id', member.id);
+            return res.status(410).json({ error: 'Invitation link has expired. Please ask your admin to resend it.' });
+        }
+
+        const temporaryPassword = member.invite_temp_password_encrypted
+            ? decryptToken(member.invite_temp_password_encrypted)
+            : null;
+
+        if (!temporaryPassword) {
+            return res.status(400).json({ error: 'Invitation is missing login credentials. Please ask your admin to resend it.' });
+        }
+
+        const { error: updateErr } = await supabase
+            .from('organization_members')
+            .update({
+                is_active: true,
+                invite_accepted_at: new Date().toISOString(),
+                invite_token_hash: null,
+                invite_temp_password_encrypted: null
+            })
+            .eq('id', member.id);
+
+        if (updateErr) throw updateErr;
+
+        res.json({
+            success: true,
+            email: member.email,
+            password: temporaryPassword,
+            role: member.role || 'agent'
+        });
+    } catch (err: any) {
+        console.error('Accept invitation error:', err);
+        res.status(500).json({ error: err.message || 'Failed to accept invitation' });
+    }
+});
+
+app.post('/api/team/members/:id/resend-invite', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const { data: member, error: memberErr } = await supabase
+            .from('organization_members')
+            .select('*')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+
+        if (memberErr) throw memberErr;
+        if (!member) return res.status(404).json({ error: 'Member not found' });
+        if (member.role === 'owner') return res.status(400).json({ error: 'Owner invitations cannot be resent' });
+        if (getMemberInviteState(member) === 'active') return res.status(400).json({ error: 'This member is already active' });
+
+        const inviteToken = createInviteToken();
+        const inviteExpiresAt = getInviteExpiryDate();
+        const temporaryPassword = createTemporaryPassword();
+
+        const { error: authErr } = await supabase.auth.admin.updateUserById(member.user_id, {
+            password: temporaryPassword,
+            email_confirm: true,
+            user_metadata: {
+                organization_id: orgId,
+                role: member.role || 'agent',
+                name: member.name
+            }
+        });
+        if (authErr) throw authErr;
+
+        const { error: updateErr } = await supabase
+            .from('organization_members')
+            .update({
+                is_active: false,
+                invite_token_hash: hashInviteToken(inviteToken),
+                invite_expires_at: inviteExpiresAt.toISOString(),
+                invite_sent_at: new Date().toISOString(),
+                invite_accepted_at: null,
+                invite_temp_password_encrypted: encryptToken(temporaryPassword)
+            })
+            .eq('id', member.id)
+            .eq('organization_id', orgId);
+
+        if (updateErr) throw updateErr;
+
+        const inviteLink = `${getFrontendBaseUrl()}/accept-invite?token=${encodeURIComponent(inviteToken)}`;
+        await sendTeamInviteEmail({
+            email: member.email,
+            name: member.name || member.email,
+            role: member.role || 'agent',
+            password: temporaryPassword,
+            inviteLink,
+            expiresAt: inviteExpiresAt
+        });
+
+        res.json({ success: true, message: 'Invitation resent', expires_at: inviteExpiresAt.toISOString() });
+    } catch (err: any) {
+        console.error('Resend invitation error:', err);
+        res.status(500).json({ error: err.message || 'Failed to resend invitation' });
+    }
+});
+
 app.patch('/api/team/members/:id', authMiddleware, async (req: any, res) => {
     const orgId = req.organization_id;
     const { id } = req.params;
@@ -2867,18 +3236,79 @@ app.get('/api/team/my-profile', authMiddleware, async (req: any, res) => {
     }
 });
 
-// 2F. PATCH /api/conversations/:id/assign — Chat assign karo agent ko
+// 2F. PATCH /api/team/my-profile — Current user's basic profile
+app.patch('/api/team/my-profile', authMiddleware, async (req: any, res) => {
+    try {
+        const name = String(req.body?.name || '').trim();
+        const avatarColor = String(req.body?.avatar_color || '').trim();
+
+        if (!name) return res.status(400).json({ error: 'Name is required' });
+        if (name.length > 80) return res.status(400).json({ error: 'Name must be 80 characters or less' });
+        if (avatarColor && !/^#[0-9a-fA-F]{6}$/.test(avatarColor)) {
+            return res.status(400).json({ error: 'Invalid avatar color' });
+        }
+
+        const updatePayload: any = {
+            name,
+            avatar_color: avatarColor || '#4f46e5'
+        };
+
+        const { data, error } = await supabase
+            .from('organization_members')
+            .update(updatePayload)
+            .eq('user_id', req.user.id)
+            .eq('organization_id', req.organization_id)
+            .select('*')
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Profile not found' });
+
+        try {
+            await supabase.auth.admin.updateUserById(req.user.id, {
+                user_metadata: {
+                    ...(req.user.user_metadata || {}),
+                    full_name: name,
+                    name,
+                    avatar_color: updatePayload.avatar_color
+                }
+            });
+        } catch (metadataErr: any) {
+            console.warn('[Profile] Failed to sync auth metadata:', metadataErr?.message || metadataErr);
+        }
+
+        res.json(data);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to update profile' });
+    }
+});
+
+// 2G. PATCH /api/conversations/:id/assign — Chat assign karo agent ko
 app.patch('/api/conversations/:id/assign', authMiddleware, async (req: any, res) => {
     const orgId = req.organization_id;
     const { id } = req.params;
     const { agent_id } = req.body;
 
     try {
+        const normalizedAgentId = agent_id ? String(agent_id) : null;
+        if (normalizedAgentId) {
+            const { data: member, error: memberErr } = await supabase
+                .from('organization_members')
+                .select('user_id, role, is_active')
+                .eq('organization_id', orgId)
+                .eq('user_id', normalizedAgentId)
+                .maybeSingle();
+            if (memberErr) throw memberErr;
+            if (!member || member.role !== 'agent' || member.is_active === false) {
+                return res.status(400).json({ error: 'Conversation can only be assigned to an active agent' });
+            }
+        }
+
         const { data: updated, error } = await supabase
             .from('w_conversations')
             .update({ 
-                assigned_to: agent_id,
-                assigned_agent_id: agent_id
+                assigned_to: normalizedAgentId,
+                assigned_agent_id: normalizedAgentId
             })
             .eq('id', id)
             .eq('organization_id', orgId)
@@ -2887,10 +3317,170 @@ app.patch('/api/conversations/:id/assign', authMiddleware, async (req: any, res)
 
         if (error) throw error;
 
-        io.to(`org:${orgId}`).emit('conversation_assigned', { conversation_id: id, assigned_to: agent_id });
+        io.to(`org:${orgId}`).emit('conversation_assigned', { conversation_id: id, assigned_to: normalizedAgentId });
         res.json({ success: true, conversation: updated });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+app.patch('/api/conversations/:id/meta', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+    const payload: any = {};
+
+    if (typeof req.body?.status === 'string') {
+        const status = req.body.status.trim().toLowerCase();
+        if (!['open', 'archived', 'closed'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid conversation status' });
+        }
+        payload.status = status;
+    }
+
+    if (Array.isArray(req.body?.labels)) {
+        payload.labels = req.body.labels
+            .map((label: any) => String(label || '').trim().toLowerCase())
+            .filter(Boolean)
+            .slice(0, 20);
+    }
+
+    if (Object.keys(payload).length === 0) {
+        return res.status(400).json({ error: 'No conversation fields provided' });
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('w_conversations')
+            .update(payload)
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .select('id, status, labels')
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Conversation not found' });
+
+        io.to(`org:${orgId}`).emit('conversation_updated', data);
+        res.json({ success: true, conversation: data });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to update conversation' });
+    }
+});
+
+app.post('/api/conversations/:id/unread', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const { data: conv, error: convErr } = await supabase
+            .from('w_conversations')
+            .select('id')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (convErr) throw convErr;
+        if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+        const { data: latestInbound, error: msgErr } = await supabase
+            .from('w_messages')
+            .select('id')
+            .eq('conversation_id', id)
+            .in('direction', ['inbound', 'in'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (msgErr) throw msgErr;
+
+        if (latestInbound?.id) {
+            const { error: updErr } = await supabase
+                .from('w_messages')
+                .update({ status: 'delivered' })
+                .eq('id', latestInbound.id);
+            if (updErr) throw updErr;
+        }
+
+        await supabase
+            .from('w_conversations')
+            .update({ unread_count: 1 })
+            .eq('id', id)
+            .eq('organization_id', orgId);
+
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to mark unread' });
+    }
+});
+
+app.post('/api/conversations/:id/clear', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const { data: conv, error: convErr } = await supabase
+            .from('w_conversations')
+            .select('id')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (convErr) throw convErr;
+        if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+        const { error: deleteErr } = await supabase
+            .from('w_messages')
+            .delete()
+            .eq('conversation_id', id);
+        if (deleteErr) throw deleteErr;
+
+        const { data: updated, error: updateErr } = await supabase
+            .from('w_conversations')
+            .update({
+                last_message_preview: 'No messages',
+                unread_count: 0
+            })
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .select('id, last_message_preview, unread_count')
+            .maybeSingle();
+        if (updateErr) throw updateErr;
+
+        io.to(`org:${orgId}`).emit('conversation_cleared', { conversation_id: id });
+        res.json({ success: true, conversation: updated });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to clear chat' });
+    }
+});
+
+app.delete('/api/conversations/:id', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const { data: conv, error: convErr } = await supabase
+            .from('w_conversations')
+            .select('id')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (convErr) throw convErr;
+        if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+        const { error: msgErr } = await supabase
+            .from('w_messages')
+            .delete()
+            .eq('conversation_id', id);
+        if (msgErr) throw msgErr;
+
+        const { error: deleteErr } = await supabase
+            .from('w_conversations')
+            .delete()
+            .eq('id', id)
+            .eq('organization_id', orgId);
+        if (deleteErr) throw deleteErr;
+
+        io.to(`org:${orgId}`).emit('conversation_deleted', { conversation_id: id });
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to delete chat' });
     }
 });
 
@@ -2993,14 +3583,14 @@ app.post('/api/agents', authMiddleware, async (req: any, res) => {
             temperature = 0.7,
             trigger_keywords = [],
             system_prompt,
-            knowledge_base = [],
-            knowledge_base_content = [],
             is_active = true
         } = req.body;
 
         if (!name) {
             return res.status(400).json({ error: 'Agent name is required' });
         }
+
+        const knowledgePayload = await buildAgentKnowledgePayload(organization_id, req.body || {});
 
         const { data, error } = await supabase
             .from('bot_agents')
@@ -3012,8 +3602,8 @@ app.post('/api/agents', authMiddleware, async (req: any, res) => {
                 temperature,
                 trigger_keywords,
                 system_prompt,
-                knowledge_base,
-                knowledge_base_content,
+                knowledge_base: knowledgePayload.knowledge_base,
+                knowledge_base_content: knowledgePayload.knowledge_base_content,
                 is_active
             })
             .select()
@@ -3044,12 +3634,23 @@ app.patch('/api/agents/:id', authMiddleware, async (req: any, res) => {
 
     try {
         const updateData: any = {};
-        const allowedFields = ['name', 'description', 'model', 'temperature', 'trigger_keywords', 'system_prompt', 'knowledge_base', 'knowledge_base_content', 'is_active'];
+        const allowedFields = ['name', 'description', 'model', 'temperature', 'trigger_keywords', 'system_prompt', 'is_active'];
 
         for (const field of allowedFields) {
             if (req.body[field] !== undefined) {
                 updateData[field] = req.body[field];
             }
+        }
+
+        if (
+            req.body.selected_knowledge_document_ids !== undefined ||
+            req.body.knowledge_base !== undefined ||
+            req.body.knowledge_base_content !== undefined ||
+            req.body.automation_settings !== undefined
+        ) {
+            const knowledgePayload = await buildAgentKnowledgePayload(organization_id, req.body || {});
+            updateData.knowledge_base = knowledgePayload.knowledge_base;
+            updateData.knowledge_base_content = knowledgePayload.knowledge_base_content;
         }
 
         let query = supabase
@@ -3268,7 +3869,8 @@ app.get('/api/team/agents', authMiddleware, async (req: any, res) => {
             .from('organization_members')
             .select('user_id, name, email, role, is_active')
             .eq('organization_id', organization_id)
-            .in('role', ['agent', 'owner', 'admin']); // typically agents, but others might take chats
+            .eq('role', 'agent')
+            .eq('is_active', true);
 
         if (error) throw error;
         res.json(data || []);
@@ -4514,6 +5116,7 @@ app.post("/webhook", async (req, res) => {
 
             // Quoted/Reply context extract karo
             let quotedMessage: any = null;
+            const isForwarded = !!(msg.context?.forwarded || msg.context?.frequently_forwarded);
             if (msg.context?.id) {
                 // DB mein quoted message dhundo
                 const { data: quotedMsg } = await supabase
@@ -4539,7 +5142,9 @@ app.post("/webhook", async (req, res) => {
             const enrichedContent: any = { 
                 text, 
                 raw: msg,
-                quoted: quotedMessage
+                quoted: quotedMessage,
+                forwarded: isForwarded,
+                frequently_forwarded: !!msg.context?.frequently_forwarded,
             };
 
             // C. Insert Message
@@ -4561,6 +5166,7 @@ app.post("/webhook", async (req, res) => {
                 phone: from,
                 text,
                 quoted: quotedMessage || null,
+                forwarded: isForwarded,
                 sender: 'user',
                 conversation_id: conv.id,
                 contact_id: contact.id,
@@ -4607,6 +5213,9 @@ app.post("/webhook", async (req, res) => {
                                 media_url: uploaded.publicUrl,
                                 mime_type: downloaded.mimeType,
                                 file_name: downloaded.fileName,
+                                quoted: quotedMessage,
+                                forwarded: isForwarded,
+                                frequently_forwarded: !!msg.context?.frequently_forwarded,
                                 raw: msg,
                             };
 
@@ -5070,6 +5679,16 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                         continue;
                     }
 
+                    const contextInfo =
+                        (msg.message as any)?.extendedTextMessage?.contextInfo ||
+                        (msg.message as any)?.imageMessage?.contextInfo ||
+                        (msg.message as any)?.videoMessage?.contextInfo ||
+                        (msg.message as any)?.documentMessage?.contextInfo ||
+                        (msg.message as any)?.audioMessage?.contextInfo ||
+                        (msg.message as any)?.stickerMessage?.contextInfo ||
+                        null;
+                    const isForwarded = !!(contextInfo?.isForwarded || Number(contextInfo?.forwardingScore || 0) > 0);
+
                     // Thread name (group/channel)
                     let threadName: string | null = null;
                     if (isGroup) {
@@ -5111,7 +5730,12 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                     });
 
                     // 3) Store Message (download media when possible)
-                    let enrichedContent: any = { text: captionText || null, rawType: msgType };
+                    let enrichedContent: any = {
+                        text: captionText || null,
+                        rawType: msgType,
+                        forwarded: isForwarded,
+                        forwarding_score: Number(contextInfo?.forwardingScore || 0) || 0,
+                    };
                     if (['image', 'video', 'document', 'audio', 'sticker'].includes(normalizedType) && msg.message) {
                         try {
                             let inner: any = null;
@@ -5164,6 +5788,8 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                                     file_name: fileName,
                                     duration_seconds: msgType === 'audioMessage' && Number.isFinite(Number(inner?.seconds)) ? Number(inner.seconds) : null,
                                     rawType: msgType,
+                                    forwarded: isForwarded,
+                                    forwarding_score: Number(contextInfo?.forwardingScore || 0) || 0,
                                 };
                             }
                         } catch {
@@ -5188,6 +5814,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                             from: contactWaId,
                             name: threadName || senderName,
                             text: captionText,
+                            forwarded: isForwarded,
                             type: normalizedType,
                             ...(enrichedContent?.media_url ? { media_url: enrichedContent.media_url } : {}),
                             ...(enrichedContent?.mime_type ? { mime_type: enrichedContent.mime_type } : {}),

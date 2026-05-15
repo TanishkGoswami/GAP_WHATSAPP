@@ -1,11 +1,22 @@
 import { useState, useEffect, useRef } from 'react'
-import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon } from 'lucide-react'
+import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useNotificationSound } from '../hooks/useNotificationSound'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
 export default function Settings() {
     const { session, userRole, loginType } = useAuth()
+    const {
+        isEnabled: notificationSoundEnabled,
+        setIsEnabled: setNotificationSoundEnabled,
+        selectedSoundId,
+        setSelectedSoundId,
+        volume: notificationVolume,
+        setVolume: setNotificationVolume,
+        sounds: notificationSounds,
+        playNotification,
+    } = useNotificationSound()
     const [activeTab, setActiveTab] = useState('general')
     const [documents, setDocuments] = useState([])
     const [knowledgeStats, setKnowledgeStats] = useState({ total_documents: 0, total_characters: 0 })
@@ -21,6 +32,7 @@ export default function Settings() {
     const [inviteForm, setInviteForm] = useState({ name: '', email: '', role: 'agent' })
     const [isInviting, setIsInviting] = useState(false)
     const [isLoadingMembers, setIsLoadingMembers] = useState(false)
+    const [resendingMemberId, setResendingMemberId] = useState(null)
     const [accounts, setAccounts] = useState([])
     const [selectedAccountId, setSelectedAccountId] = useState('')
     const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
@@ -279,7 +291,8 @@ export default function Settings() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${session.access_token}`
+                    Authorization: `Bearer ${session.access_token}`,
+                    'X-Auth-Portal': loginType || 'owner'
                 },
                 body: JSON.stringify(inviteForm)
             })
@@ -295,6 +308,43 @@ export default function Settings() {
             console.error("Invite failed", e)
         } finally {
             setIsInviting(false)
+        }
+    }
+
+    const getInviteStatus = (member) => {
+        if (member.invite_status) return member.invite_status
+        if (member.is_active) return 'active'
+        const expiresAt = member.invite_expires_at ? new Date(member.invite_expires_at) : null
+        if (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now()) return 'expired'
+        return 'pending'
+    }
+
+    const formatInviteExpiry = (value) => {
+        if (!value) return ''
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return ''
+        return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    }
+
+    const resendInvite = async (member) => {
+        if (!member?.id) return
+        setResendingMemberId(member.id)
+        try {
+            const res = await fetch(`${BACKEND_BASE}/api/team/members/${member.id}/resend-invite`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`,
+                    'X-Auth-Portal': loginType || 'owner'
+                }
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data?.error || 'Failed to resend invitation')
+            fetchMembers()
+        } catch (e) {
+            alert(e.message || 'Failed to resend invitation')
+        } finally {
+            setResendingMemberId(null)
         }
     }
 
@@ -335,7 +385,7 @@ export default function Settings() {
             <div className="w-60 flex-shrink-0">
                 <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
                 <nav className="space-y-1">
-                    {['General', 'Knowledge Base', 'Integrations', 'Team Members', 'Developer API'].map((tab) => {
+                    {['General', 'Notifications', 'Knowledge Base', 'Integrations', 'Team Members', 'Developer API'].map((tab) => {
                         const id = tab.toLowerCase().replace(' ', '_')
                         if (id === 'team_members' && !isAdmin) return null
                         return (
@@ -348,6 +398,7 @@ export default function Settings() {
                                     }`}
                             >
                                 {id === 'general' && <Globe className="mr-3 h-5 w-5 text-gray-400" />}
+                                {id === 'notifications' && <Bell className="mr-3 h-5 w-5 text-gray-400" />}
                                 {id === 'knowledge_base' && <Database className="mr-3 h-5 w-5 text-gray-400" />}
                                 {id === 'integrations' && <ShoppingBag className="mr-3 h-5 w-5 text-gray-400" />}
                                 {id === 'team_members' && <Users className="mr-3 h-5 w-5 text-gray-400" />}
@@ -621,6 +672,96 @@ export default function Settings() {
                         )}
                     </div>
                 )}
+                {activeTab === 'notifications' && (
+                    <div className="p-8">
+                        <div className="mb-8 flex items-start justify-between gap-4">
+                            <div>
+                                <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
+                                <p className="mt-1 text-sm text-gray-500">Choose the sound agents hear when a different chat receives a new client message.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => playNotification({ force: true, messageId: `test-${Date.now()}` })}
+                                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                            >
+                                <Play className="h-4 w-4" />
+                                Test sound
+                            </button>
+                        </div>
+
+                        <div className="space-y-6">
+                            <section className="rounded-xl border border-gray-200 bg-white p-6">
+                                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex items-start gap-3">
+                                        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${notificationSoundEnabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                            {notificationSoundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-gray-900">Message sound</h3>
+                                            <p className="mt-1 text-sm text-gray-500">Sound plays only for incoming client messages from chats that are not currently open.</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setNotificationSoundEnabled(prev => !prev)}
+                                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${notificationSoundEnabled ? 'bg-green-600' : 'bg-gray-300'}`}
+                                        aria-pressed={notificationSoundEnabled}
+                                    >
+                                        <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${notificationSoundEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                    </button>
+                                </div>
+                            </section>
+
+                            <section className="rounded-xl border border-gray-200 bg-white p-6">
+                                <div className="mb-5">
+                                    <h3 className="text-sm font-semibold text-gray-900">Sound style</h3>
+                                    <p className="mt-1 text-xs text-gray-500">Select one of the notification files saved in the project.</p>
+                                </div>
+                                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                                    {notificationSounds.map(sound => (
+                                        <button
+                                            key={sound.id}
+                                            type="button"
+                                            onClick={() => setSelectedSoundId(sound.id)}
+                                            className={`flex items-center justify-between rounded-lg border p-4 text-left transition-colors ${selectedSoundId === sound.id ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                                        >
+                                            <div className="min-w-0">
+                                                <div className="truncate text-sm font-semibold text-gray-900">{sound.label}</div>
+                                                <div className="truncate text-xs text-gray-500">{sound.src.split('/').pop()}</div>
+                                            </div>
+                                            <span className={`ml-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selectedSoundId === sound.id ? 'border-green-600 bg-green-600 text-white' : 'border-gray-300 text-transparent'}`}>
+                                                <Check className="h-3.5 w-3.5" />
+                                            </span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </section>
+
+                            <section className="rounded-xl border border-gray-200 bg-white p-6">
+                                <div className="mb-5 flex items-center justify-between gap-4">
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-gray-900">Volume</h3>
+                                        <p className="mt-1 text-xs text-gray-500">Set a comfortable alert level for this browser.</p>
+                                    </div>
+                                    <span className="text-sm font-semibold text-gray-700">{Math.round(notificationVolume * 100)}%</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value={notificationVolume}
+                                    onChange={(e) => setNotificationVolume(e.target.value)}
+                                    className="w-full accent-green-600"
+                                />
+                            </section>
+
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                                Browser audio starts after the first click or key press in the app. Use Test sound once after opening the dashboard if the browser has blocked audio.
+                            </div>
+                        </div>
+                    </div>
+                )}
                 {activeTab === 'knowledge_base' && (
                     <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                         <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-8 py-6">
@@ -767,7 +908,19 @@ export default function Settings() {
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                        {members.map((member) => (
+                                        {members.map((member) => {
+                                            const inviteStatus = getInviteStatus(member)
+                                            const statusStyles = inviteStatus === 'active'
+                                                ? 'bg-green-100 text-green-800'
+                                                : inviteStatus === 'expired'
+                                                    ? 'bg-red-100 text-red-800'
+                                                    : 'bg-amber-100 text-amber-800'
+                                            const dotStyles = inviteStatus === 'active'
+                                                ? 'bg-green-400'
+                                                : inviteStatus === 'expired'
+                                                    ? 'bg-red-400'
+                                                    : 'bg-amber-400'
+                                            return (
                                             <tr key={member.id} className="hover:bg-gray-50 transition-colors">
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <div className="flex items-center">
@@ -796,23 +949,43 @@ export default function Settings() {
                                                     </select>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${member.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                                        }`}>
-                                                        <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${member.is_active ? 'bg-green-400' : 'bg-red-400'}`} />
-                                                        {member.is_active ? 'Active' : 'Inactive'}
-                                                    </span>
+                                                    <div className="space-y-1">
+                                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyles}`}>
+                                                            <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${dotStyles}`} />
+                                                            {inviteStatus === 'active' ? 'Active' : inviteStatus === 'expired' ? 'Invite expired' : 'Invite pending'}
+                                                        </span>
+                                                        {inviteStatus !== 'active' && member.invite_expires_at ? (
+                                                            <div className="flex items-center gap-1 text-xs text-gray-400">
+                                                                <Clock className="h-3 w-3" />
+                                                                Expires {formatInviteExpiry(member.invite_expires_at)}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    <button
-                                                        onClick={() => removeMember(member.id)}
-                                                        disabled={member.role === 'owner'}
-                                                        className="text-red-600 hover:text-red-900 disabled:opacity-50"
-                                                    >
-                                                        <Trash className="h-4 w-4" />
-                                                    </button>
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        {inviteStatus !== 'active' && member.role !== 'owner' ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => resendInvite(member)}
+                                                                disabled={resendingMemberId === member.id}
+                                                                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                                                            >
+                                                                {resendingMemberId === member.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                                                                Resend
+                                                            </button>
+                                                        ) : null}
+                                                        <button
+                                                            onClick={() => removeMember(member.id)}
+                                                            disabled={member.role === 'owner'}
+                                                            className="text-red-600 hover:text-red-900 disabled:opacity-50"
+                                                        >
+                                                            <Trash className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
-                                        ))}
+                                        )})}
                                     </tbody>
                                 </table>
                             </div>
@@ -890,111 +1063,138 @@ export default function Settings() {
                 )}
 
                 {activeTab === 'integrations' && (
-                    <div className="p-8 space-y-8">
-                        <div>
-                            <h2 className="text-lg font-medium text-gray-900">E-commerce Integrations</h2>
-                            <p className="text-sm text-gray-500">Connect your store to automate order notifications and abandoned cart recovery.</p>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Shopify */}
-                            <div className="border border-gray-200 rounded-xl p-6 flex flex-col justify-between hover:border-green-500 transition-colors bg-gradient-to-br from-white to-gray-50">
-                                <div>
-                                    <div className="h-10 w-10 bg-[#95BF47]/20 rounded-lg flex items-center justify-center mb-4 text-[#95BF47] font-bold">S</div>
-                                    <h3 className="font-bold text-gray-900">Shopify</h3>
-                                    <p className="text-xs text-gray-500 mt-1">Sync products, orders, and customers.</p>
-                                </div>
-                                <div className="mt-4">
-                                    <button className="w-full py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">Connect Store</button>
-                                </div>
+                    <div className="relative min-h-[600px] overflow-hidden">
+                        <div className="pointer-events-none select-none p-8 space-y-8 blur-[3px] opacity-45">
+                            <div>
+                                <h2 className="text-lg font-medium text-gray-900">E-commerce Integrations</h2>
+                                <p className="text-sm text-gray-500">Connect your store to automate order notifications and abandoned cart recovery.</p>
                             </div>
 
-                            {/* WooCommerce */}
-                            <div className="border border-gray-200 rounded-xl p-6 flex flex-col justify-between hover:border-purple-500 transition-colors bg-gradient-to-br from-white to-gray-50">
-                                <div>
-                                    <div className="h-10 w-10 bg-[#96588a]/20 rounded-lg flex items-center justify-center mb-4 text-[#96588a] font-bold">W</div>
-                                    <h3 className="font-bold text-gray-900">WooCommerce</h3>
-                                    <p className="text-xs text-gray-500 mt-1">Open source e-commerce plugin for WordPress.</p>
-                                </div>
-                                <div className="mt-4">
-                                    <button className="w-full py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-50">Connect Plugin</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="border-t border-gray-100 pt-6">
-                            <h3 className="text-sm font-medium text-gray-900 mb-4">Automation Triggers</h3>
-                            <div className="space-y-3">
-                                {['Abandoned Cart Recovery', 'Order Confirmation', 'Shipping Update', 'COD Confirmation'].map(trigger => (
-                                    <div key={trigger} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                        <span className="text-sm text-gray-700">{trigger}</span>
-                                        <div className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 bg-gray-200">
-                                            <span className="translate-x-0 pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out" />
-                                        </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="border border-gray-200 rounded-xl p-6 flex flex-col justify-between bg-gradient-to-br from-white to-gray-50">
+                                    <div>
+                                        <div className="h-10 w-10 bg-[#95BF47]/20 rounded-lg flex items-center justify-center mb-4 text-[#95BF47] font-bold">S</div>
+                                        <h3 className="font-bold text-gray-900">Shopify</h3>
+                                        <p className="text-xs text-gray-500 mt-1">Sync products, orders, and customers.</p>
                                     </div>
-                                ))}
+                                    <div className="mt-4">
+                                        <button type="button" className="w-full py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium">Connect Store</button>
+                                    </div>
+                                </div>
+
+                                <div className="border border-gray-200 rounded-xl p-6 flex flex-col justify-between bg-gradient-to-br from-white to-gray-50">
+                                    <div>
+                                        <div className="h-10 w-10 bg-[#96588a]/20 rounded-lg flex items-center justify-center mb-4 text-[#96588a] font-bold">W</div>
+                                        <h3 className="font-bold text-gray-900">WooCommerce</h3>
+                                        <p className="text-xs text-gray-500 mt-1">Open source e-commerce plugin for WordPress.</p>
+                                    </div>
+                                    <div className="mt-4">
+                                        <button type="button" className="w-full py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium">Connect Plugin</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="border-t border-gray-100 pt-6">
+                                <h3 className="text-sm font-medium text-gray-900 mb-4">Automation Triggers</h3>
+                                <div className="space-y-3">
+                                    {['Abandoned Cart Recovery', 'Order Confirmation', 'Shipping Update', 'COD Confirmation'].map(trigger => (
+                                        <div key={trigger} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                            <span className="text-sm text-gray-700">{trigger}</span>
+                                            <div className="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-gray-200">
+                                                <span className="translate-x-0 pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/35 backdrop-blur-[1px]">
+                            <div className="mx-6 max-w-sm rounded-xl border border-gray-200 bg-white/95 px-8 py-7 text-center shadow-xl">
+                                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-50 text-green-600">
+                                    <ShoppingBag className="h-5 w-5" />
+                                </div>
+                                <h3 className="text-lg font-semibold text-gray-900">Coming soon</h3>
+                                <p className="mt-2 text-sm leading-6 text-gray-500">
+                                    Store integrations and automation triggers are being prepared and will be available in a future update.
+                                </p>
                             </div>
                         </div>
                     </div>
                 )}
 
                 {activeTab === 'developer_api' && (
-                    <div className="p-8 space-y-8">
-                        <div>
-                            <h2 className="text-lg font-medium text-gray-900">Developer API</h2>
-                            <p className="text-sm text-gray-500">Manage your API keys and webhooks for custom integrations.</p>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Live API Key</label>
-                            <div className="flex gap-2">
-                                <input
-                                    type="password"
-                                    readOnly
-                                    value={apiKey}
-                                    className="flex-1 rounded-lg border-gray-300 bg-gray-50 font-mono text-sm"
-                                />
-                                <button
-                                    onClick={copyToClipboard}
-                                    className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600"
-                                >
-                                    {copied ? <Check className="h-5 w-5 text-green-600" /> : <Copy className="h-5 w-5" />}
-                                </button>
-                                <button className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600">
-                                    <Key className="h-5 w-5" />
-                                </button>
+                    <div className="relative min-h-[600px] overflow-hidden">
+                        <div className="pointer-events-none select-none p-8 space-y-8 blur-[3px] opacity-45">
+                            <div>
+                                <h2 className="text-lg font-medium text-gray-900">Developer API</h2>
+                                <p className="text-sm text-gray-500">Manage your API keys and webhooks for custom integrations.</p>
                             </div>
-                            <p className="text-xs text-gray-500 mt-2">Never share your API key. Use it to authenticate requests to our API.</p>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Live API Key</label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="password"
+                                        readOnly
+                                        value={apiKey}
+                                        className="flex-1 rounded-lg border-gray-300 bg-gray-50 font-mono text-sm"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={copyToClipboard}
+                                        className="p-2 border border-gray-300 rounded-lg text-gray-600"
+                                    >
+                                        {copied ? <Check className="h-5 w-5 text-green-600" /> : <Copy className="h-5 w-5" />}
+                                    </button>
+                                    <button type="button" className="p-2 border border-gray-300 rounded-lg text-gray-600">
+                                        <Key className="h-5 w-5" />
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">Never share your API key. Use it to authenticate requests to our API.</p>
+                            </div>
+
+                            <div className="border-t border-gray-100 pt-6">
+                                <h3 className="text-sm font-medium text-gray-900 mb-4">Webhooks</h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Webhook URL</label>
+                                        <input
+                                            type="text"
+                                            placeholder="https://your-server.com/webhook"
+                                            className="w-full rounded-lg border-gray-300 text-sm"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Verified Events</label>
+                                        <div className="flex flex-wrap gap-2 text-xs">
+                                            {['message.received', 'message.sent', 'status.update'].map(evt => (
+                                                <span key={evt} className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded border border-indigo-100">{evt}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <button type="button" className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium flex items-center gap-2">
+                                        <Webhook className="h-4 w-4" /> Save Webhook Settings
+                                    </button>
+                                </div>
+                            </div>
                         </div>
 
-                        <div className="border-t border-gray-100 pt-6">
-                            <h3 className="text-sm font-medium text-gray-900 mb-4">Webhooks</h3>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Webhook URL</label>
-                                    <input
-                                        type="text"
-                                        placeholder="https://your-server.com/webhook"
-                                        className="w-full rounded-lg border-gray-300 text-sm"
-                                    />
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/35 backdrop-blur-[1px]">
+                            <div className="mx-6 max-w-sm rounded-xl border border-gray-200 bg-white/95 px-8 py-7 text-center shadow-xl">
+                                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                                    <Key className="h-5 w-5" />
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Verified Events</label>
-                                    <div className="flex flex-wrap gap-2 text-xs">
-                                        {['message.received', 'message.sent', 'status.update'].map(evt => (
-                                            <span key={evt} className="px-2 py-1 bg-indigo-50 text-indigo-700 rounded border border-indigo-100">{evt}</span>
-                                        ))}
-                                    </div>
-                                </div>
-                                <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 flex items-center gap-2">
-                                    <Webhook className="h-4 w-4" /> Save Webhook Settings
-                                </button>
+                                <h3 className="text-lg font-semibold text-gray-900">Coming soon</h3>
+                                <p className="mt-2 text-sm leading-6 text-gray-500">
+                                    Developer API keys and webhook controls are being prepared and will be available in a future update.
+                                </p>
                             </div>
                         </div>
                     </div>
                 )}
 
-                {activeTab !== 'general' && activeTab !== 'knowledge_base' && activeTab !== 'integrations' && activeTab !== 'developer_api' && activeTab !== 'team_members' && (
+                {activeTab !== 'general' && activeTab !== 'notifications' && activeTab !== 'knowledge_base' && activeTab !== 'integrations' && activeTab !== 'developer_api' && activeTab !== 'team_members' && (
                     <div className="flex items-center justify-center h-full text-gray-400">
                         Content for {activeTab.replace('_', ' ')} coming soon...
                     </div>

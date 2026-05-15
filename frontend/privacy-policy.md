@@ -62,6 +62,6 @@ We may update our Privacy Policy from time to time. We will notify you of any ch
 ## 8. Contact Us
 
 If you have any questions about this Privacy Policy, please contact us at:
-- **Owner:** Anurag Verma
-- **Email:** anuragverm1632004@gmail.com
-- **WhatsApp Business:** +91 94247 16041
+- **Owner:** 
+- **Email:** 
+- **WhatsApp Business:** 

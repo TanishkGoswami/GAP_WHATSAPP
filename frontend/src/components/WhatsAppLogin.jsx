@@ -9,11 +9,11 @@ const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 // Connect to backend
 const socket = io(BACKEND_BASE, {
     autoConnect: false,
-    transports: ['websocket', 'polling'],
+    transports: ['polling', 'websocket'],
     reconnectionAttempts: 5,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
-    timeout: 10000,
+    timeout: 20000,
 });
 
 const WhatsAppLogin = () => {

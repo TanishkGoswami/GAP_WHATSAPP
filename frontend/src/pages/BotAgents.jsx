@@ -1,759 +1,669 @@
-import { useState, useRef, useEffect } from 'react';
-import { Bot, Plus, Settings, Trash2, Power, Database, Key, FileText, Save, Brain, X, Upload, Loader2 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+    AlertCircle,
+    ChevronDown,
+    Loader2,
+} from 'lucide-react'
+import {
+    Brain,
+    Check,
+    Database,
+    FileText,
+    GearSix,
+    Key,
+    MagnifyingGlass,
+    Plus,
+    Robot,
+    ShieldCheck,
+    Sparkle,
+    Trash,
+    UploadSimple,
+    X,
+} from '@phosphor-icons/react'
+import { useAuth } from '../context/AuthContext'
 
-const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-const API_BASE = `${BACKEND_BASE}/api`;
+const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+const API_BASE = `${BACKEND_BASE}/api`
+
+const MODELS = [
+    { value: 'gpt-4o-mini', label: 'GPT-4o Mini', helper: 'Fast support replies' },
+    { value: 'gpt-4o', label: 'GPT-4o', helper: 'Best quality' },
+    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo', helper: 'Legacy advanced' },
+    { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo', helper: 'Legacy low cost' },
+]
+
+const defaultAgent = {
+    id: null,
+    name: '',
+    description: '',
+    model: 'gpt-4o-mini',
+    temperature: 0.6,
+    triggerKeywords: '',
+    systemPrompt: '',
+    isActive: true,
+    selectedKnowledgeIds: [],
+    automation: {
+        reply_on_keywords: true,
+        auto_reply_unknown: true,
+        default_for_new_chats: false,
+        handoff_on_human_reply: true,
+    },
+}
+
+const settingsType = '__agent_settings'
+const getDocCharCount = (doc) => Number(doc?.character_count ?? String(doc?.content || '').length ?? 0)
 
 export default function BotAgents() {
-    const { session, apiCall } = useAuth();
-    const [agents, setAgents] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [selectedAgent, setSelectedAgent] = useState(null);
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [showEditModal, setShowEditModal] = useState(false);
-    const [apiKey, setApiKey] = useState('');
-    const [showApiSettings, setShowApiSettings] = useState(false);
-    const [uploadedFiles, setUploadedFiles] = useState([]);
-    const [isSaving, setIsSaving] = useState(false);
-    const [apiKeyConfigured, setApiKeyConfigured] = useState(false);
-    const fileInputRef = useRef(null);
+    const { session, apiCall } = useAuth()
+    const [agents, setAgents] = useState([])
+    const [knowledgeDocs, setKnowledgeDocs] = useState([])
+    const [isLoading, setIsLoading] = useState(true)
+    const [fetchError, setFetchError] = useState('')
+    const [apiKey, setApiKey] = useState('')
+    const [apiKeyConfigured, setApiKeyConfigured] = useState(false)
+    const [showApiSettings, setShowApiSettings] = useState(false)
+    const [drawerOpen, setDrawerOpen] = useState(false)
+    const [draft, setDraft] = useState(defaultAgent)
+    const [isSaving, setIsSaving] = useState(false)
+    const [query, setQuery] = useState('')
+    const [uploadingKb, setUploadingKb] = useState(false)
+    const fileInputRef = useRef(null)
 
-    const [newAgent, setNewAgent] = useState({
-        name: '',
-        description: '',
-        model: 'gpt-3.5-turbo',
-        temperature: 0.7,
-        triggerKeywords: '',
-        systemPrompt: '',
-        knowledgeBase: [],
-    });
+    const authHeaders = useMemo(() => ({
+        Authorization: `Bearer ${session?.access_token}`,
+    }), [session?.access_token])
 
-    const [editingAgent, setEditingAgent] = useState(null);
+    const getAgentMeta = (agent) => {
+        const entries = Array.isArray(agent.knowledge_base_content) ? agent.knowledge_base_content : []
+        const item = entries.find(entry => entry?.type === settingsType) || {}
+        const settings = item.settings || {}
+        const trainedItems = entries.filter(entry => entry?.type !== settingsType)
+        return {
+            automation: {
+                reply_on_keywords: settings.reply_on_keywords !== false,
+                auto_reply_unknown: settings.auto_reply_unknown === true,
+                default_for_new_chats: settings.default_for_new_chats === true,
+                handoff_on_human_reply: settings.handoff_on_human_reply !== false,
+            },
+            selectedKnowledgeIds: item.selected_knowledge_document_ids || trainedItems.map(entry => entry.id).filter(Boolean),
+            trainedAt: item.trained_at || agent.created_at || null,
+            documentCount: item.training?.document_count ?? trainedItems.length,
+            characterCount: item.training?.character_count ?? trainedItems.reduce((sum, entry) => sum + String(entry?.content || '').length, 0),
+        }
+    }
 
-    const [fetchError, setFetchError] = useState(null);
+    const normalizeAgent = (agent) => {
+        const meta = getAgentMeta(agent)
+        return {
+            id: agent.id,
+            name: agent.name || '',
+            description: agent.description || '',
+            isActive: agent.is_active !== false,
+            knowledgeBase: agent.knowledge_base || [],
+            knowledgeBaseContent: agent.knowledge_base_content || [],
+            triggerKeywords: agent.trigger_keywords || [],
+            model: agent.model || 'gpt-4o-mini',
+            temperature: Number(agent.temperature ?? 0.6),
+            systemPrompt: agent.system_prompt || '',
+            ...meta,
+        }
+    }
 
-    // Fetch agents from API
     const fetchAgents = async () => {
-        if (!session?.access_token) return;
+        if (!session?.access_token) return
         try {
-            setIsLoading(true);
-            setFetchError(null);
-            const res = await apiCall(`${API_BASE}/agents`);
-            if (res.ok) {
-                const data = await res.json();
-                // Transform data to match UI format
-                const formatted = data.map(agent => ({
-                    id: agent.id,
-                    name: agent.name,
-                    description: agent.description || '',
-                    isActive: agent.is_active,
-                    knowledgeBase: agent.knowledge_base || [],
-                    triggerKeywords: agent.trigger_keywords || [],
-                    model: agent.model || 'gpt-3.5-turbo',
-                    temperature: agent.temperature || 0.7,
-                    systemPrompt: agent.system_prompt || '',
-                    knowledgeBaseContent: agent.knowledge_base_content || [],
-                }));
-                setAgents(formatted);
-            } else if (res.status === 404) {
-                setFetchError('Database table not found. Please run the migration first.');
-            } else {
-                const errData = await res.json().catch(() => ({}));
-                setFetchError(errData.error || 'Failed to fetch agents');
-            }
+            setFetchError('')
+            const res = await apiCall(`${API_BASE}/agents`)
+            const data = await res.json().catch(() => [])
+            if (!res.ok) throw new Error(data?.error || 'Failed to fetch agents')
+            setAgents((Array.isArray(data) ? data : []).map(normalizeAgent))
         } catch (err) {
-            console.error('Failed to fetch agents:', err);
-            setFetchError('Cannot connect to server. Make sure the backend is running.');
-        } finally {
-            setIsLoading(false);
+            setFetchError(err.message || 'Failed to load agents')
         }
-    };
+    }
 
-    // Fetch OpenAI settings status
+    const fetchKnowledgeBase = async () => {
+        if (!session?.access_token) return
+        const res = await apiCall(`${API_BASE}/settings/knowledge-base`)
+        const data = await res.json().catch(() => ({}))
+        if (res.ok) setKnowledgeDocs(data.documents || [])
+    }
+
     const fetchApiSettings = async () => {
-        if (!session?.access_token) return;
-        try {
-            const res = await apiCall(`${API_BASE}/settings/openai`);
-            if (res.ok) {
-                const data = await res.json();
-                setApiKeyConfigured(data.configured || data.hasEnvKey);
-            }
-        } catch (err) {
-            console.error('Failed to fetch API settings:', err);
-        }
-    };
+        if (!session?.access_token) return
+        const res = await apiCall(`${API_BASE}/settings/openai`)
+        const data = await res.json().catch(() => ({}))
+        if (res.ok) setApiKeyConfigured(Boolean(data.configured || data.hasEnvKey))
+    }
+
+    const refreshAll = async () => {
+        setIsLoading(true)
+        await Promise.all([fetchAgents(), fetchKnowledgeBase(), fetchApiSettings()])
+        setIsLoading(false)
+    }
 
     useEffect(() => {
-        if (session?.access_token) {
-            fetchAgents();
-            fetchApiSettings();
-        }
-    }, [session]);
+        refreshAll()
+    }, [session?.access_token])
 
-    const handleCreateAgent = async () => {
-        if (!session?.access_token) return;
-        setIsSaving(true);
+    const stats = useMemo(() => {
+        const active = agents.filter(agent => agent.isActive).length
+        const unknown = agents.filter(agent => agent.automation.auto_reply_unknown || agent.automation.default_for_new_chats).length
+        const trainedChars = agents.reduce((sum, agent) => sum + Number(agent.characterCount || 0), 0)
+        return { total: agents.length, active, unknown, trainedChars }
+    }, [agents])
+
+    const filteredAgents = agents.filter(agent => {
+        const haystack = [agent.name, agent.description, agent.model, ...(agent.triggerKeywords || []), ...(agent.knowledgeBase || [])].join(' ').toLowerCase()
+        return !query.trim() || haystack.includes(query.trim().toLowerCase())
+    })
+
+    const openCreate = () => {
+        setDraft({
+            ...defaultAgent,
+            selectedKnowledgeIds: knowledgeDocs.map(doc => doc.id),
+        })
+        setDrawerOpen(true)
+    }
+
+    const openEdit = (agent) => {
+        setDraft({
+            id: agent.id,
+            name: agent.name,
+            description: agent.description,
+            model: agent.model,
+            temperature: agent.temperature,
+            triggerKeywords: (agent.triggerKeywords || []).join(', '),
+            systemPrompt: agent.systemPrompt,
+            isActive: agent.isActive,
+            selectedKnowledgeIds: agent.selectedKnowledgeIds || [],
+            automation: { ...defaultAgent.automation, ...agent.automation },
+        })
+        setDrawerOpen(true)
+    }
+
+    const selectedDocs = knowledgeDocs.filter(doc => draft.selectedKnowledgeIds.includes(doc.id))
+    const selectedCharacters = selectedDocs.reduce((sum, doc) => sum + getDocCharCount(doc), 0)
+
+    const buildPayload = () => ({
+        name: draft.name.trim(),
+        description: draft.description.trim(),
+        model: draft.model,
+        temperature: Number(draft.temperature),
+        trigger_keywords: draft.triggerKeywords.split(',').map(item => item.trim()).filter(Boolean),
+        system_prompt: draft.systemPrompt.trim(),
+        selected_knowledge_document_ids: draft.selectedKnowledgeIds,
+        automation_settings: draft.automation,
+        is_active: draft.isActive,
+    })
+
+    const saveAgent = async () => {
+        if (!draft.name.trim()) return
+        setIsSaving(true)
         try {
-            const payload = {
-                name: newAgent.name,
-                description: newAgent.description,
-                model: newAgent.model,
-                temperature: newAgent.temperature,
-                trigger_keywords: newAgent.triggerKeywords.split(',').map(k => k.trim()).filter(k => k),
-                system_prompt: newAgent.systemPrompt,
-                knowledge_base: uploadedFiles.map(f => f.name),
-                knowledge_base_content: uploadedFiles.map(f => ({ name: f.name, size: f.size })),
-                is_active: true
-            };
-
-            const res = await apiCall(`${API_BASE}/agents`, {
-                method: 'POST',
-                body: JSON.stringify(payload)
-            });
-
-            if (res.ok) {
-                setShowCreateModal(false);
-                setNewAgent({ name: '', description: '', model: 'gpt-3.5-turbo', temperature: 0.7, triggerKeywords: '', systemPrompt: '', knowledgeBase: [] });
-                setUploadedFiles([]);
-                fetchAgents();
-            } else {
-                const err = await res.json().catch(() => ({}));
-                const errorMsg = err.error || 'Failed to create agent';
-                if (errorMsg.includes('not found') || errorMsg.includes('migration')) {
-                    setFetchError(errorMsg);
-                    setShowCreateModal(false);
-                } else {
-                    alert(errorMsg);
-                }
-            }
+            const res = await apiCall(`${API_BASE}/agents${draft.id ? `/${draft.id}` : ''}`, {
+                method: draft.id ? 'PATCH' : 'POST',
+                body: JSON.stringify(buildPayload()),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data.error || 'Failed to save agent')
+            setDrawerOpen(false)
+            await fetchAgents()
         } catch (err) {
-            console.error('Create agent error:', err);
-            alert('Failed to create agent. Check if the server is running.');
+            alert(err.message || 'Failed to save agent')
         } finally {
-            setIsSaving(false);
+            setIsSaving(false)
         }
-    };
+    }
 
-    const handleFileUpload = (e) => {
-        const files = Array.from(e.target.files);
-        setUploadedFiles([...uploadedFiles, ...files]);
-    };
+    const toggleAgentStatus = async (agent) => {
+        const res = await apiCall(`${API_BASE}/agents/${agent.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ is_active: !agent.isActive }),
+        })
+        if (res.ok) setAgents(prev => prev.map(item => item.id === agent.id ? { ...item, isActive: !item.isActive } : item))
+    }
 
-    const removeFile = (index) => {
-        setUploadedFiles(uploadedFiles.filter((_, i) => i !== index));
-    };
-
-    const openEditModal = (agent) => {
-        setEditingAgent({ 
-            ...agent, 
-            triggerKeywords: Array.isArray(agent.triggerKeywords) ? agent.triggerKeywords.join(', ') : ''
-        });
-        setShowEditModal(true);
-    };
-
-    const handleUpdateAgent = async () => {
-        setIsSaving(true);
-        try {
-            const payload = {
-                name: editingAgent.name,
-                description: editingAgent.description,
-                model: editingAgent.model,
-                temperature: editingAgent.temperature,
-                trigger_keywords: editingAgent.triggerKeywords.split(',').map(k => k.trim()).filter(k => k),
-                system_prompt: editingAgent.systemPrompt,
-                is_active: editingAgent.isActive
-            };
-
-            const res = await apiCall(`${API_BASE}/agents/${editingAgent.id}`, {
-                method: 'PATCH',
-                body: JSON.stringify(payload)
-            });
-
-            if (res.ok) {
-                setShowEditModal(false);
-                setEditingAgent(null);
-                fetchAgents();
-            } else {
-                const err = await res.json();
-                alert(err.error || 'Failed to update agent');
-            }
-        } catch (err) {
-            console.error('Update agent error:', err);
-            alert('Failed to update agent');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    const toggleAgentStatus = async (id) => {
-        const agent = agents.find(a => a.id === id);
-        if (!agent) return;
-
-        try {
-            const res = await apiCall(`${API_BASE}/agents/${id}`, {
-                method: 'PATCH',
-                body: JSON.stringify({ is_active: !agent.isActive })
-            });
-
-            if (res.ok) {
-                setAgents(agents.map(a =>
-                    a.id === id ? { ...a, isActive: !a.isActive } : a
-                ));
-            }
-        } catch (err) {
-            console.error('Toggle agent error:', err);
-        }
-    };
-
-    const deleteAgent = async (id) => {
-        if (!confirm('Are you sure you want to delete this agent?')) return;
-
-        try {
-            const res = await apiCall(`${API_BASE}/agents/${id}`, {
-                method: 'DELETE'
-            });
-
-            if (res.ok) {
-                setAgents(agents.filter(agent => agent.id !== id));
-            } else {
-                const err = await res.json();
-                alert(err.error || 'Failed to delete agent');
-            }
-        } catch (err) {
-            console.error('Delete agent error:', err);
-            alert('Failed to delete agent');
-        }
-    };
+    const deleteAgent = async (agent) => {
+        if (!confirm(`Delete ${agent.name}?`)) return
+        const res = await apiCall(`${API_BASE}/agents/${agent.id}`, { method: 'DELETE' })
+        if (res.ok) setAgents(prev => prev.filter(item => item.id !== agent.id))
+    }
 
     const saveApiKey = async () => {
-        if (!apiKey.trim()) {
-            alert('Please enter an API key');
-            return;
-        }
-
-        setIsSaving(true);
+        if (!apiKey.trim()) return alert('Please enter an API key')
+        setIsSaving(true)
         try {
             const res = await apiCall(`${API_BASE}/settings/openai`, {
                 method: 'POST',
-                body: JSON.stringify({ api_key: apiKey })
-            });
-
-            if (res.ok) {
-                setShowApiSettings(false);
-                setApiKey('');
-                setApiKeyConfigured(true);
-                alert('API key saved successfully!');
-            } else {
-                const err = await res.json();
-                alert(err.error || 'Failed to save API key');
-            }
-        } catch (err) {
-            console.error('Save API key error:', err);
-            alert('Failed to save API key');
+                body: JSON.stringify({ api_key: apiKey }),
+            })
+            if (!res.ok) throw new Error('Failed to save API key')
+            setApiKey('')
+            setApiKeyConfigured(true)
+            setShowApiSettings(false)
         } finally {
-            setIsSaving(false);
+            setIsSaving(false)
         }
-    };
+    }
+
+    const uploadKnowledgeFiles = async (files) => {
+        const list = Array.from(files || [])
+        if (!list.length) return
+        setUploadingKb(true)
+        try {
+            for (const file of list) {
+                const formData = new FormData()
+                formData.append('file', file)
+                const res = await fetch(`${API_BASE}/settings/knowledge-base`, {
+                    method: 'POST',
+                    headers: authHeaders,
+                    body: formData,
+                })
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok) throw new Error(data.error || `Failed to upload ${file.name}`)
+            }
+            await fetchKnowledgeBase()
+        } catch (err) {
+            alert(err.message || 'Failed to upload knowledge')
+        } finally {
+            setUploadingKb(false)
+            if (fileInputRef.current) fileInputRef.current.value = ''
+        }
+    }
 
     if (isLoading) {
         return (
-            <div className="flex items-center justify-center h-64">
+            <div className="flex h-64 items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-green-600" />
             </div>
-        );
+        )
     }
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Bot Agents</h1>
-                    <p className="text-sm text-gray-500 mt-1">
-                        Create AI-powered agents with custom knowledge bases for automated customer interactions
-                    </p>
-                </div>
-                <div className="flex gap-3">
-                    <button
-                        onClick={() => setShowApiSettings(true)}
-                        className={`flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm font-medium ${
-                            apiKeyConfigured 
-                                ? 'border-green-300 text-green-700 bg-green-50' 
-                                : 'border-gray-300 text-gray-700'
-                        }`}
-                    >
-                        <Key className="h-4 w-4" />
-                        API Settings
-                        {apiKeyConfigured && <span className="text-xs bg-green-200 text-green-800 px-1.5 py-0.5 rounded">✓</span>}
-                    </button>
-                    <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
-                    >
-                        <Plus className="h-4 w-4" />
-                        Create Agent
-                    </button>
-                </div>
-            </div>
-
-            {/* API Key Warning Banner */}
-            {!apiKeyConfigured && !isLoading && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
-                    <Key className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
-                        <h3 className="font-medium text-yellow-800">OpenAI API Key Not Configured</h3>
-                        <p className="text-sm text-yellow-700 mt-1">
-                            Your AI bots won't be able to respond to messages without an API key. 
-                            Click "API Settings" to add your OpenAI API key.
-                        </p>
+        <div className="min-h-full bg-gray-50/70 px-4 py-5 lg:px-7">
+            <div className="space-y-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-950">Bot Agents</h1>
+                        <p className="mt-1 text-sm text-gray-500">Train WhatsApp agents with saved knowledge, trigger rules, and automatic replies for new chats.</p>
                     </div>
-                    <button 
-                        onClick={() => setShowApiSettings(true)}
-                        className="px-3 py-1.5 bg-yellow-600 text-white text-sm rounded-md hover:bg-yellow-700"
-                    >
-                        Configure
-                    </button>
-                </div>
-            )}
-
-            {/* Error Banner */}
-            {fetchError && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-                    <X className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1">
-                        <h3 className="font-medium text-red-800">Error Loading Agents</h3>
-                        <p className="text-sm text-red-700 mt-1">{fetchError}</p>
-                    </div>
-                    <button 
-                        onClick={() => { setFetchError(null); fetchAgents(); }}
-                        className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-md hover:bg-red-700"
-                    >
-                        Retry
-                    </button>
-                </div>
-            )}
-
-            {/* Agents Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {agents.map(agent => (
-                    <div key={agent.id} className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-md transition-shadow">
-                        <div className="flex items-start justify-between mb-4">
-                            <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-lg ${agent.isActive ? 'bg-green-100' : 'bg-gray-100'}`}>
-                                    <Bot className={`h-6 w-6 ${agent.isActive ? 'text-green-600' : 'text-gray-400'}`} />
-                                </div>
-                                <div className="flex-1">
-                                    <h3 className="font-semibold text-gray-900">{agent.name}</h3>
-                                    <p className="text-xs text-gray-500 mt-0.5">
-                                        {agent.model} • Temp: {agent.temperature}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex gap-1">
-                                <button
-                                    onClick={() => toggleAgentStatus(agent.id)}
-                                    className={`p-1.5 rounded ${agent.isActive ? 'text-green-600 hover:bg-green-50' : 'text-gray-400 hover:bg-gray-50'}`}
-                                    title={agent.isActive ? 'Disable' : 'Enable'}
-                                >
-                                    <Power className="h-4 w-4" />
-                                </button>
-                                <button
-                                    onClick={() => deleteAgent(agent.id)}
-                                    className="p-1.5 rounded text-red-600 hover:bg-red-50"
-                                    title="Delete"
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                </button>
-                            </div>
-                        </div>
-
-                        <p className="text-sm text-gray-600 mb-4">{agent.description}</p>
-
-                        <div className="space-y-3">
-                            <div>
-                                <div className="text-xs font-medium text-gray-500 mb-1">Trigger Keywords</div>
-                                <div className="flex flex-wrap gap-1">
-                                    {agent.triggerKeywords.map((keyword, i) => (
-                                        <span key={i} className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded-md font-medium">
-                                            {keyword}
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div>
-                                <div className="text-xs font-medium text-gray-500 mb-1">Knowledge Base ({agent.knowledgeBase?.length || 0})</div>
-                                <div className="flex flex-col gap-1">
-                                    {agent.knowledgeBase?.slice(0, 2).map((file, i) => (
-                                        <div key={i} className="flex items-center gap-1 text-xs text-gray-600">
-                                            <FileText className="h-3 w-3" />
-                                            <span className="truncate">{file}</span>
-                                        </div>
-                                    ))}
-                                    {agent.knowledgeBase?.length > 2 && (
-                                        <span className="text-xs text-gray-400">+{agent.knowledgeBase.length - 2} more</span>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        <button
-                            onClick={() => openEditModal(agent)}
-                            className="mt-4 w-full py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                        >
-                            <Settings className="h-4 w-4 inline mr-1" />
-                            Configure
+                    <div className="flex flex-wrap gap-2">
+                        <button onClick={refreshAll} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">
+                            <Database size={18} weight="duotone" />
+                            Sync
+                        </button>
+                        <button onClick={() => setShowApiSettings(true)} className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold shadow-sm ${apiKeyConfigured ? 'border-green-200 bg-green-50 text-green-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                            <Key size={18} weight="duotone" />
+                            API Settings
+                            {apiKeyConfigured ? <Check size={16} weight="bold" /> : null}
+                        </button>
+                        <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700">
+                            <Plus size={18} weight="bold" />
+                            Create Agent
                         </button>
                     </div>
-                ))}
+                </div>
+
+                {fetchError ? (
+                    <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        <AlertCircle className="mt-0.5 h-4 w-4" />
+                        <span>{fetchError}</span>
+                    </div>
+                ) : null}
+
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                    <StatCard icon={Robot} label="Agents" value={stats.total} />
+                    <StatCard icon={Check} label="Active" value={stats.active} />
+                    <StatCard icon={ShieldCheck} label="Unknown chat ready" value={stats.unknown} />
+                    <StatCard icon={Database} label="Trained text" value={stats.trainedChars.toLocaleString()} />
+                </div>
+
+                <div className="grid gap-4 2xl:grid-cols-[1fr_360px]">
+                    <section className="rounded-xl border border-gray-200 bg-white shadow-sm">
+                        <div className="flex flex-col gap-3 border-b border-gray-200 p-4 md:flex-row md:items-center md:justify-between">
+                            <div className="relative flex-1">
+                                <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={17} />
+                                <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search agents, keywords, docs..." className="w-full rounded-lg border border-gray-300 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/20" />
+                            </div>
+                            <div className="text-sm text-gray-500">{knowledgeDocs.length} synced knowledge docs</div>
+                        </div>
+                        <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+                            {filteredAgents.length === 0 ? (
+                                <div className="col-span-full rounded-xl border border-dashed border-gray-300 p-10 text-center text-sm text-gray-500">No agents yet. Create one and attach your saved knowledge base.</div>
+                            ) : filteredAgents.map(agent => (
+                                <AgentCard key={agent.id} agent={agent} onEdit={openEdit} onToggle={toggleAgentStatus} onDelete={deleteAgent} />
+                            ))}
+                        </div>
+                    </section>
+
+                    <aside className="space-y-4">
+                        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="font-bold text-gray-950">Knowledge sync</h2>
+                                    <p className="mt-1 text-xs text-gray-500">Docs uploaded in Settings are selectable while training agents.</p>
+                                </div>
+                                <Database size={22} weight="duotone" className="text-gray-400" />
+                            </div>
+                            <input ref={fileInputRef} type="file" multiple accept=".pdf,.docx,.txt,.md,.csv,.json" className="hidden" onChange={event => uploadKnowledgeFiles(event.target.files)} />
+                            <button onClick={() => fileInputRef.current?.click()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 px-3 py-3 text-sm font-semibold text-gray-700 hover:border-green-300 hover:bg-green-50">
+                                {uploadingKb ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadSimple size={18} weight="bold" />}
+                                {uploadingKb ? 'Indexing...' : 'Upload and index docs'}
+                            </button>
+                            <div className="mt-4 space-y-2">
+                                {knowledgeDocs.slice(0, 5).map(doc => (
+                                    <div key={doc.id} className="flex items-center gap-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+                                        <FileText size={18} weight="duotone" className="text-gray-400" />
+                                        <div className="min-w-0 flex-1">
+                                            <div className="truncate text-sm font-semibold text-gray-800">{doc.name}</div>
+                                            <div className="text-xs text-gray-400">{doc.size_label} • {getDocCharCount(doc).toLocaleString()} chars</div>
+                                        </div>
+                                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-bold text-green-700">{doc.status || 'INDEXED'}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section className="rounded-xl border border-green-200 bg-green-50 p-4">
+                            <div className="flex gap-3">
+                                <Sparkle size={22} weight="duotone" className="mt-0.5 text-green-700" />
+                                <div>
+                                    <h3 className="font-bold text-green-950">Recommended automation</h3>
+                                    <p className="mt-1 text-sm text-green-800">Keep one active agent as default for new chats. Unknown numbers will get an instant knowledge-backed reply without manually opening the chat.</p>
+                                </div>
+                            </div>
+                        </section>
+                    </aside>
+                </div>
             </div>
 
-            {/* Create Agent Modal */}
-            {showCreateModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-                            <div>
-                                <h2 className="text-xl font-bold text-gray-900">Create New Bot Agent</h2>
-                                <p className="text-sm text-gray-500 mt-1">Configure your AI agent's behavior and knowledge base</p>
-                            </div>
-                            <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600">
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
+            {drawerOpen ? (
+                <AgentDrawer
+                    draft={draft}
+                    setDraft={setDraft}
+                    docs={knowledgeDocs}
+                    models={MODELS}
+                    selectedDocs={selectedDocs}
+                    selectedCharacters={selectedCharacters}
+                    onClose={() => setDrawerOpen(false)}
+                    onSave={saveAgent}
+                    isSaving={isSaving}
+                />
+            ) : null}
 
-                        <div className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Agent Name</label>
-                                <input
-                                    type="text"
-                                    value={newAgent.name}
-                                    onChange={e => setNewAgent({ ...newAgent, name: e.target.value })}
-                                    placeholder="e.g., Customer Support Bot"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                                <textarea
-                                    value={newAgent.description}
-                                    onChange={e => setNewAgent({ ...newAgent, description: e.target.value })}
-                                    placeholder="What does this agent do?"
-                                    rows={3}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-                                    <select
-                                        value={newAgent.model}
-                                        onChange={e => setNewAgent({ ...newAgent, model: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                    >
-                                        <option value="gpt-4">GPT-4</option>
-                                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Temperature ({newAgent.temperature})</label>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="2"
-                                        step="0.1"
-                                        value={newAgent.temperature}
-                                        onChange={e => setNewAgent({ ...newAgent, temperature: parseFloat(e.target.value) })}
-                                        className="w-full"
-                                    />
-                                    <div className="flex justify-between text-xs text-gray-500 mt-1">
-                                        <span>Precise</span>
-                                        <span>Creative</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Trigger Keywords (comma separated)
-                                </label>
-                                <input
-                                    type="text"
-                                    value={newAgent.triggerKeywords}
-                                    onChange={e => setNewAgent({ ...newAgent, triggerKeywords: e.target.value })}
-                                    placeholder="help, support, question"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                />
-                                <p className="text-xs text-gray-500 mt-1">Agent will respond when message contains any of these keywords</p>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">System Prompt</label>
-                                <textarea
-                                    value={newAgent.systemPrompt}
-                                    onChange={e => setNewAgent({ ...newAgent, systemPrompt: e.target.value })}
-                                    placeholder="You are a helpful customer support assistant..."
-                                    rows={4}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    <Database className="h-4 w-4 inline mr-1" />
-                                    Knowledge Base
-                                </label>
-                                <div
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-500 cursor-pointer transition-colors"
-                                >
-                                    <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
-                                    <p className="text-sm text-gray-600">Click to upload files</p>
-                                    <p className="text-xs text-gray-400 mt-1">Supports PDF, TXT, CSV, MD</p>
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        multiple
-                                        onChange={handleFileUpload}
-                                        accept=".pdf,.txt,.csv,.md"
-                                        className="hidden"
-                                    />
-                                </div>
-                                {uploadedFiles.length > 0 && (
-                                    <div className="mt-3 space-y-2">
-                                        {uploadedFiles.map((file, i) => (
-                                            <div key={i} className="flex items-center justify-between bg-gray-50 p-2 rounded border border-gray-200">
-                                                <div className="flex items-center gap-2">
-                                                    <FileText className="h-4 w-4 text-gray-500" />
-                                                    <span className="text-sm text-gray-700">{file.name}</span>
-                                                    <span className="text-xs text-gray-400">({(file.size / 1024).toFixed(1)} KB)</span>
-                                                </div>
-                                                <button
-                                                    onClick={() => removeFile(i)}
-                                                    className="text-red-500 hover:text-red-700"
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-                            <button
-                                onClick={() => setShowCreateModal(false)}
-                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleCreateAgent}
-                                disabled={!newAgent.name || !newAgent.description}
-                                className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                            >
-                                <Brain className="h-4 w-4" />
-                                Create Agent
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Edit Agent Modal */}
-            {showEditModal && editingAgent && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-                            <div>
-                                <h2 className="text-xl font-bold text-gray-900">Configure Agent</h2>
-                                <p className="text-sm text-gray-500 mt-1">{editingAgent.name}</p>
-                            </div>
-                            <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600">
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-
-                        <div className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Agent Name</label>
-                                <input
-                                    type="text"
-                                    value={editingAgent.name}
-                                    onChange={e => setEditingAgent({ ...editingAgent, name: e.target.value })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                                <textarea
-                                    value={editingAgent.description}
-                                    onChange={e => setEditingAgent({ ...editingAgent, description: e.target.value })}
-                                    rows={3}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Model</label>
-                                    <select
-                                        value={editingAgent.model}
-                                        onChange={e => setEditingAgent({ ...editingAgent, model: e.target.value })}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                    >
-                                        <option value="gpt-4">GPT-4</option>
-                                        <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Temperature ({editingAgent.temperature})</label>
-                                    <input
-                                        type="range"
-                                        min="0"
-                                        max="2"
-                                        step="0.1"
-                                        value={editingAgent.temperature}
-                                        onChange={e => setEditingAgent({ ...editingAgent, temperature: parseFloat(e.target.value) })}
-                                        className="w-full"
-                                    />
-                                    <div className="flex justify-between text-xs text-gray-500 mt-1">
-                                        <span>Precise</span>
-                                        <span>Creative</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Trigger Keywords (comma separated)
-                                </label>
-                                <input
-                                    type="text"
-                                    value={editingAgent.triggerKeywords}
-                                    onChange={e => setEditingAgent({ ...editingAgent, triggerKeywords: e.target.value })}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">System Prompt</label>
-                                <textarea
-                                    value={editingAgent.systemPrompt || ''}
-                                    onChange={e => setEditingAgent({ ...editingAgent, systemPrompt: e.target.value })}
-                                    rows={4}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Knowledge Base Files</label>
-                                <div className="space-y-2">
-                                    {editingAgent.knowledgeBase?.map((file, i) => (
-                                        <div key={i} className="flex items-center gap-2 bg-gray-50 p-2 rounded border border-gray-200">
-                                            <FileText className="h-4 w-4 text-gray-500" />
-                                            <span className="text-sm text-gray-700">{file}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-                            <button
-                                onClick={() => setShowEditModal(false)}
-                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleUpdateAgent}
-                                className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 flex items-center gap-2"
-                            >
-                                <Save className="h-4 w-4" />
-                                Save Changes
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* API Settings Modal */}
-            {showApiSettings && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-xl max-w-lg w-full">
-                        <div className="p-6 border-b border-gray-200 flex justify-between items-center">
-                            <div>
-                                <h2 className="text-xl font-bold text-gray-900">ChatGPT API Settings</h2>
-                                <p className="text-sm text-gray-500 mt-1">Configure your OpenAI API credentials</p>
-                            </div>
-                            <button onClick={() => setShowApiSettings(false)} className="text-gray-400 hover:text-gray-600">
-                                <X className="h-5 w-5" />
-                            </button>
-                        </div>
-
-                        <div className="p-6 space-y-4">
-                            {apiKeyConfigured && (
-                                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                    <p className="text-sm text-green-800 flex items-center gap-2">
-                                        <span className="text-green-500">✓</span>
-                                        <strong>API key is configured.</strong> Enter a new key below to replace it.
-                                    </p>
-                                </div>
-                            )}
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">OpenAI API Key</label>
-                                <input
-                                    type="password"
-                                    value={apiKey}
-                                    onChange={e => setApiKey(e.target.value)}
-                                    placeholder="sk-..."
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent font-mono text-sm"
-                                />
-                                <p className="text-xs text-gray-500 mt-1">
-                                    Get your API key from{' '}
-                                    <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline">
-                                        platform.openai.com
-                                    </a>
-                                </p>
-                            </div>
-
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                <p className="text-sm text-blue-800">
-                                    <strong>Note:</strong> Your API key is stored securely and encrypted. It will only be used to make requests to OpenAI on your behalf.
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
-                            <button
-                                onClick={() => setShowApiSettings(false)}
-                                className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={saveApiKey}
-                                disabled={isSaving}
-                                className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
-                            >
-                                {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                {isSaving ? 'Saving...' : 'Save Key'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {showApiSettings ? (
+                <ApiKeyModal apiKey={apiKey} setApiKey={setApiKey} configured={apiKeyConfigured} isSaving={isSaving} onClose={() => setShowApiSettings(false)} onSave={saveApiKey} />
+            ) : null}
         </div>
-    );
+    )
+}
+
+function AgentCard({ agent, onEdit, onToggle, onDelete }) {
+    return (
+        <div className="group rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-green-200 hover:shadow-md">
+            <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                    <div className={`flex h-11 w-11 items-center justify-center rounded-xl ring-1 ${agent.isActive ? 'bg-green-50 text-green-700 ring-green-200' : 'bg-gray-50 text-gray-400 ring-gray-200'}`}>
+                        <Robot size={24} weight="duotone" />
+                    </div>
+                    <div className="min-w-0">
+                        <h3 className="font-bold text-gray-950">{agent.name}</h3>
+                        <p className="text-xs text-gray-500">{agent.model} • Temp {agent.temperature}</p>
+                    </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <button onClick={() => onToggle(agent)} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold transition ${agent.isActive ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100' : 'border-gray-200 bg-gray-50 text-gray-500 hover:bg-gray-100'}`} title={agent.isActive ? 'Pause agent' : 'Activate agent'}>
+                        <span className={`h-2 w-2 rounded-full ${agent.isActive ? 'bg-green-500' : 'bg-gray-300'}`} />
+                        {agent.isActive ? 'Active' : 'Paused'}
+                    </button>
+                    <button onClick={() => onDelete(agent)} className="rounded-lg p-2 text-red-500 hover:bg-red-50" title="Delete">
+                        <Trash size={17} weight="duotone" />
+                    </button>
+                </div>
+            </div>
+            <p className="mt-4 line-clamp-3 min-h-[60px] text-sm leading-5 text-gray-600">{agent.description || 'No description yet.'}</p>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                <MiniMetric label="Docs" value={agent.documentCount || 0} />
+                <MiniMetric label="Chars" value={Number(agent.characterCount || 0).toLocaleString()} />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-1.5">
+                {(agent.triggerKeywords || []).slice(0, 4).map(keyword => <span key={keyword} className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{keyword}</span>)}
+                {agent.automation.auto_reply_unknown ? <span className="rounded-full bg-green-50 px-2 py-1 text-xs font-semibold text-green-700">unknown auto</span> : null}
+                {agent.automation.default_for_new_chats ? <span className="rounded-full bg-purple-50 px-2 py-1 text-xs font-semibold text-purple-700">default</span> : null}
+            </div>
+            <button onClick={() => onEdit(agent)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:border-green-200 hover:bg-green-50 hover:text-green-700">
+                <GearSix size={18} weight="duotone" />
+                Configure
+            </button>
+        </div>
+    )
+}
+
+function AgentDrawer({ draft, setDraft, docs, models, selectedDocs, selectedCharacters, onClose, onSave, isSaving }) {
+    const toggleDoc = (id) => {
+        setDraft(prev => ({
+            ...prev,
+            selectedKnowledgeIds: prev.selectedKnowledgeIds.includes(id)
+                ? prev.selectedKnowledgeIds.filter(item => item !== id)
+                : [...prev.selectedKnowledgeIds, id],
+        }))
+    }
+
+    const updateAutomation = (key, value) => setDraft(prev => ({ ...prev, automation: { ...prev.automation, [key]: value } }))
+    const selectAllDocs = () => setDraft(prev => ({ ...prev, selectedKnowledgeIds: docs.map(doc => doc.id) }))
+    const clearDocs = () => setDraft(prev => ({ ...prev, selectedKnowledgeIds: [] }))
+
+    return (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+            <div className="absolute inset-0 bg-gray-950/30 backdrop-blur-sm" onClick={onClose} />
+            <div className="absolute inset-y-0 right-0 flex w-full max-w-4xl flex-col bg-white shadow-2xl">
+                <div className="border-b border-gray-200 bg-white px-6 py-5">
+                    <div className="flex items-start justify-between gap-4">
+                        <div>
+                            <div className="text-xs font-bold uppercase tracking-wide text-green-700">{draft.id ? 'Configure agent' : 'Create bot agent'}</div>
+                            <h2 className="mt-1 text-2xl font-bold text-gray-950">{draft.id ? draft.name : 'Train a new WhatsApp bot'}</h2>
+                            <p className="mt-1 text-sm text-gray-500">Attach saved knowledge, choose trigger rules, and control automatic replies.</p>
+                        </div>
+                        <button onClick={onClose} className="rounded-full p-2 text-gray-500 hover:bg-gray-100">
+                            <X size={20} weight="bold" />
+                        </button>
+                    </div>
+                    <div className="mt-5 grid grid-cols-3 gap-2">
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                            <div className="text-[10px] font-bold uppercase text-gray-400">Status</div>
+                            <div className="mt-1 text-sm font-bold text-gray-900">{draft.isActive ? 'Active' : 'Paused'}</div>
+                        </div>
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                            <div className="text-[10px] font-bold uppercase text-gray-400">Knowledge</div>
+                            <div className="mt-1 text-sm font-bold text-gray-900">{selectedDocs.length} docs</div>
+                        </div>
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                            <div className="text-[10px] font-bold uppercase text-gray-400">Automation</div>
+                            <div className="mt-1 text-sm font-bold text-gray-900">{draft.automation.auto_reply_unknown || draft.automation.default_for_new_chats ? 'Auto-ready' : 'Keyword only'}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto bg-gray-50 p-5">
+                    <div className="space-y-4">
+                        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                            <SectionTitle title="Profile" subtitle="Name, model and personality shown through bot replies." />
+                            <div className="grid gap-4 md:grid-cols-2">
+                                <Field label="Agent name"><input value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} className="field-input" placeholder="Customer Support Bot" /></Field>
+                                <Field label="Model"><CustomSelect value={draft.model} onChange={value => setDraft({ ...draft, model: value })} options={models} /></Field>
+                            </div>
+                            <Field label="Description" className="mt-4"><textarea value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} rows={5} className="field-input min-h-28 resize-y leading-6" placeholder="What does this agent do?" /></Field>
+                            <Field label={`Temperature (${draft.temperature})`} className="mt-4">
+                                <input type="range" min="0" max="2" step="0.1" value={draft.temperature} onChange={event => setDraft({ ...draft, temperature: parseFloat(event.target.value) })} className="w-full accent-green-600" />
+                                <div className="mt-1 flex justify-between text-xs text-gray-500"><span>Precise</span><span>Creative</span></div>
+                            </Field>
+                        </section>
+
+                        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                            <div className="mb-4 flex items-center justify-between">
+                                <SectionTitle title="Automation policy" subtitle="Choose exactly when this bot replies without a human opening the chat." />
+                                <Toggle checked={draft.isActive} onChange={value => setDraft({ ...draft, isActive: value })} label={draft.isActive ? 'Active' : 'Inactive'} />
+                            </div>
+                            <div className="divide-y divide-gray-100 rounded-xl border border-gray-200">
+                                <PolicyToggle title="Reply on trigger keywords" description="Use keywords like help, price, support." checked={draft.automation.reply_on_keywords} onChange={value => updateAutomation('reply_on_keywords', value)} />
+                                <PolicyToggle title="Auto reply unknown numbers" description="Reply when a new number messages first." checked={draft.automation.auto_reply_unknown} onChange={value => updateAutomation('auto_reply_unknown', value)} />
+                                <PolicyToggle title="Default for new chats" description="Use this bot if no keyword matches." checked={draft.automation.default_for_new_chats} onChange={value => updateAutomation('default_for_new_chats', value)} />
+                                <PolicyToggle title="Pause after human reply" description="Keep human handoff clean." checked={draft.automation.handoff_on_human_reply} onChange={value => updateAutomation('handoff_on_human_reply', value)} />
+                            </div>
+                            <Field label="Trigger keywords" className="mt-4"><input value={draft.triggerKeywords} onChange={event => setDraft({ ...draft, triggerKeywords: event.target.value })} className="field-input" placeholder="help, support, price, admission" /></Field>
+                        </section>
+
+                        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                            <div className="mb-4 flex items-center justify-between">
+                                <SectionTitle title="Knowledge Base training" subtitle="Select indexed documents. Saving trains this agent with selected content." />
+                                <div className="rounded-lg bg-green-50 px-3 py-2 text-right">
+                                    <div className="text-xs font-medium text-green-700">Selected</div>
+                                    <div className="text-sm font-bold text-green-950">{selectedDocs.length} docs • {selectedCharacters.toLocaleString()} chars</div>
+                                </div>
+                            </div>
+                            <div className="mb-3 flex gap-2">
+                                <button type="button" onClick={selectAllDocs} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50">Select all</button>
+                                <button type="button" onClick={clearDocs} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-700 hover:bg-gray-50">Clear</button>
+                            </div>
+                            <div className="grid gap-2 md:grid-cols-2">
+                                {docs.length === 0 ? (
+                                    <div className="col-span-full rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">No saved knowledge documents yet. Upload from Settings or the sync panel.</div>
+                                ) : docs.map(doc => {
+                                    const checked = draft.selectedKnowledgeIds.includes(doc.id)
+                                    return (
+                                        <button key={doc.id} type="button" onClick={() => toggleDoc(doc.id)} className={`flex items-center gap-3 rounded-lg border p-3 text-left transition ${checked ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                                            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${checked ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                                                {checked ? <Check size={17} weight="bold" /> : <FileText size={18} weight="duotone" />}
+                                            </div>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="truncate text-sm font-bold text-gray-900">{doc.name}</div>
+                                                <div className="text-xs text-gray-500">{doc.size_label} • {getDocCharCount(doc).toLocaleString()} chars</div>
+                                            </div>
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </section>
+
+                        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                            <SectionTitle title="System prompt" subtitle="Core behavior rules. Keep this human, specific, and aligned with your business." />
+                            <textarea value={draft.systemPrompt} onChange={event => setDraft({ ...draft, systemPrompt: event.target.value })} rows={9} className="field-input mt-4 min-h-56 resize-y font-mono leading-6" placeholder="You are a helpful WhatsApp assistant. Use the knowledge base and answer naturally..." />
+                        </section>
+                    </div>
+                </div>
+
+                <div className="flex justify-end gap-3 border-t border-gray-200 bg-white px-6 py-4">
+                    <button onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button onClick={onSave} disabled={!draft.name.trim() || isSaving} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50">
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain size={18} weight="duotone" />}
+                        {isSaving ? 'Training...' : 'Save and train'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function ApiKeyModal({ apiKey, setApiKey, configured, isSaving, onClose, onSave }) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 p-4">
+            <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl">
+                <div className="flex items-start justify-between border-b border-gray-200 p-6">
+                    <div>
+                        <h2 className="text-xl font-bold text-gray-950">OpenAI API Settings</h2>
+                        <p className="mt-1 text-sm text-gray-500">Required for trained agents to generate replies.</p>
+                    </div>
+                    <button onClick={onClose} className="rounded-full p-2 text-gray-500 hover:bg-gray-100"><X size={20} weight="bold" /></button>
+                </div>
+                <div className="space-y-4 p-6">
+                    {configured ? <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-800">API key is configured. Add a new one only if you want to replace it.</div> : null}
+                    <Field label="OpenAI API key"><input type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} className="field-input font-mono" placeholder="sk-..." /></Field>
+                </div>
+                <div className="flex justify-end gap-3 border-t border-gray-200 p-6">
+                    <button onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button onClick={onSave} disabled={isSaving} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50">
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check size={18} weight="bold" />}
+                        Save key
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function StatCard({ icon, label, value }) {
+    const IconComponent = icon
+    return (
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <div className="flex items-center justify-between">
+                <div className="text-xs font-medium text-gray-500">{label}</div>
+                <IconComponent size={18} weight="duotone" className="text-gray-400" />
+            </div>
+            <div className="mt-2 text-2xl font-bold text-gray-950">{value}</div>
+        </div>
+    )
+}
+
+function MiniMetric({ label, value }) {
+    return <div className="rounded-lg bg-gray-50 px-3 py-2"><div className="text-[10px] font-bold uppercase text-gray-400">{label}</div><div className="font-bold text-gray-900">{value}</div></div>
+}
+
+function Field({ label, children, className = '' }) {
+    return <label className={`block ${className}`}><span className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-gray-500">{label}</span>{children}</label>
+}
+
+function SectionTitle({ title, subtitle }) {
+    return (
+        <div>
+            <h3 className="font-bold text-gray-950">{title}</h3>
+            {subtitle ? <p className="mt-1 text-xs leading-5 text-gray-500">{subtitle}</p> : null}
+        </div>
+    )
+}
+
+function Toggle({ checked, onChange, label }) {
+    return (
+        <button type="button" onClick={() => onChange(!checked)} className={`inline-flex h-7 items-center gap-2 rounded-full border px-1.5 pr-2.5 text-xs font-bold transition ${checked ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 bg-gray-50 text-gray-500'}`}>
+            <span className={`relative inline-flex h-[18px] w-8 items-center rounded-full transition ${checked ? 'bg-green-500' : 'bg-gray-300'}`}>
+                <span className={`h-3.5 w-3.5 rounded-full bg-white shadow-sm transition ${checked ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </span>
+            <span>{label}</span>
+        </button>
+    )
+}
+
+function PolicyToggle({ title, description, checked, onChange }) {
+    return (
+        <div className={`flex items-center justify-between gap-4 px-4 py-3 transition ${checked ? 'bg-green-50/70' : 'bg-white'}`}>
+            <div className="min-w-0">
+                <div className="font-bold text-gray-950">{title}</div>
+                <p className="mt-1 text-sm text-gray-500">{description}</p>
+            </div>
+            <Toggle checked={checked} onChange={onChange} label={checked ? 'On' : 'Off'} />
+        </div>
+    )
+}
+
+function CustomSelect({ value, onChange, options }) {
+    const [open, setOpen] = useState(false)
+    const selected = options.find(option => option.value === value) || options[0]
+    return (
+        <div className="relative">
+            <button type="button" onClick={() => setOpen(v => !v)} onBlur={() => setTimeout(() => setOpen(false), 120)} className={`flex h-[42px] w-full items-center justify-between gap-3 rounded-lg border bg-white px-3 text-left text-sm font-semibold shadow-sm outline-none ${open ? 'border-green-500 ring-2 ring-green-500/20' : 'border-gray-300 hover:border-gray-400'}`}>
+                <span className="min-w-0"><span className="block truncate">{selected?.label}</span>{selected?.helper ? <span className="block truncate text-[10px] font-medium text-gray-400">{selected.helper}</span> : null}</span>
+                <ChevronDown className={`h-4 w-4 text-gray-500 transition ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open ? (
+                <div className="absolute z-[80] mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-xl">
+                    {options.map(option => (
+                        <button key={option.value} type="button" onMouseDown={event => event.preventDefault()} onClick={() => { onChange(option.value); setOpen(false) }} className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm ${option.value === value ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-50'}`}>
+                            <span><span className="block font-semibold">{option.label}</span>{option.helper ? <span className="block text-[11px] text-gray-400">{option.helper}</span> : null}</span>
+                            {option.value === value ? <Check size={16} weight="bold" /> : null}
+                        </button>
+                    ))}
+                </div>
+            ) : null}
+        </div>
+    )
 }
