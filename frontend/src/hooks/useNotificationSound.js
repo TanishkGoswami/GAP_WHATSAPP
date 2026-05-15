@@ -1,68 +1,123 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-const MUTE_STORAGE_KEY = 'gap_notification_muted'
-const RATE_LIMIT_MS = 2000 // minimum gap between two sounds
+export const NOTIFICATION_SOUNDS = [
+    {
+        id: 'dragon-studio',
+        label: 'Soft chime',
+        src: '/Notifications/dragon-studio-notification-sound-444817.mp3',
+    },
+    {
+        id: 'universfield-033',
+        label: 'Quick pop',
+        src: '/Notifications/universfield-new-notification-033-480571.mp3',
+    },
+    {
+        id: 'universfield-038',
+        label: 'Bright ping',
+        src: '/Notifications/universfield-new-notification-038-487899.mp3',
+    },
+    {
+        id: 'universfield-056',
+        label: 'Clean tap',
+        src: '/Notifications/universfield-new-notification-056-494256.mp3',
+    },
+    {
+        id: 'universfield-09',
+        label: 'Short alert',
+        src: '/Notifications/universfield-new-notification-09-352705.mp3',
+    },
+]
 
-/**
- * useNotificationSound
- *
- * WhatsApp-style notification sound system using Web Audio API.
- * - No external file dependency (sound is generated programmatically)
- * - Handles browser autoplay policy (unlocks on first user gesture)
- * - Rate-limited to prevent spam
- * - Mute state persisted in localStorage
- */
+const ENABLED_STORAGE_KEY = 'gap_notification_sound_enabled'
+const SOUND_STORAGE_KEY = 'gap_notification_sound_file'
+const VOLUME_STORAGE_KEY = 'gap_notification_sound_volume'
+const RATE_LIMIT_MS = 1800
+const RECENT_MESSAGE_TTL_MS = 10000
+
+const readBoolean = (key, fallback) => {
+    try {
+        const value = localStorage.getItem(key)
+        if (value == null) return fallback
+        return value === 'true'
+    } catch {
+        return fallback
+    }
+}
+
+const readNumber = (key, fallback) => {
+    try {
+        const value = Number(localStorage.getItem(key))
+        return Number.isFinite(value) ? value : fallback
+    } catch {
+        return fallback
+    }
+}
+
+const clampVolume = (value) => Math.min(1, Math.max(0, Number(value) || 0))
+
 export function useNotificationSound() {
-    const audioCtxRef = useRef(null)
-    const unlockedRef = useRef(false)
+    const audioRef = useRef(null)
     const lastPlayedRef = useRef(0)
+    const unlockedRef = useRef(false)
+    const recentMessageIdsRef = useRef(new Map())
 
-    const [isMuted, setIsMuted] = useState(() => {
+    const [isEnabled, setIsEnabledState] = useState(() => readBoolean(ENABLED_STORAGE_KEY, true))
+    const [selectedSoundId, setSelectedSoundIdState] = useState(() => {
         try {
-            return localStorage.getItem(MUTE_STORAGE_KEY) === 'true'
+            const stored = localStorage.getItem(SOUND_STORAGE_KEY)
+            return NOTIFICATION_SOUNDS.some(sound => sound.id === stored) ? stored : NOTIFICATION_SOUNDS[0].id
         } catch {
-            return false
+            return NOTIFICATION_SOUNDS[0].id
         }
     })
+    const [volume, setVolumeState] = useState(() => clampVolume(readNumber(VOLUME_STORAGE_KEY, 0.7)))
 
-    // Keep a ref in sync so the play function always reads the latest value
-    const isMutedRef = useRef(isMuted)
+    const isEnabledRef = useRef(isEnabled)
+    const selectedSoundIdRef = useRef(selectedSoundId)
+    const volumeRef = useRef(volume)
+
     useEffect(() => {
-        isMutedRef.current = isMuted
-    }, [isMuted])
+        isEnabledRef.current = isEnabled
+    }, [isEnabled])
 
-    // ------------------------------------------------------------------
-    // Create / lazily initialise AudioContext
-    // ------------------------------------------------------------------
-    const getAudioContext = useCallback(() => {
-        if (!audioCtxRef.current) {
-            try {
-                audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)()
-            } catch (err) {
-                console.warn('[NotificationSound] AudioContext not supported:', err)
-                return null
-            }
+    useEffect(() => {
+        selectedSoundIdRef.current = selectedSoundId
+    }, [selectedSoundId])
+
+    useEffect(() => {
+        volumeRef.current = volume
+    }, [volume])
+
+    const selectedSound = useMemo(
+        () => NOTIFICATION_SOUNDS.find(sound => sound.id === selectedSoundId) || NOTIFICATION_SOUNDS[0],
+        [selectedSoundId]
+    )
+
+    const getSoundById = useCallback((soundId) => (
+        NOTIFICATION_SOUNDS.find(sound => sound.id === soundId) || NOTIFICATION_SOUNDS[0]
+    ), [])
+
+    const getAudio = useCallback((soundId = selectedSoundIdRef.current) => {
+        const sound = getSoundById(soundId)
+        if (!audioRef.current || audioRef.current.dataset.soundId !== sound.id) {
+            const audio = new Audio(sound.src)
+            audio.preload = 'auto'
+            audio.dataset.soundId = sound.id
+            audioRef.current = audio
         }
-        return audioCtxRef.current
-    }, [])
+        audioRef.current.volume = clampVolume(volumeRef.current)
+        return audioRef.current
+    }, [getSoundById])
 
-    // ------------------------------------------------------------------
-    // Unlock AudioContext on first user gesture
-    // (Modern browsers block audio until a user interaction has occurred)
-    // ------------------------------------------------------------------
     useEffect(() => {
-        const unlock = async () => {
+        const unlock = () => {
             if (unlockedRef.current) return
-            const ctx = getAudioContext()
-            if (!ctx) return
-            if (ctx.state === 'suspended') {
-                try {
-                    await ctx.resume()
-                } catch {
-                    // silent fail
-                }
-            }
             unlockedRef.current = true
+            try {
+                getAudio().load()
+            } catch {
+                // Browser support varies; playback will retry on the next notification.
+            }
         }
 
         document.addEventListener('click', unlock, { once: true })
@@ -74,84 +129,78 @@ export function useNotificationSound() {
             document.removeEventListener('keydown', unlock)
             document.removeEventListener('touchstart', unlock)
         }
-    }, [getAudioContext])
+    }, [getAudio])
 
-    // ------------------------------------------------------------------
-    // Play a WhatsApp-like "ting" notification sound
-    // ------------------------------------------------------------------
-    const playNotification = useCallback(async () => {
-        if (isMutedRef.current) return
-
-        // Rate limit — don't play more than once every RATE_LIMIT_MS
-        const now = Date.now()
-        if (now - lastPlayedRef.current < RATE_LIMIT_MS) return
-        lastPlayedRef.current = now
-
-        const ctx = getAudioContext()
-        if (!ctx) return
-
-        // Unlock if still suspended (e.g. first programmatic call before user click)
-        if (ctx.state === 'suspended') {
+    const setIsEnabled = useCallback((nextValue) => {
+        setIsEnabledState(prev => {
+            const next = typeof nextValue === 'function' ? nextValue(prev) : nextValue
             try {
-                await ctx.resume()
+                localStorage.setItem(ENABLED_STORAGE_KEY, String(Boolean(next)))
             } catch {
-                return // cannot play — autoplay still blocked
+                // ignore storage failures
             }
-        }
-
-        try {
-            const currentTime = ctx.currentTime
-
-            // --- Gain node (volume envelope) ---
-            const gainNode = ctx.createGain()
-            gainNode.gain.setValueAtTime(0, currentTime)
-            gainNode.gain.linearRampToValueAtTime(0.35, currentTime + 0.005)  // quick attack
-            gainNode.gain.exponentialRampToValueAtTime(0.001, currentTime + 0.28) // smooth decay
-            gainNode.connect(ctx.destination)
-
-            // --- Primary tone: high-pitched ping ---
-            const osc1 = ctx.createOscillator()
-            osc1.type = 'sine'
-            osc1.frequency.setValueAtTime(1320, currentTime)           // E6
-            osc1.frequency.exponentialRampToValueAtTime(880, currentTime + 0.12) // A5
-            osc1.connect(gainNode)
-            osc1.start(currentTime)
-            osc1.stop(currentTime + 0.3)
-
-            // --- Secondary overtone for richness ---
-            const gainNode2 = ctx.createGain()
-            gainNode2.gain.setValueAtTime(0, currentTime)
-            gainNode2.gain.linearRampToValueAtTime(0.12, currentTime + 0.005)
-            gainNode2.gain.exponentialRampToValueAtTime(0.001, currentTime + 0.2)
-            gainNode2.connect(ctx.destination)
-
-            const osc2 = ctx.createOscillator()
-            osc2.type = 'sine'
-            osc2.frequency.setValueAtTime(2640, currentTime)           // E7 (octave overtone)
-            osc2.frequency.exponentialRampToValueAtTime(1760, currentTime + 0.1)
-            osc2.connect(gainNode2)
-            osc2.start(currentTime)
-            osc2.stop(currentTime + 0.2)
-
-        } catch (err) {
-            console.warn('[NotificationSound] playback error:', err)
-        }
-    }, [getAudioContext])
-
-    // ------------------------------------------------------------------
-    // Toggle mute
-    // ------------------------------------------------------------------
-    const toggleMute = useCallback(() => {
-        setIsMuted(prev => {
-            const next = !prev
-            try {
-                localStorage.setItem(MUTE_STORAGE_KEY, String(next))
-            } catch {
-                // ignore
-            }
-            return next
+            return Boolean(next)
         })
     }, [])
 
-    return { playNotification, isMuted, toggleMute }
+    const setSelectedSoundId = useCallback((soundId) => {
+        const next = getSoundById(soundId).id
+        setSelectedSoundIdState(next)
+        try {
+            localStorage.setItem(SOUND_STORAGE_KEY, next)
+        } catch {
+            // ignore storage failures
+        }
+    }, [getSoundById])
+
+    const setVolume = useCallback((nextVolume) => {
+        const next = clampVolume(nextVolume)
+        setVolumeState(next)
+        if (audioRef.current) audioRef.current.volume = next
+        try {
+            localStorage.setItem(VOLUME_STORAGE_KEY, String(next))
+        } catch {
+            // ignore storage failures
+        }
+    }, [])
+
+    const playNotification = useCallback(async ({ messageId, force = false } = {}) => {
+        if (!force && !isEnabledRef.current) return false
+
+        const now = Date.now()
+        if (!force && now - lastPlayedRef.current < RATE_LIMIT_MS) return false
+
+        if (messageId) {
+            const recent = recentMessageIdsRef.current
+            for (const [id, timestamp] of recent.entries()) {
+                if (now - timestamp > RECENT_MESSAGE_TTL_MS) recent.delete(id)
+            }
+            if (!force && recent.has(messageId)) return false
+            recent.set(messageId, now)
+        }
+
+        lastPlayedRef.current = now
+
+        try {
+            const audio = getAudio()
+            audio.currentTime = 0
+            await audio.play()
+            return true
+        } catch (err) {
+            console.warn('[NotificationSound] Playback was blocked or failed:', err?.message || err)
+            return false
+        }
+    }, [getAudio])
+
+    return {
+        isEnabled,
+        setIsEnabled,
+        selectedSound,
+        selectedSoundId,
+        setSelectedSoundId,
+        volume,
+        setVolume,
+        sounds: NOTIFICATION_SOUNDS,
+        playNotification,
+    }
 }

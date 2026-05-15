@@ -93,6 +93,35 @@ export function AuthProvider({ children }) {
         }
     }, [session?.user?.id, loginType])
 
+    const updateMyProfile = async ({ name, avatar_color }) => {
+        const token = session?.access_token
+        if (!token) throw new Error('No session token')
+
+        const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/my-profile`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+                'X-Auth-Portal': loginType || 'owner'
+            },
+            body: JSON.stringify({ name, avatar_color })
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.error || 'Failed to update profile')
+
+        setMemberProfile(data)
+        setUser(prev => prev ? {
+            ...prev,
+            user_metadata: {
+                ...(prev.user_metadata || {}),
+                full_name: data.name || name,
+                name: data.name || name,
+                avatar_color: data.avatar_color || avatar_color
+            }
+        } : prev)
+        return data
+    }
+
     const value = {
         signUp: (data) => supabase.auth.signUp(data),
         signIn: async (data, type = 'owner') => {
@@ -175,7 +204,8 @@ export function AuthProvider({ children }) {
         userRole,
         memberProfile,
         isProfileLoading,
-        loginType
+        loginType,
+        updateMyProfile
     }
 
     return (

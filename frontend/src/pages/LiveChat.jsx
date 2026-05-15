@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ChevronDown, ArrowDown, FileText, Mic, Pencil, Bot, User, ExternalLink, Reply, Forward, X, Copy, Trash2, Bell, BellOff } from 'lucide-react'
+import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ChevronDown, ArrowDown, FileText, Mic, Pencil, Bot, User, ExternalLink, Reply, Forward, X, Copy, Trash2, Archive, Pin, PinOff, MailOpen, Star, StarOff, Eraser, Inbox } from 'lucide-react'
 import { format, isToday, isYesterday } from 'date-fns'
 import { io } from "socket.io-client";
 import QRCode from 'react-qr-code'
@@ -96,6 +96,7 @@ function ForwardedIndicator() {
 export default function LiveChat() {
     const { user, session, loginType, memberProfile, userRole } = useAuth()
     const isAdmin = userRole === 'admin' || userRole === 'owner'
+    const { playNotification } = useNotificationSound()
     
     const authHeaders = useMemo(() => ({
         'Authorization': `Bearer ${session?.access_token}`,
@@ -120,6 +121,7 @@ export default function LiveChat() {
     const [hasMoreMessages, setHasMoreMessages] = useState(true)
     const [isLoadingOlder, setIsLoadingOlder] = useState(false)
     const [newMessagesPending, setNewMessagesPending] = useState(0)
+    const [showJumpToLatest, setShowJumpToLatest] = useState(false)
     const [activeVideoId, setActiveVideoId] = useState(null)
 
     const fileInputRef = useRef(null)
@@ -130,6 +132,7 @@ export default function LiveChat() {
     const [isContactDrawerOpen, setIsContactDrawerOpen] = useState(false)
     const [focusAliasOnOpen, setFocusAliasOnOpen] = useState(false)
     const [replyingTo, setReplyingTo] = useState(null)
+    const [activeChatMenuId, setActiveChatMenuId] = useState(null)
     const [activeMessageMenuId, setActiveMessageMenuId] = useState(null)
     const [messageMenuAnchor, setMessageMenuAnchor] = useState(null)
     const [forwardingMessage, setForwardingMessage] = useState(null)
@@ -182,9 +185,6 @@ export default function LiveChat() {
     ), [availableBots])
     const effectiveBotEnabled = botEnabled || !!workspaceAutoReplyBot
 
-    // Notification sound hook
-    const { playNotification, isMuted, toggleMute } = useNotificationSound()
-
     useEffect(() => {
         chatsRef.current = chats
     }, [chats])
@@ -212,10 +212,13 @@ export default function LiveChat() {
                 setActiveMessageMenuId(null)
                 setMessageMenuAnchor(null)
             }
+            if (activeChatMenuId && !e.target.closest('[data-chat-row-menu]')) {
+                setActiveChatMenuId(null)
+            }
         }
         document.addEventListener('click', handleClickOutside)
         return () => document.removeEventListener('click', handleClickOutside)
-    }, [showBotMenu, isAssignMenuOpen, isChatFilterMenuOpen, isAutoAssignMenuOpen, activeMessageMenuId])
+    }, [showBotMenu, isAssignMenuOpen, isChatFilterMenuOpen, isAutoAssignMenuOpen, activeMessageMenuId, activeChatMenuId])
 
     const isNearBottom = () => {
         const el = messagesListRef.current
@@ -226,6 +229,7 @@ export default function LiveChat() {
 
     const scrollToBottom = (behavior = 'auto') => {
         messagesEndRef.current?.scrollIntoView({ behavior })
+        setShowJumpToLatest(false)
     }
 
     useEffect(() => {
@@ -730,6 +734,7 @@ export default function LiveChat() {
             } else {
                 setMessages(formatted)
                 setNewMessagesPending(0)
+                setShowJumpToLatest(false)
                 requestAnimationFrame(() => scrollToBottom('auto'))
             }
 
@@ -783,9 +788,13 @@ export default function LiveChat() {
         if (!selectedChat) {
             setBotEnabled(false);
             setSelectedBotId(null);
+            setNewMessagesPending(0);
+            setShowJumpToLatest(false);
             return;
         }
 
+        setNewMessagesPending(0)
+        setShowJumpToLatest(false)
         fetchMessages(selectedChat, { limit: 50 })
         fetchConversationBotStatus(selectedChat.id) // Fetch bot status for this conversation
 
@@ -861,20 +870,14 @@ export default function LiveChat() {
             const pageFocused = typeof document !== 'undefined'
                 ? (!document.hidden && (typeof document.hasFocus === 'function' ? document.hasFocus() : true))
                 : true
+            const inbound = (msg?.sender || 'user') !== 'agent'
+            const shouldPlayNotificationSound = inbound && convId && !idsEqual(activeChat?.id, convId)
 
-            // ---- Notification Sound Logic ----
-            // Play sound if:
-            //   1. Message is inbound (not sent by agent)
-            //   2. AND (the conversation is different from the currently open one
-            //           OR the page/tab is not focused)
-            const isInbound = (msg?.sender || 'user') !== 'agent'
-            const isSameChat = activeChat && convId && idsEqual(activeChat.id, convId)
-            const isActiveAndFocused = isSameChat && pageFocused
-
-            if (isInbound && !isActiveAndFocused) {
-                playNotification()
+            if (shouldPlayNotificationSound) {
+                playNotification({
+                    messageId: String(msg?.message_id || msg?.wa_message_id || msg?.id || `${convId}-${createdAt.getTime()}`),
+                })
             }
-            // ----------------------------------
 
             if (convId) {
                 setChats(prev => {
@@ -913,7 +916,6 @@ export default function LiveChat() {
                     const typeLabel = msg?.type ? String(msg.type) : ''
                     const preview = msg?.text || (typeLabel ? `[${typeLabel.charAt(0).toUpperCase()}${typeLabel.slice(1)}]` : 'New message')
                     const isViewing = idsEqual(activeChat?.id, convId) && pageFocused
-                    const inbound = (msg?.sender || 'user') !== 'agent'
 
                     // If I'm actively viewing this chat, treat inbound as read immediately.
                     const unreadInc = (inbound && !isViewing) ? 1 : 0
@@ -1160,7 +1162,7 @@ export default function LiveChat() {
             socket.off('session_not_found');
             socket.disconnect();
         };
-    }, [memberProfile?.organization_id]);
+    }, [memberProfile?.organization_id, playNotification]);
 
     const renderReactionsPill = (msg) => {
         const list = Array.isArray(msg?.reactions) ? msg.reactions : []
@@ -1664,13 +1666,13 @@ export default function LiveChat() {
                         </div>
                     </div>
                 )}
-                {msg.text ? <p className="text-[14px] leading-5 whitespace-pre-wrap">{msg.text}</p> : null}
+                {msg.text ? <p className="whitespace-pre-wrap text-[14.2px] leading-[19px] tracking-normal text-[#111b21]">{msg.text}</p> : null}
             </div>
         )
     }
 
     const renderMessageMeta = (msg, className = '') => (
-        <div className={`text-[10px] text-gray-400/80 text-right ${msg.forwarded ? 'mt-0.5' : 'mt-1'} ml-4 flex items-center justify-end gap-1 select-none ${className}`}>
+        <div className={`ml-5 flex select-none items-center justify-end gap-0.5 text-right text-[11px] leading-3 text-[#667781]/80 ${msg.forwarded ? 'mt-0.5' : 'mt-1'} ${className}`}>
             {msg.time}
             {msg.sender === 'agent' && (
                 msg.status === 'sending' ? <Clock className="h-3 w-3 text-gray-400" /> :
@@ -1812,29 +1814,149 @@ export default function LiveChat() {
         closeMessageMenu()
     }
 
+    const getChatLabels = (chat) => (
+        Array.isArray(chat?.tags) ? chat.tags.map(tag => String(tag).toLowerCase()) : []
+    )
+
+    const hasChatLabel = (chat, label) => getChatLabels(chat).includes(label)
+
+    const updateChatMeta = async (chat, patch) => {
+        if (!chat?.id || !session?.access_token) return
+        const previous = chats
+        setActiveChatMenuId(null)
+        setChats(prev => prev.map(item => idsEqual(item.id, chat.id) ? { ...item, ...patch } : item))
+        if (selectedChat?.id && idsEqual(selectedChat.id, chat.id)) {
+            setSelectedChat(prev => prev ? { ...prev, ...patch } : prev)
+        }
+
+        try {
+            const body = {}
+            if (Object.prototype.hasOwnProperty.call(patch, 'status')) body.status = patch.status
+            if (Object.prototype.hasOwnProperty.call(patch, 'tags')) body.labels = patch.tags
+
+            const res = await fetch(`${API_BASE}/conversations/${chat.id}/meta`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...authHeaders
+                },
+                body: JSON.stringify(body)
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data?.error || 'Failed to update chat')
+        } catch (err) {
+            console.error('Failed to update chat', err)
+            setChats(previous)
+            if (selectedChat?.id && idsEqual(selectedChat.id, chat.id)) {
+                setSelectedChat(previous.find(item => idsEqual(item.id, chat.id)) || selectedChat)
+            }
+            alert(err?.message || 'Failed to update chat')
+        }
+    }
+
+    const toggleChatLabel = (chat, label) => {
+        const labels = getChatLabels(chat)
+        const next = labels.includes(label)
+            ? labels.filter(item => item !== label)
+            : [...labels, label]
+        updateChatMeta(chat, { tags: next })
+    }
+
+    const markChatUnread = async (chat) => {
+        if (!chat?.id || !session?.access_token) return
+        setActiveChatMenuId(null)
+        try {
+            const res = await fetch(`${API_BASE}/conversations/${chat.id}/unread`, {
+                method: 'POST',
+                headers: authHeaders
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data?.error || 'Failed to mark unread')
+            setChats(prev => prev.map(item => idsEqual(item.id, chat.id) ? { ...item, unread: Math.max(1, Number(item.unread) || 0), userHasRead: false } : item))
+            if (selectedChat?.id && idsEqual(selectedChat.id, chat.id)) {
+                setSelectedChat(prev => prev ? { ...prev, unread: 1, userHasRead: false } : prev)
+            }
+        } catch (err) {
+            console.error('Failed to mark unread', err)
+            alert(err?.message || 'Failed to mark unread')
+        }
+    }
+
+    const clearChat = async (chat) => {
+        if (!chat?.id || !session?.access_token) return
+        if (!confirm(`Clear all messages in ${chat.name}?`)) return
+        setActiveChatMenuId(null)
+        try {
+            const res = await fetch(`${API_BASE}/conversations/${chat.id}/clear`, {
+                method: 'POST',
+                headers: authHeaders
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data?.error || 'Failed to clear chat')
+            setChats(prev => prev.map(item => idsEqual(item.id, chat.id) ? { ...item, lastMessage: 'No messages', unread: 0, userHasRead: true } : item))
+            if (selectedChat?.id && idsEqual(selectedChat.id, chat.id)) {
+                setMessages([])
+            }
+        } catch (err) {
+            console.error('Failed to clear chat', err)
+            alert(err?.message || 'Failed to clear chat')
+        }
+    }
+
+    const deleteChat = async (chat) => {
+        if (!chat?.id || !session?.access_token) return
+        if (!confirm(`Delete ${chat.name} and all messages from this inbox?`)) return
+        setActiveChatMenuId(null)
+        try {
+            const res = await fetch(`${API_BASE}/conversations/${chat.id}`, {
+                method: 'DELETE',
+                headers: authHeaders
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data?.error || 'Failed to delete chat')
+            setChats(prev => prev.filter(item => !idsEqual(item.id, chat.id)))
+            if (selectedChat?.id && idsEqual(selectedChat.id, chat.id)) {
+                setSelectedChat(null)
+                setMessages([])
+            }
+        } catch (err) {
+            console.error('Failed to delete chat', err)
+            alert(err?.message || 'Failed to delete chat')
+        }
+    }
+
     const filteredMessages = messages.filter(msg => {
         if (selectedAccount === 'All') return true
         if (!msg.account) return true
         return normalizeAccountKey(msg.account) === normalizeAccountKey(selectedAccount)
     });
 
-    const chatFilterCounts = useMemo(() => ({
-        all: chats.length,
-        read: chats.filter(chat => (Number(chat.unread) || 0) === 0).length,
-        unread: chats.filter(chat => (Number(chat.unread) || 0) > 0).length,
-        assigned: chats.filter(chat => !!chat.assigned_to).length,
-        unassigned: chats.filter(chat => !chat.assigned_to).length,
-    }), [chats])
+    const chatFilterCounts = useMemo(() => {
+        const activeChats = chats.filter(chat => !['archived', 'closed'].includes(String(chat.status || 'open').toLowerCase()))
+        return {
+            all: activeChats.length,
+            read: activeChats.filter(chat => (Number(chat.unread) || 0) === 0).length,
+            unread: activeChats.filter(chat => (Number(chat.unread) || 0) > 0).length,
+            assigned: activeChats.filter(chat => !!chat.assigned_to).length,
+            unassigned: activeChats.filter(chat => !chat.assigned_to).length,
+            favorites: activeChats.filter(chat => hasChatLabel(chat, 'favorite')).length,
+            archived: chats.filter(chat => ['archived', 'closed'].includes(String(chat.status || '').toLowerCase())).length,
+        }
+    }, [chats])
 
     const visibleChats = useMemo(() => {
         const query = chatSearch.trim().toLowerCase()
 
         return chats.filter(chat => {
             const unreadCount = Number(chat.unread) || 0
+            const status = String(chat.status || 'open').toLowerCase()
+            if (chatFilter !== 'archived' && ['archived', 'closed'].includes(status)) return false
             if (chatFilter === 'read' && unreadCount > 0) return false
             if (chatFilter === 'unread' && unreadCount === 0) return false
             if (chatFilter === 'assigned' && !chat.assigned_to) return false
             if (chatFilter === 'unassigned' && chat.assigned_to) return false
+            if (chatFilter === 'favorites' && !hasChatLabel(chat, 'favorite')) return false
+            if (chatFilter === 'archived' && !['archived', 'closed'].includes(status)) return false
 
             if (!query) return true
             const haystack = [
@@ -1846,6 +1968,11 @@ export default function LiveChat() {
             ].filter(Boolean).join(' ').toLowerCase()
 
             return haystack.includes(query)
+        }).sort((a, b) => {
+            const aPinned = hasChatLabel(a, 'pinned') ? 1 : 0
+            const bPinned = hasChatLabel(b, 'pinned') ? 1 : 0
+            if (aPinned !== bPinned) return bPinned - aPinned
+            return (b.lastMessageAt?.getTime?.() || 0) - (a.lastMessageAt?.getTime?.() || 0)
         })
     }, [chats, chatFilter, chatSearch])
 
@@ -1929,36 +2056,22 @@ export default function LiveChat() {
     return (
         <AudioPlayerProvider>
         <div className="flex h-full min-h-0 bg-white overflow-hidden">
-            {/* Left Panel: Chat List */}
+            {/* Left Cone: Chat List */}
             <div className={`${selectedChat ? 'hidden lg:flex' : 'flex'} w-full lg:w-80 border-r border-gray-200 flex-col bg-white overflow-hidden`}>
                 {/* Header / Account Switcher */}
                 <div className="p-3 border-b border-gray-200 bg-gray-50/50">
                     <div className="flex items-center justify-between mb-2">
                         <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Inbox</label>
-                        <div className="flex items-center gap-1.5">
-                            <button
-                                type="button"
-                                onClick={toggleMute}
-                                title={isMuted ? 'Unmute notifications' : 'Mute notifications'}
-                                className={`flex items-center justify-center h-7 w-7 rounded-full transition-colors ${
-                                    isMuted
-                                        ? 'bg-red-50 text-red-400 hover:bg-red-100'
-                                        : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
-                                }`}
-                            >
-                                {isMuted ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
-                            </button>
-                            <select
-                                value={selectedAccount}
-                                onChange={(e) => setSelectedAccount(e.target.value)}
-                                className="bg-transparent text-xs font-medium text-indigo-600 focus:outline-none cursor-pointer"
-                            >
-                                <option value="All">All Accounts</option>
-                                {connectedAccounts.map(acc => (
-                                    <option key={acc} value={acc}>{acc} (Active)</option>
-                                ))}
-                            </select>
-                        </div>
+                        <select
+                            value={selectedAccount}
+                            onChange={(e) => setSelectedAccount(e.target.value)}
+                            className="bg-transparent text-xs font-medium text-indigo-600 focus:outline-none cursor-pointer"
+                        >
+                            <option value="All">All Accounts</option>
+                            {connectedAccounts.map(acc => (
+                                <option key={acc} value={acc}>{acc} (Active)</option>
+                            ))}
+                        </select>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
@@ -1997,7 +2110,7 @@ export default function LiveChat() {
                         <button
                             type="button"
                             onClick={() => setIsChatFilterMenuOpen(v => !v)}
-                            className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors ${['assigned', 'unassigned'].includes(chatFilter)
+                            className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors ${['favorites', 'archived', 'assigned', 'unassigned'].includes(chatFilter)
                                 ? 'border-green-500 bg-green-100 text-green-800'
                                 : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
                             }`}
@@ -2007,8 +2120,10 @@ export default function LiveChat() {
                         </button>
 
                         {isChatFilterMenuOpen && (
-                            <div className="absolute right-0 top-10 z-20 w-48 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
+                            <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1.5 shadow-xl">
                                 {[
+                                    { id: 'favorites', label: 'Favourites' },
+                                    { id: 'archived', label: 'Archived' },
                                     { id: 'assigned', label: 'Assigned' },
                                     { id: 'unassigned', label: 'Unassigned' },
                                 ].map(filter => (
@@ -2047,7 +2162,7 @@ export default function LiveChat() {
                             <div
                                 key={chat.id}
                                 onClick={() => setSelectedChat(chat)}
-                                className={`flex items-start gap-3 px-4 py-3.5 border-b border-gray-100 cursor-pointer transition-all duration-200 ${selectedChat?.id === chat.id ? 'bg-green-50/70 border-green-100' : 'hover:bg-gray-50'}`}
+                                className={`group relative flex items-start gap-3 px-4 py-3.5 border-b border-gray-100 cursor-pointer transition-all duration-200 ${selectedChat?.id === chat.id ? 'bg-green-50/70 border-green-100' : 'hover:bg-gray-50'}`}
                             >
                                 <div className="relative shrink-0">
                                     {chat.profilePhotoUrl ? (
@@ -2067,11 +2182,27 @@ export default function LiveChat() {
                                     {/* Presence is not reliably available from WhatsApp APIs; hide fake online dot */}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <div className="flex justify-between items-baseline mb-0.5">
+                                    <div className="flex justify-between items-baseline gap-2 mb-0.5">
                                         <h3 className={`text-sm font-semibold truncate ${selectedChat?.id === chat.id ? 'text-green-950' : 'text-gray-900'}`}>
                                             {chat.name}
                                         </h3>
-                                        <span className="text-[10px] font-medium text-gray-400">{chat.time}</span>
+                                        <div className="flex shrink-0 items-center gap-1">
+                                            {hasChatLabel(chat, 'pinned') && <Pin className="h-3 w-3 text-gray-400" />}
+                                            {hasChatLabel(chat, 'favorite') && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
+                                            <span className="text-[10px] font-medium text-gray-400">{chat.time}</span>
+                                            <button
+                                                type="button"
+                                                data-chat-row-menu
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setActiveChatMenuId(prev => idsEqual(prev, chat.id) ? null : chat.id)
+                                                }}
+                                                className={`ml-0.5 flex h-7 w-7 items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5 ${activeChatMenuId && idsEqual(activeChatMenuId, chat.id) ? 'bg-black/5 opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                                                title="Chat actions"
+                                            >
+                                                <ChevronDown className="h-4 w-4" />
+                                            </button>
+                                        </div>
                                     </div>
                                     {formatPhoneForDisplay(chat.phone || chat.waId) ? (
                                         <div className="text-[11px] text-gray-400 font-mono truncate -mt-0.5 mb-0.5">
@@ -2080,7 +2211,7 @@ export default function LiveChat() {
                                     ) : null}
                                     <p className="text-xs text-gray-500 truncate mb-1">{chat.lastMessage}</p>
                                     <div className="flex items-center gap-1.5">
-                                        {chat.tags.map(tag => (
+                                        {(Array.isArray(chat.tags) ? chat.tags : []).filter(tag => !['favorite', 'pinned'].includes(String(tag).toLowerCase())).map(tag => (
                                             <span key={tag} className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
                                                 {tag}
                                             </span>
@@ -2098,13 +2229,70 @@ export default function LiveChat() {
                                         )}
                                     </div>
                                 </div>
+                                {activeChatMenuId && idsEqual(activeChatMenuId, chat.id) && (
+                                    <div
+                                        data-chat-row-menu
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="absolute right-3 top-12 z-40 w-56 overflow-hidden rounded-lg border border-gray-200 bg-white py-2 shadow-[0_8px_24px_rgba(11,20,26,0.18)]"
+                                    >
+                                        <button
+                                            type="button"
+                                            onClick={() => updateChatMeta(chat, { status: ['archived', 'closed'].includes(String(chat.status || '').toLowerCase()) ? 'open' : 'archived' })}
+                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                        >
+                                            {['archived', 'closed'].includes(String(chat.status || '').toLowerCase()) ? <Inbox className="h-4 w-4 text-[#54656f]" /> : <Archive className="h-4 w-4 text-[#54656f]" />}
+                                            {['archived', 'closed'].includes(String(chat.status || '').toLowerCase()) ? 'Move to inbox' : 'Archive chat'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleChatLabel(chat, 'pinned')}
+                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                        >
+                                            {hasChatLabel(chat, 'pinned') ? <PinOff className="h-4 w-4 text-[#54656f]" /> : <Pin className="h-4 w-4 text-[#54656f]" />}
+                                            {hasChatLabel(chat, 'pinned') ? 'Unpin chat' : 'Pin chat'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => markChatUnread(chat)}
+                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                        >
+                                            <MailOpen className="h-4 w-4 text-[#54656f]" />
+                                            Mark as unread
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleChatLabel(chat, 'favorite')}
+                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                        >
+                                            {hasChatLabel(chat, 'favorite') ? <StarOff className="h-4 w-4 text-[#54656f]" /> : <Star className="h-4 w-4 text-[#54656f]" />}
+                                            {hasChatLabel(chat, 'favorite') ? 'Remove from favourites' : 'Add to favourites'}
+                                        </button>
+                                        <div className="border-t border-gray-100" />
+                                        <button
+                                            type="button"
+                                            onClick={() => clearChat(chat)}
+                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                        >
+                                            <Eraser className="h-4 w-4 text-[#54656f]" />
+                                            Clear chat
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => deleteChat(chat)}
+                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                            Delete chat
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )))}
                 </div>
             </div>
 
             {/* Middle Cone: Chat Area */}
-            <div className={`${!selectedChat ? 'hidden lg:flex' : 'flex'} flex-1 flex-col min-w-0 bg-[#efe7dd] relative`}>
+            <div className={`${!selectedChat ? 'hidden lg:flex' : 'flex'} flex-1 flex-col min-w-0 bg-[#efeae2] relative`}>
                 {!selectedChat ? (
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-4">
                         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -2115,7 +2303,7 @@ export default function LiveChat() {
                 ) : (
                     <>
                         {/* Chat Header */}
-                        <div className="h-16 px-4 bg-white border-b border-gray-200 flex items-center justify-between shrink-0 shadow-sm z-10">
+                        <div className="h-16 px-4 bg-[#f0f2f5] border-b border-gray-200 flex items-center justify-between shrink-0 z-10">
                             <div className="flex items-center gap-3">
                                 <button onClick={() => setSelectedChat(null)} className="lg:hidden p-1 -ml-1 text-gray-600">
                                     <ChevronLeft className="h-6 w-6" />
@@ -2356,13 +2544,15 @@ export default function LiveChat() {
                         {/* Messages Display */}
                         <div
                             ref={messagesListRef}
-                            className="flex-1 overflow-y-auto p-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat bg-[length:400px]"
+                            className="wa-chat-scroll flex-1 overflow-y-auto bg-[#efeae2] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat bg-[length:410px] px-5 py-3 sm:px-8 lg:px-14 xl:px-20 2xl:px-28"
                             onScroll={() => {
                                 const el = messagesListRef.current
                                 if (!el) return
                                 if (activeMessageMenuId) closeMessageMenu()
                                 if (el.scrollTop < 80) loadOlder()
-                                if (isNearBottom()) setNewMessagesPending(0)
+                                const nearBottom = isNearBottom()
+                                setShowJumpToLatest(!nearBottom)
+                                if (nearBottom) setNewMessagesPending(0)
                             }}
                         >
                             {isLoadingOlder && (
@@ -2377,7 +2567,7 @@ export default function LiveChat() {
                                         </div>
                                     </div>
                                 ) : (
-                                    <div key={row.key} className={`flex ${row.msg.sender === 'user' ? 'justify-start' : 'justify-end'} ${row.grouped ? 'mt-1' : 'mt-3'} ${Array.isArray(row.msg.reactions) && row.msg.reactions.some(r => r?.emoji) ? 'mb-3' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                                    <div key={row.key} className={`flex ${row.msg.sender === 'user' ? 'justify-start' : 'justify-end'} ${row.grouped ? 'mt-0.5' : 'mt-2'} ${Array.isArray(row.msg.reactions) && row.msg.reactions.some(r => r?.emoji) ? 'mb-3' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                                         {row.msg.type === 'note' ? (
                                             <div className="w-full flex justify-center my-2">
                                                 <div className="bg-amber-50 border border-amber-100 text-amber-800 text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
@@ -2387,9 +2577,9 @@ export default function LiveChat() {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className={`group relative max-w-[85%] lg:max-w-[65%] rounded-2xl ${row.msg.content?.template ? 'bg-transparent p-0 shadow-none border-0' : `px-3 py-2 shadow-sm ${row.msg.sender === 'user'
-                                                ? (row.grouped ? 'bg-white text-gray-900 border border-gray-100' : 'bg-white text-gray-900 rounded-tl-none border border-gray-100')
-                                                : (row.grouped ? 'bg-[#d9fdd3] text-gray-900 border border-green-100' : 'bg-[#d9fdd3] text-gray-900 rounded-tr-none border border-green-100')
+                                            <div className={`group relative w-fit max-w-[86%] sm:max-w-[76%] lg:max-w-[64%] xl:max-w-[58%] ${row.msg.content?.template ? 'bg-transparent p-0 shadow-none border-0' : `wa-bubble px-2.5 py-1.5 text-[#111b21] ${row.msg.sender === 'user'
+                                                ? 'wa-bubble-in'
+                                                : 'wa-bubble-out'
                                                 }`
                                                 }`}>
                                                 <div className={`absolute top-1 ${row.msg.sender === 'user' ? '-right-9' : '-left-9'} opacity-0 transition-opacity group-hover:opacity-100 ${activeMessageMenuId === row.msg.id ? 'opacity-100' : ''}`} data-message-menu>
@@ -2403,7 +2593,7 @@ export default function LiveChat() {
                                                     </button>
                                                 </div>
                                                 {row.msg.sender === 'agent' && !row.msg.forwarded && (
-                                                    <div className="text-[10px] font-bold text-indigo-600 mb-0.5">{row.msg.agentName}</div>
+                                                    <div className="mb-0.5 text-[11px] font-semibold leading-4 text-[#6676ff]">{row.msg.agentName}</div>
                                                 )}
                                                 {renderMessageBody(row.msg)}
                                                 {renderReactionsPill(row.msg)}
@@ -2437,14 +2627,6 @@ export default function LiveChat() {
                                             <EmojiAsset emoji={item.emoji} label={item.label} className="h-5 w-5" />
                                         </button>
                                     ))}
-                                    <button
-                                        type="button"
-                                        onClick={closeMessageMenu}
-                                        className="flex h-8 w-8 items-center justify-center rounded-full text-xl leading-none text-gray-900 transition hover:bg-gray-100"
-                                        title="More reactions"
-                                    >
-                                        +
-                                    </button>
                                 </div>
                                 <div className="hidden">
                                     {QUICK_REACTIONS.map(({ emoji }) => (
@@ -2495,17 +2677,22 @@ export default function LiveChat() {
                             </div>
                         )}
 
-                        {newMessagesPending > 0 && (
+                        {(showJumpToLatest || newMessagesPending > 0) && (
                             <button
                                 type="button"
                                 onClick={() => {
                                     scrollToBottom('smooth')
                                     setNewMessagesPending(0)
                                 }}
-                                className="absolute bottom-20 right-5 bg-white/90 border border-gray-200 shadow-md rounded-full px-3 py-2 text-xs font-semibold text-gray-700 flex items-center gap-2"
+                                className="absolute bottom-20 right-5 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#54656f] shadow-[0_2px_8px_rgba(11,20,26,0.18)] transition hover:bg-gray-50 hover:text-[#111b21] active:scale-95"
+                                title={newMessagesPending > 0 ? `${newMessagesPending} new message${newMessagesPending > 1 ? 's' : ''}` : 'Jump to latest'}
                             >
-                                <ArrowDown className="h-4 w-4" />
-                                New messages ({newMessagesPending})
+                                <ArrowDown className="h-5 w-5" />
+                                {newMessagesPending > 0 && (
+                                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-sm">
+                                        {newMessagesPending > 99 ? '99+' : newMessagesPending}
+                                    </span>
+                                )}
                             </button>
                         )}
 
@@ -2606,14 +2793,14 @@ export default function LiveChat() {
                         )}
 
                         {/* Input Area */}
-                        <div className={`px-3 py-2 lg:px-4 bg-gray-50 border-t ${isInternalNote ? 'border-amber-200 bg-amber-50/50' : 'border-gray-200'}`}>
-                            <form onSubmit={handleSendMessage} className="flex items-end gap-3 max-w-4xl mx-auto">
-                                <div className="flex gap-1 items-center pb-1">
+                        <div className={`px-4 py-2.5 lg:px-5 ${isInternalNote ? 'border-t border-amber-200 bg-amber-50' : 'bg-[#f0f2f5]'}`}>
+                            <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-[1180px] items-end gap-2">
+                                <div className="flex items-center gap-1 pb-0.5">
                                     <div className="relative">
                                         <button
                                             type="button"
                                             onClick={() => setIsEmojiOpen(v => !v)}
-                                            className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200/50 rounded-full transition-colors"
+                                            className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
                                             title="Emoji"
                                         >
                                             <Smile className="h-6 w-6" />
@@ -2640,13 +2827,13 @@ export default function LiveChat() {
                                     <button
                                         type="button"
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200/50 rounded-full transition-colors"
+                                        className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
                                         title="Attach file"
                                     >
                                         <Paperclip className="h-6 w-6" />
                                     </button>
                                 </div>
-                                <div className="flex-1 bg-white rounded-2xl border border-gray-300 shadow-sm focus-within:shadow-md focus-within:border-gray-300 transition-all overflow-hidden flex flex-col">
+                                <div className="flex flex-1 flex-col overflow-hidden rounded-lg bg-white shadow-[0_1px_1px_rgba(11,20,26,0.08)] transition-all focus-within:ring-1 focus-within:ring-black/10">
                                     <input
                                         ref={fileInputRef}
                                         type="file"
@@ -2663,7 +2850,7 @@ export default function LiveChat() {
                                     />
 
                                     {selectedFile && (
-                                        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-gray-100 bg-gray-50">
+                                        <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2">
                                             <div className="text-xs text-gray-700 truncate">
                                                 Attached: <span className="font-medium">{selectedFile.name}</span>
                                             </div>
@@ -2678,13 +2865,13 @@ export default function LiveChat() {
                                     )}
 
                                     {isAudioPanelOpen && !isInternalNote && (
-                                        <div className="px-3 py-2 border-b border-gray-100 bg-gray-50">
+                                        <div className="border-b border-gray-100 bg-gray-50 px-3 py-2">
                                             <AudioRecorderOrUploader value={pendingAudio} onChange={setPendingAudio} />
                                         </div>
                                     )}
 
                                     {isInternalNote && (
-                                        <div className="bg-amber-100/50 px-3 py-1 text-[10px] font-bold text-amber-700 flex items-center gap-1 border-b border-amber-100">
+                                        <div className="flex items-center gap-1 border-b border-amber-100 bg-amber-100/50 px-3 py-1 text-[10px] font-bold text-amber-700">
                                             <AlertCircle className="h-3 w-3" />
                                             Internal Note (Private)
                                         </div>
@@ -2712,7 +2899,7 @@ export default function LiveChat() {
                                         onChange={e => setMessageText(e.target.value)}
                                         placeholder={isInternalNote ? "Type an internal note..." : "Type a message..."}
                                         rows={1}
-                                        className="w-full min-h-[44px] max-h-42 resize-none border-0 px-4 py-3 text-sm leading-5 bg-transparent outline-none focus:outline-none focus:ring-0 focus:border-transparent"
+                                        className="max-h-42 min-h-[42px] w-full resize-none border-0 bg-transparent px-4 py-[11px] text-[15px] leading-5 text-[#111b21] outline-none placeholder:text-[#8696a0] focus:border-transparent focus:outline-none focus:ring-0"
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter' && !e.shiftKey) {
                                                 e.preventDefault();
@@ -2721,7 +2908,7 @@ export default function LiveChat() {
                                         }}
                                     />
                                 </div>
-                                <div className="flex items-center gap-2 pb-0.5">
+                                <div className="flex items-center gap-1 pb-0.5">
                                     <button
                                         type="button"
                                         onClick={() => {
@@ -2729,15 +2916,15 @@ export default function LiveChat() {
                                             setIsAudioPanelOpen(false)
                                             setPendingAudio(null)
                                         }}
-                                        className={`p-3 rounded-full transition-all ${isInternalNote ? 'bg-amber-200 text-amber-800' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+                                        className={`flex h-10 w-10 items-center justify-center rounded-full transition-all ${isInternalNote ? 'bg-amber-200 text-amber-800' : 'text-[#54656f] hover:bg-black/5 hover:text-[#111b21]'}`}
                                         title="Internal note"
                                     >
                                         <FileText className="h-5 w-5" />
                                     </button>
 
                                     {(messageText.trim() || selectedFile || pendingAudio?.file) ? (
-                                        <button type="submit" className="p-3 bg-green-600 text-white rounded-full hover:bg-green-700 shadow-lg hover:shadow-xl transition-all scale-100 active:scale-95 duration-200">
-                                            <WhatsAppSendIcon className="h-6 w-6" />
+                                        <button type="submit" className="flex h-10 w-10 scale-100 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm transition-all duration-200 hover:bg-[#029977] active:scale-95">
+                                            <WhatsAppSendIcon className="h-5 w-5" />
                                         </button>
                                     ) : (
                                         <button
@@ -2746,7 +2933,7 @@ export default function LiveChat() {
                                                 if (isInternalNote) return
                                                 setIsAudioPanelOpen(v => !v)
                                             }}
-                                            className="p-3 rounded-full transition-all bg-gray-200 text-gray-600 hover:bg-gray-300"
+                                            className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-all hover:bg-black/5 hover:text-[#111b21]"
                                             title="Audio message"
                                         >
                                             <Mic className="h-5 w-5" />

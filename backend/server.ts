@@ -3236,7 +3236,54 @@ app.get('/api/team/my-profile', authMiddleware, async (req: any, res) => {
     }
 });
 
-// 2F. PATCH /api/conversations/:id/assign — Chat assign karo agent ko
+// 2F. PATCH /api/team/my-profile — Current user's basic profile
+app.patch('/api/team/my-profile', authMiddleware, async (req: any, res) => {
+    try {
+        const name = String(req.body?.name || '').trim();
+        const avatarColor = String(req.body?.avatar_color || '').trim();
+
+        if (!name) return res.status(400).json({ error: 'Name is required' });
+        if (name.length > 80) return res.status(400).json({ error: 'Name must be 80 characters or less' });
+        if (avatarColor && !/^#[0-9a-fA-F]{6}$/.test(avatarColor)) {
+            return res.status(400).json({ error: 'Invalid avatar color' });
+        }
+
+        const updatePayload: any = {
+            name,
+            avatar_color: avatarColor || '#4f46e5'
+        };
+
+        const { data, error } = await supabase
+            .from('organization_members')
+            .update(updatePayload)
+            .eq('user_id', req.user.id)
+            .eq('organization_id', req.organization_id)
+            .select('*')
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Profile not found' });
+
+        try {
+            await supabase.auth.admin.updateUserById(req.user.id, {
+                user_metadata: {
+                    ...(req.user.user_metadata || {}),
+                    full_name: name,
+                    name,
+                    avatar_color: updatePayload.avatar_color
+                }
+            });
+        } catch (metadataErr: any) {
+            console.warn('[Profile] Failed to sync auth metadata:', metadataErr?.message || metadataErr);
+        }
+
+        res.json(data);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to update profile' });
+    }
+});
+
+// 2G. PATCH /api/conversations/:id/assign — Chat assign karo agent ko
 app.patch('/api/conversations/:id/assign', authMiddleware, async (req: any, res) => {
     const orgId = req.organization_id;
     const { id } = req.params;
@@ -3274,6 +3321,166 @@ app.patch('/api/conversations/:id/assign', authMiddleware, async (req: any, res)
         res.json({ success: true, conversation: updated });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+app.patch('/api/conversations/:id/meta', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+    const payload: any = {};
+
+    if (typeof req.body?.status === 'string') {
+        const status = req.body.status.trim().toLowerCase();
+        if (!['open', 'archived', 'closed'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid conversation status' });
+        }
+        payload.status = status;
+    }
+
+    if (Array.isArray(req.body?.labels)) {
+        payload.labels = req.body.labels
+            .map((label: any) => String(label || '').trim().toLowerCase())
+            .filter(Boolean)
+            .slice(0, 20);
+    }
+
+    if (Object.keys(payload).length === 0) {
+        return res.status(400).json({ error: 'No conversation fields provided' });
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('w_conversations')
+            .update(payload)
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .select('id, status, labels')
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Conversation not found' });
+
+        io.to(`org:${orgId}`).emit('conversation_updated', data);
+        res.json({ success: true, conversation: data });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to update conversation' });
+    }
+});
+
+app.post('/api/conversations/:id/unread', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const { data: conv, error: convErr } = await supabase
+            .from('w_conversations')
+            .select('id')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (convErr) throw convErr;
+        if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+        const { data: latestInbound, error: msgErr } = await supabase
+            .from('w_messages')
+            .select('id')
+            .eq('conversation_id', id)
+            .in('direction', ['inbound', 'in'])
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (msgErr) throw msgErr;
+
+        if (latestInbound?.id) {
+            const { error: updErr } = await supabase
+                .from('w_messages')
+                .update({ status: 'delivered' })
+                .eq('id', latestInbound.id);
+            if (updErr) throw updErr;
+        }
+
+        await supabase
+            .from('w_conversations')
+            .update({ unread_count: 1 })
+            .eq('id', id)
+            .eq('organization_id', orgId);
+
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to mark unread' });
+    }
+});
+
+app.post('/api/conversations/:id/clear', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const { data: conv, error: convErr } = await supabase
+            .from('w_conversations')
+            .select('id')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (convErr) throw convErr;
+        if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+        const { error: deleteErr } = await supabase
+            .from('w_messages')
+            .delete()
+            .eq('conversation_id', id);
+        if (deleteErr) throw deleteErr;
+
+        const { data: updated, error: updateErr } = await supabase
+            .from('w_conversations')
+            .update({
+                last_message_preview: 'No messages',
+                unread_count: 0
+            })
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .select('id, last_message_preview, unread_count')
+            .maybeSingle();
+        if (updateErr) throw updateErr;
+
+        io.to(`org:${orgId}`).emit('conversation_cleared', { conversation_id: id });
+        res.json({ success: true, conversation: updated });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to clear chat' });
+    }
+});
+
+app.delete('/api/conversations/:id', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const { data: conv, error: convErr } = await supabase
+            .from('w_conversations')
+            .select('id')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (convErr) throw convErr;
+        if (!conv) return res.status(404).json({ error: 'Conversation not found' });
+
+        const { error: msgErr } = await supabase
+            .from('w_messages')
+            .delete()
+            .eq('conversation_id', id);
+        if (msgErr) throw msgErr;
+
+        const { error: deleteErr } = await supabase
+            .from('w_conversations')
+            .delete()
+            .eq('id', id)
+            .eq('organization_id', orgId);
+        if (deleteErr) throw deleteErr;
+
+        io.to(`org:${orgId}`).emit('conversation_deleted', { conversation_id: id });
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to delete chat' });
     }
 });
 
