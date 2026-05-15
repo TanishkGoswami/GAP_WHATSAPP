@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ChevronDown, ArrowDown, FileText, Mic, Pencil, Bot, User, ExternalLink, Reply, Forward, X, Copy, Trash2, Archive, Pin, PinOff, MailOpen, Star, StarOff, Eraser, Inbox } from 'lucide-react'
+import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ChevronDown, ArrowDown, FileText, Mic, Pencil, Bot, User, ExternalLink, Reply, Forward, X, Copy, Trash2, Archive, Pin, PinOff, MailOpen, Star, StarOff, Eraser, Inbox, BellOff } from 'lucide-react'
 import { format, isToday, isYesterday } from 'date-fns'
 import { io } from "socket.io-client";
 import QRCode from 'react-qr-code'
@@ -23,6 +23,7 @@ const socket = io(BACKEND_BASE, {
 });
 const API_BASE = `${BACKEND_BASE}/api`;
 const AGENT_SETTINGS_ITEM_TYPE = '__agent_settings';
+const MUTED_UNTIL_LABEL_PREFIX = 'muted_until:';
 
 const WHATSAPP_EMOJI_ASSET_BASE = 'https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/apple/64';
 const QUICK_REACTIONS = [
@@ -871,7 +872,8 @@ export default function LiveChat() {
                 ? (!document.hidden && (typeof document.hasFocus === 'function' ? document.hasFocus() : true))
                 : true
             const inbound = (msg?.sender || 'user') !== 'agent'
-            const shouldPlayNotificationSound = inbound && convId && !idsEqual(activeChat?.id, convId)
+            const targetChat = convId ? chatsRef.current.find(c => idsEqual(c?.id, convId)) : null
+            const shouldPlayNotificationSound = inbound && convId && !idsEqual(activeChat?.id, convId) && !isChatMuted(targetChat)
 
             if (shouldPlayNotificationSound) {
                 playNotification({
@@ -1820,6 +1822,20 @@ export default function LiveChat() {
 
     const hasChatLabel = (chat, label) => getChatLabels(chat).includes(label)
 
+    const getMutedUntil = (chat) => {
+        const labels = getChatLabels(chat)
+        const muteLabel = labels.find(label => label.startsWith(MUTED_UNTIL_LABEL_PREFIX))
+        if (!muteLabel) return null
+        const value = muteLabel.slice(MUTED_UNTIL_LABEL_PREFIX.length)
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime()) || date.getTime() <= Date.now()) return null
+        return date
+    }
+
+    const isChatMuted = (chat) => !!getMutedUntil(chat)
+
+    const stripMuteLabels = (labels) => labels.filter(label => !label.startsWith(MUTED_UNTIL_LABEL_PREFIX))
+
     const updateChatMeta = async (chat, patch) => {
         if (!chat?.id || !session?.access_token) return
         const previous = chats
@@ -1856,10 +1872,28 @@ export default function LiveChat() {
 
     const toggleChatLabel = (chat, label) => {
         const labels = getChatLabels(chat)
+        if (label === 'pinned' && !labels.includes('pinned')) {
+            const pinnedCount = chats.filter(item => hasChatLabel(item, 'pinned')).length
+            if (pinnedCount >= 4) {
+                setActiveChatMenuId(null)
+                alert('You can pin up to 4 chats.')
+                return
+            }
+        }
         const next = labels.includes(label)
             ? labels.filter(item => item !== label)
             : [...labels, label]
         updateChatMeta(chat, { tags: next })
+    }
+
+    const muteChatFor = (chat, hours) => {
+        const mutedUntil = new Date(Date.now() + hours * 60 * 60 * 1000)
+        const labels = stripMuteLabels(getChatLabels(chat))
+        updateChatMeta(chat, { tags: [...labels, `${MUTED_UNTIL_LABEL_PREFIX}${mutedUntil.toISOString()}`] })
+    }
+
+    const unmuteChat = (chat) => {
+        updateChatMeta(chat, { tags: stripMuteLabels(getChatLabels(chat)) })
     }
 
     const markChatUnread = async (chat) => {
@@ -1964,7 +1998,7 @@ export default function LiveChat() {
                 chat.phone,
                 chat.waId,
                 chat.lastMessage,
-                ...(Array.isArray(chat.tags) ? chat.tags : [])
+                ...(Array.isArray(chat.tags) ? chat.tags.filter(tag => !String(tag).toLowerCase().startsWith(MUTED_UNTIL_LABEL_PREFIX)) : [])
             ].filter(Boolean).join(' ').toLowerCase()
 
             return haystack.includes(query)
@@ -1985,7 +2019,7 @@ export default function LiveChat() {
                 chat.phone,
                 chat.waId,
                 chat.lastMessage,
-                ...(Array.isArray(chat.tags) ? chat.tags : [])
+                ...(Array.isArray(chat.tags) ? chat.tags.filter(tag => !String(tag).toLowerCase().startsWith(MUTED_UNTIL_LABEL_PREFIX)) : [])
             ].filter(Boolean).join(' ').toLowerCase()
 
             return haystack.includes(query)
@@ -2189,6 +2223,7 @@ export default function LiveChat() {
                                         <div className="flex shrink-0 items-center gap-1">
                                             {hasChatLabel(chat, 'pinned') && <Pin className="h-3 w-3 text-gray-400" />}
                                             {hasChatLabel(chat, 'favorite') && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
+                                            {isChatMuted(chat) && <BellOff className="h-3 w-3 text-gray-400" />}
                                             <span className="text-[10px] font-medium text-gray-400">{chat.time}</span>
                                             <button
                                                 type="button"
@@ -2211,7 +2246,10 @@ export default function LiveChat() {
                                     ) : null}
                                     <p className="text-xs text-gray-500 truncate mb-1">{chat.lastMessage}</p>
                                     <div className="flex items-center gap-1.5">
-                                        {(Array.isArray(chat.tags) ? chat.tags : []).filter(tag => !['favorite', 'pinned'].includes(String(tag).toLowerCase())).map(tag => (
+                                        {(Array.isArray(chat.tags) ? chat.tags : []).filter(tag => {
+                                            const normalized = String(tag).toLowerCase()
+                                            return !['favorite', 'pinned'].includes(normalized) && !normalized.startsWith(MUTED_UNTIL_LABEL_PREFIX)
+                                        }).map(tag => (
                                             <span key={tag} className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
                                                 {tag}
                                             </span>
@@ -2267,6 +2305,37 @@ export default function LiveChat() {
                                             {hasChatLabel(chat, 'favorite') ? <StarOff className="h-4 w-4 text-[#54656f]" /> : <Star className="h-4 w-4 text-[#54656f]" />}
                                             {hasChatLabel(chat, 'favorite') ? 'Remove from favourites' : 'Add to favourites'}
                                         </button>
+                                        {isChatMuted(chat) ? (
+                                            <button
+                                                type="button"
+                                                onClick={() => unmuteChat(chat)}
+                                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                            >
+                                                <BellOff className="h-4 w-4 text-[#54656f]" />
+                                                Unmute notifications
+                                            </button>
+                                        ) : (
+                                            <div className="border-t border-gray-100 py-1">
+                                                <div className="flex items-center gap-3 px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-[#8696a0]">
+                                                    <BellOff className="h-3.5 w-3.5" />
+                                                    Mute notifications
+                                                </div>
+                                                {[
+                                                    { label: 'For 1 hour', hours: 1 },
+                                                    { label: 'For 8 hours', hours: 8 },
+                                                    { label: 'For 1 day', hours: 24 },
+                                                ].map(option => (
+                                                    <button
+                                                        key={option.hours}
+                                                        type="button"
+                                                        onClick={() => muteChatFor(chat, option.hours)}
+                                                        className="flex w-full items-center gap-3 px-11 py-2 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                                    >
+                                                        {option.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                         <div className="border-t border-gray-100" />
                                         <button
                                             type="button"
