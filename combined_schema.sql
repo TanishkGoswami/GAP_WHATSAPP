@@ -288,6 +288,11 @@ CREATE TABLE public.organization_members (
   email text,
   is_active boolean DEFAULT true,
   avatar_color text,
+  invite_token_hash text,
+  invite_expires_at timestamp with time zone,
+  invite_sent_at timestamp with time zone,
+  invite_accepted_at timestamp with time zone,
+  invite_temp_password_encrypted text,
   CONSTRAINT organization_members_pkey PRIMARY KEY (id),
   CONSTRAINT organization_members_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id)
 );

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon } from 'lucide-react'
+import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -21,6 +21,7 @@ export default function Settings() {
     const [inviteForm, setInviteForm] = useState({ name: '', email: '', role: 'agent' })
     const [isInviting, setIsInviting] = useState(false)
     const [isLoadingMembers, setIsLoadingMembers] = useState(false)
+    const [resendingMemberId, setResendingMemberId] = useState(null)
     const [accounts, setAccounts] = useState([])
     const [selectedAccountId, setSelectedAccountId] = useState('')
     const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
@@ -279,7 +280,8 @@ export default function Settings() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    Authorization: `Bearer ${session.access_token}`
+                    Authorization: `Bearer ${session.access_token}`,
+                    'X-Auth-Portal': loginType || 'owner'
                 },
                 body: JSON.stringify(inviteForm)
             })
@@ -295,6 +297,43 @@ export default function Settings() {
             console.error("Invite failed", e)
         } finally {
             setIsInviting(false)
+        }
+    }
+
+    const getInviteStatus = (member) => {
+        if (member.invite_status) return member.invite_status
+        if (member.is_active) return 'active'
+        const expiresAt = member.invite_expires_at ? new Date(member.invite_expires_at) : null
+        if (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now()) return 'expired'
+        return 'pending'
+    }
+
+    const formatInviteExpiry = (value) => {
+        if (!value) return ''
+        const date = new Date(value)
+        if (Number.isNaN(date.getTime())) return ''
+        return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    }
+
+    const resendInvite = async (member) => {
+        if (!member?.id) return
+        setResendingMemberId(member.id)
+        try {
+            const res = await fetch(`${BACKEND_BASE}/api/team/members/${member.id}/resend-invite`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${session.access_token}`,
+                    'X-Auth-Portal': loginType || 'owner'
+                }
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data?.error || 'Failed to resend invitation')
+            fetchMembers()
+        } catch (e) {
+            alert(e.message || 'Failed to resend invitation')
+        } finally {
+            setResendingMemberId(null)
         }
     }
 
@@ -767,7 +806,19 @@ export default function Settings() {
                                         </tr>
                                     </thead>
                                     <tbody className="bg-white divide-y divide-gray-200">
-                                        {members.map((member) => (
+                                        {members.map((member) => {
+                                            const inviteStatus = getInviteStatus(member)
+                                            const statusStyles = inviteStatus === 'active'
+                                                ? 'bg-green-100 text-green-800'
+                                                : inviteStatus === 'expired'
+                                                    ? 'bg-red-100 text-red-800'
+                                                    : 'bg-amber-100 text-amber-800'
+                                            const dotStyles = inviteStatus === 'active'
+                                                ? 'bg-green-400'
+                                                : inviteStatus === 'expired'
+                                                    ? 'bg-red-400'
+                                                    : 'bg-amber-400'
+                                            return (
                                             <tr key={member.id} className="hover:bg-gray-50 transition-colors">
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <div className="flex items-center">
@@ -796,23 +847,43 @@ export default function Settings() {
                                                     </select>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${member.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                                        }`}>
-                                                        <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${member.is_active ? 'bg-green-400' : 'bg-red-400'}`} />
-                                                        {member.is_active ? 'Active' : 'Inactive'}
-                                                    </span>
+                                                    <div className="space-y-1">
+                                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyles}`}>
+                                                            <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${dotStyles}`} />
+                                                            {inviteStatus === 'active' ? 'Active' : inviteStatus === 'expired' ? 'Invite expired' : 'Invite pending'}
+                                                        </span>
+                                                        {inviteStatus !== 'active' && member.invite_expires_at ? (
+                                                            <div className="flex items-center gap-1 text-xs text-gray-400">
+                                                                <Clock className="h-3 w-3" />
+                                                                Expires {formatInviteExpiry(member.invite_expires_at)}
+                                                            </div>
+                                                        ) : null}
+                                                    </div>
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    <button
-                                                        onClick={() => removeMember(member.id)}
-                                                        disabled={member.role === 'owner'}
-                                                        className="text-red-600 hover:text-red-900 disabled:opacity-50"
-                                                    >
-                                                        <Trash className="h-4 w-4" />
-                                                    </button>
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        {inviteStatus !== 'active' && member.role !== 'owner' ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => resendInvite(member)}
+                                                                disabled={resendingMemberId === member.id}
+                                                                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                                                            >
+                                                                {resendingMemberId === member.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                                                                Resend
+                                                            </button>
+                                                        ) : null}
+                                                        <button
+                                                            onClick={() => removeMember(member.id)}
+                                                            disabled={member.role === 'owner'}
+                                                            className="text-red-600 hover:text-red-900 disabled:opacity-50"
+                                                        >
+                                                            <Trash className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
-                                        ))}
+                                        )})}
                                     </tbody>
                                 </table>
                             </div>

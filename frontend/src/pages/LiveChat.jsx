@@ -14,40 +14,48 @@ const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 // Connect to backend
 const socket = io(BACKEND_BASE, {
     autoConnect: false,
-    transports: ['websocket', 'polling'],
+    transports: ['polling', 'websocket'],
     reconnectionAttempts: 5,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 5000,
-    timeout: 10000,
+    timeout: 20000,
 });
 const API_BASE = `${BACKEND_BASE}/api`;
+const AGENT_SETTINGS_ITEM_TYPE = '__agent_settings';
 
-const TWEMOJI_ASSET_BASE = 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg';
+const WHATSAPP_EMOJI_ASSET_BASE = 'https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/apple/64';
 const QUICK_REACTIONS = [
-    { emoji: '\u{1F44D}', label: 'Thumbs up', asset: '1f44d.svg' },
-    { emoji: '\u2764\uFE0F', label: 'Heart', asset: '2764.svg' },
-    { emoji: '\u{1F602}', label: 'Laugh', asset: '1f602.svg' },
-    { emoji: '\u{1F62E}', label: 'Wow', asset: '1f62e.svg' },
-    { emoji: '\u{1F622}', label: 'Sad', asset: '1f622.svg' },
-    { emoji: '\u{1F64F}', label: 'Prayer', asset: '1f64f.svg' },
+    { emoji: '\u{1F44D}', label: 'Thumbs up' },
+    { emoji: '\u2764\uFE0F', label: 'Heart' },
+    { emoji: '\u{1F602}', label: 'Laugh' },
+    { emoji: '\u{1F62E}', label: 'Wow' },
+    { emoji: '\u{1F622}', label: 'Sad' },
+    { emoji: '\u{1F64F}', label: 'Prayer' },
 ];
-const REACTION_ASSET_BY_EMOJI = QUICK_REACTIONS.reduce((acc, item) => {
-    acc[item.emoji] = item.asset;
-    acc[item.emoji.replace(/\uFE0F/g, '')] = item.asset;
-    return acc;
-}, {});
+const EMOJI_PICKER_ITEMS = [
+    '\u{1F600}', '\u{1F605}', '\u{1F602}', '\u{1F642}', '\u{1F609}', '\u{1F60D}', '\u{1F64F}', '\u{1F44D}',
+    '\u2764\uFE0F', '\u{1F389}', '\u{1F622}', '\u{1F621}', '\u{1F91D}', '\u{1F525}', '\u2705', '\u{1F4CE}',
+];
+
+function emojiToAssetName(emoji) {
+    return Array.from(String(emoji || ''))
+        .map(char => char.codePointAt(0).toString(16))
+        .join('-');
+}
 
 function EmojiAsset({ emoji, label = 'Emoji', className = 'h-5 w-5' }) {
-    const key = String(emoji || '');
-    const asset = REACTION_ASSET_BY_EMOJI[key] || REACTION_ASSET_BY_EMOJI[key.replace(/\uFE0F/g, '')];
-    if (!asset) return <span className={className}>{emoji}</span>;
+    const [assetFailed, setAssetFailed] = useState(false);
+    const asset = emojiToAssetName(emoji);
+    if (!asset) return null;
+    if (assetFailed) return <span className={`inline-flex items-center justify-center ${className}`}>{emoji}</span>;
 
     return (
         <img
-            src={`${TWEMOJI_ASSET_BASE}/${asset}`}
+            src={`${WHATSAPP_EMOJI_ASSET_BASE}/${asset}.png`}
             alt={label}
             className={`${className} select-none object-contain`}
             draggable="false"
+            onError={() => setAssetFailed(true)}
         />
     );
 }
@@ -73,16 +81,11 @@ function ForwardedIndicator() {
                 viewBox="0 0 16 16"
                 aria-hidden="true"
                 focusable="false"
-                className="h-3.5 w-3.5 shrink-0 text-[#667781]"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+                className="h-3.5 w-3.5 shrink-0 translate-y-px text-[#667781]"
+                fill="currentColor"
             >
-                <path d="M3 5.25h5.25c2.2 0 4 1.8 4 4v1.25" />
-                <path d="m9.75 2.75 2.5 2.5-2.5 2.5" />
-                <path d="M1.5 7.75h4.75c1.45 0 2.65.82 3.25 2" opacity=".65" />
+                <path d="M9.28 2.33a.5.5 0 0 0-.78.41v1.51H7.08c-2.5 0-4.58 2.02-4.58 4.5v2.04a.5.5 0 0 0 .92.28c.87-1.31 2.22-2.06 3.86-2.06H8.5v1.5a.5.5 0 0 0 .78.42l3.98-3.88a.58.58 0 0 0 0-.84L9.28 2.33Zm.22 3.42V4.12l2.68 2.51L9.5 9.14V7.51H7.28c-1.31 0-2.47.37-3.43 1.07.1-1.6 1.5-2.83 3.23-2.83H9.5Z" />
+                <path d="M5.28 2.83a.48.48 0 0 0-.67-.02L1.46 5.75a.5.5 0 0 0 0 .74L4.6 9.43a.5.5 0 0 0 .84-.36v-.75H4.7c-.34 0-.68.03-1.01.1L2.54 6.12 5.43 3.4a.48.48 0 0 0-.15-.57Z" opacity=".72" />
             </svg>
             <span>Forwarded</span>
         </div>
@@ -157,6 +160,26 @@ export default function LiveChat() {
 
     // Team members for assignment
     const [teamMembers, setTeamMembers] = useState([])
+    const assignableTeamMembers = useMemo(
+        () => teamMembers.filter(member => String(member?.role || '').toLowerCase() === 'agent' && member?.is_active !== false),
+        [teamMembers]
+    )
+    const getBotAutomationSettings = (bot) => {
+        const entries = Array.isArray(bot?.knowledge_base_content) ? bot.knowledge_base_content : []
+        const item = entries.find(entry => entry?.type === AGENT_SETTINGS_ITEM_TYPE)
+        const settings = item?.settings && typeof item.settings === 'object' ? item.settings : {}
+        return {
+            auto_reply_unknown: settings.auto_reply_unknown === true,
+            default_for_new_chats: settings.default_for_new_chats === true,
+        }
+    }
+    const workspaceAutoReplyBot = useMemo(() => (
+        availableBots.find(bot => {
+            const settings = getBotAutomationSettings(bot)
+            return settings.default_for_new_chats || settings.auto_reply_unknown
+        }) || null
+    ), [availableBots])
+    const effectiveBotEnabled = botEnabled || !!workspaceAutoReplyBot
 
     useEffect(() => {
         chatsRef.current = chats
@@ -2125,7 +2148,12 @@ export default function LiveChat() {
                                                     {!selectedChat?.assigned_to && <Check className="h-4 w-4" />}
                                                 </button>
                                                 <div className="my-1 border-t border-gray-100" />
-                                                {teamMembers.map(m => (
+                                                {assignableTeamMembers.length === 0 && (
+                                                    <div className="px-3 py-2.5 text-sm text-gray-500">
+                                                        No active agents available
+                                                    </div>
+                                                )}
+                                                {assignableTeamMembers.map(m => (
                                                     <button
                                                         key={m.user_id}
                                                         type="button"
@@ -2148,14 +2176,14 @@ export default function LiveChat() {
                                     <button
                                         onClick={() => setShowBotMenu(!showBotMenu)}
                                         className={`h-10 rounded-xl px-3 transition-colors flex items-center gap-1.5 ${
-                                            botEnabled 
-                                                ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                                            effectiveBotEnabled
+                                                ? 'bg-green-100 text-green-700 hover:bg-green-200'
                                                 : 'text-gray-500 hover:bg-gray-100'
                                         }`}
-                                        title={botEnabled ? 'Bot is active' : 'Enable bot'}
+                                        title={effectiveBotEnabled ? 'Bot automation is active' : 'Enable bot'}
                                     >
                                         <Bot className="h-5 w-5" />
-                                        {botEnabled && <span className="text-xs font-medium">On</span>}
+                                        {effectiveBotEnabled && <span className="text-xs font-medium">{botEnabled ? 'On' : 'Auto'}</span>}
                                     </button>
                                     
                                     {/* Bot Menu Dropdown */}
@@ -2165,24 +2193,28 @@ export default function LiveChat() {
                                                 <div className="flex items-center justify-between">
                                                     <span className="text-sm font-medium text-gray-900">Bot Auto-Reply</span>
                                                     <button
-                                                        onClick={() => toggleBotForConversation(!botEnabled, selectedBotId)}
+                                                        onClick={() => toggleBotForConversation(!botEnabled, selectedBotId || workspaceAutoReplyBot?.id || null)}
                                                         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                                                            botEnabled ? 'bg-green-600' : 'bg-gray-200'
+                                                            effectiveBotEnabled ? 'bg-green-600' : 'bg-gray-200'
                                                         }`}
                                                     >
                                                         <span
                                                             className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                                                botEnabled ? 'translate-x-6' : 'translate-x-1'
+                                                                effectiveBotEnabled ? 'translate-x-6' : 'translate-x-1'
                                                             }`}
                                                         />
                                                     </button>
                                                 </div>
                                                 <p className="text-xs text-gray-500 mt-1">
-                                                    {botEnabled ? 'Bot will auto-reply to messages' : 'Enable bot for this chat'}
+                                                    {botEnabled
+                                                        ? 'Bot will auto-reply to this chat'
+                                                        : workspaceAutoReplyBot
+                                                            ? `Workspace automation is active via ${workspaceAutoReplyBot.name}`
+                                                            : 'Enable bot for this chat'}
                                                 </p>
                                             </div>
                                             
-                                            {botEnabled && availableBots.length > 0 && (
+                                            {effectiveBotEnabled && availableBots.length > 0 && (
                                                 <div className="p-2">
                                                     <p className="text-xs font-medium text-gray-500 px-2 mb-1">Select Bot</p>
                                                     {availableBots.map(bot => (
@@ -2208,17 +2240,17 @@ export default function LiveChat() {
                                                     <button
                                                         onClick={() => toggleBotForConversation(true, null)}
                                                         className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${
-                                                            botEnabled && !selectedBotId 
+                                                            effectiveBotEnabled && !selectedBotId
                                                                 ? 'bg-green-50 text-green-700' 
                                                                 : 'hover:bg-gray-50 text-gray-700'
                                                         }`}
                                                     >
                                                         <Bot className="h-4 w-4" />
                                                         <div className="flex-1">
-                                                            <div className="font-medium">Auto (Keyword Match)</div>
-                                                            <div className="text-xs text-gray-500">Match by keywords</div>
+                                                            <div className="font-medium">Auto (Workspace Rules)</div>
+                                                            <div className="text-xs text-gray-500">Keyword/default/unknown rules</div>
                                                         </div>
-                                                        {botEnabled && !selectedBotId && (
+                                                        {effectiveBotEnabled && !selectedBotId && (
                                                             <Check className="h-4 w-4 text-green-600" />
                                                         )}
                                                     </button>
@@ -2383,7 +2415,7 @@ export default function LiveChat() {
                                     </button>
                                 </div>
                                 <div className="hidden">
-                                    {['👍', '❤️', '😂', '😮', '😢', '🙏'].map(emoji => (
+                                    {QUICK_REACTIONS.map(({ emoji }) => (
                                         <button
                                             key={emoji}
                                             type="button"
@@ -2559,14 +2591,14 @@ export default function LiveChat() {
                                             <div className="absolute bottom-12 left-0 z-20 w-64 rounded-xl border border-gray-200 bg-white shadow-lg p-2">
                                                 <div className="text-[11px] font-bold text-gray-500 mb-2">Emoji</div>
                                                 <div className="grid grid-cols-8 gap-1">
-                                                    {['😀','😅','😂','🙂','😉','😍','🙏','👍','❤️','🎉','😢','😡','🤝','🔥','✅','📎'].map(e => (
+                                                    {EMOJI_PICKER_ITEMS.map(e => (
                                                         <button
                                                             key={e}
                                                             type="button"
                                                             onClick={() => insertEmoji(e)}
-                                                            className="h-8 w-8 rounded-lg hover:bg-gray-100 text-lg"
+                                                            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100"
                                                         >
-                                                            {e}
+                                                            <EmojiAsset emoji={e} className="h-5 w-5" />
                                                         </button>
                                                     ))}
                                                 </div>
@@ -2704,6 +2736,7 @@ export default function LiveChat() {
                 focusAliasOnOpen={focusAliasOnOpen}
                 botEnabled={botEnabled}
                 onToggleBot={(enabled) => toggleBotForConversation(enabled, selectedBotId)}
+                messages={filteredMessages}
                 contact={selectedChat?.contact ? {
                     ...selectedChat.contact,
                     // UI fallbacks
