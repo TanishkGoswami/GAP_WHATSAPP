@@ -76,6 +76,7 @@ const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}
 const GRAPH_API_VERSION = process.env.META_GRAPH_VERSION || 'v21.0';
 const N8N_HANDOFF_WEBHOOK_URL = process.env.N8N_HANDOFF_WEBHOOK_URL || '';
 const N8N_WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET || '';
+const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_WEBHOOK_TIMEOUT_MS || 15000);
 
 const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'wa-media';
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -2171,6 +2172,9 @@ async function triggerHandoffWebhook(params: {
             created_at: new Date().toISOString(),
         };
 
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), N8N_WEBHOOK_TIMEOUT_MS);
+
         const response = await fetch(N8N_HANDOFF_WEBHOOK_URL, {
             method: 'POST',
             headers: {
@@ -2178,7 +2182,8 @@ async function triggerHandoffWebhook(params: {
                 ...(N8N_WEBHOOK_SECRET ? { 'X-N8N-Secret': N8N_WEBHOOK_SECRET } : {}),
             },
             body: JSON.stringify(payload),
-        });
+            signal: controller.signal,
+        }).finally(() => clearTimeout(timeout));
 
         if (!response.ok) {
             const body = await response.text().catch(() => '');
