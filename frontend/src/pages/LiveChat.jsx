@@ -184,7 +184,7 @@ export default function LiveChat() {
             return settings.default_for_new_chats || settings.auto_reply_unknown
         }) || null
     ), [availableBots])
-    const effectiveBotEnabled = botEnabled || !!workspaceAutoReplyBot
+    const effectiveBotEnabled = botEnabled === true
 
     useEffect(() => {
         chatsRef.current = chats
@@ -446,6 +446,11 @@ export default function LiveChat() {
             agentName: m.direction === 'outbound' ? 'You' : null,
             account: null,
             status: m.status,
+            senderType: m.sender_type || null,
+            automationSource: m.automation_source || null,
+            isBotReply: m.is_bot_reply === true,
+            botAgentId: m.bot_agent_id || null,
+            metadata: m.metadata || {},
             reactions: Array.isArray(m.reactions) ? m.reactions : [],
             content: m.content || {},
             quoted: m.content?.quoted || null,
@@ -597,7 +602,7 @@ export default function LiveChat() {
                 const data = await res.json();
                 const conv = data.find(c => c.id === conversationId);
                 if (conv) {
-                    setBotEnabled(conv.bot_enabled || false);
+                    setBotEnabled(conv.bot_enabled !== false);
                     setSelectedBotId(conv.assigned_bot_id || null);
                 }
             }
@@ -972,6 +977,11 @@ export default function LiveChat() {
                         from: msg.from,
                         account: msg.connectedAccount,
                         status: msg.status,
+                        senderType: msg.sender_type || msg.senderType || null,
+                        automationSource: msg.automation_source || msg.automationSource || null,
+                        isBotReply: msg.is_bot_reply === true || msg.isBotReply === true,
+                        botAgentId: msg.bot_agent_id || msg.botAgentId || null,
+                        metadata: msg.metadata || msg.content?.metadata || {},
                         reactions: Array.isArray(msg.reactions) ? msg.reactions : [],
                         content: msg.content || {},
                         quoted: msg.quoted || msg.content?.quoted || null,
@@ -1685,6 +1695,26 @@ export default function LiveChat() {
             )}
         </div>
     )
+
+    const getMessageSourceBadge = (msg) => {
+        const source = msg.automationSource || msg.automation_source || msg.metadata?.automation_source
+        const senderType = msg.senderType || msg.sender_type
+        if (source === 'flow' || msg.metadata?.flow_id) return { label: 'Flow', className: 'bg-blue-50 text-blue-700 border-blue-100' }
+        if (source === 'ai_agent' || msg.isBotReply || msg.botAgentId) return { label: 'AI Agent', className: 'bg-emerald-50 text-emerald-700 border-emerald-100' }
+        if (source === 'broadcast') return { label: 'Broadcast', className: 'bg-purple-50 text-purple-700 border-purple-100' }
+        if (senderType === 'human_agent') return { label: 'Human', className: 'bg-slate-50 text-slate-600 border-slate-100' }
+        return null
+    }
+
+    const renderMessageSourceBadge = (msg) => {
+        const badge = getMessageSourceBadge(msg)
+        if (!badge || msg.sender !== 'agent') return null
+        return (
+            <div className={`mb-1 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${badge.className}`}>
+                {badge.label}
+            </div>
+        )
+    }
 
     const startReplyToMessage = (msg) => {
         setReplyingTo({
@@ -2496,10 +2526,10 @@ export default function LiveChat() {
                                                 </div>
                                                 <p className="text-xs text-gray-500 mt-1">
                                                     {botEnabled
-                                                        ? 'Bot will auto-reply to this chat'
+                                                        ? 'AI Agent can reply only when no active flow matches.'
                                                         : workspaceAutoReplyBot
-                                                            ? `Workspace automation is active via ${workspaceAutoReplyBot.name}`
-                                                            : 'Enable bot for this chat'}
+                                                            ? `AI Agent fallback is off for this chat. Flow Builder still works.`
+                                                            : 'AI Agent fallback is off for this chat. Flow Builder still works.'}
                                                 </p>
                                             </div>
                                             
@@ -2664,6 +2694,7 @@ export default function LiveChat() {
                                                 {row.msg.sender === 'agent' && !row.msg.forwarded && (
                                                     <div className="mb-0.5 text-[11px] font-semibold leading-4 text-[#6676ff]">{row.msg.agentName}</div>
                                                 )}
+                                                {renderMessageSourceBadge(row.msg)}
                                                 {renderMessageBody(row.msg)}
                                                 {renderReactionsPill(row.msg)}
                                                 {!row.msg.content?.template && renderMessageMeta(row.msg)}
@@ -3025,6 +3056,7 @@ export default function LiveChat() {
                 botEnabled={botEnabled}
                 onToggleBot={(enabled) => toggleBotForConversation(enabled, selectedBotId)}
                 messages={filteredMessages}
+                conversationId={selectedChat?.id || null}
                 contact={selectedChat?.contact ? {
                     ...selectedChat.contact,
                     // UI fallbacks

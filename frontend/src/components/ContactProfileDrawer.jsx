@@ -184,6 +184,7 @@ export default function ContactProfileDrawer({
     isOpen,
     onClose,
     contact,
+    conversationId = null,
     onEdit,
     onContactUpdated,
     focusAliasOnOpen = false,
@@ -200,6 +201,8 @@ export default function ContactProfileDrawer({
     const [saveError, setSaveError] = useState('')
     const [autoSaveStatus, setAutoSaveStatus] = useState('')
     const [flowSession, setFlowSession] = useState(null)
+    const [handoffSummary, setHandoffSummary] = useState(null)
+    const [summaryMeta, setSummaryMeta] = useState(null)
 
     const aliasInputRef = useRef(null)
     const autoSavedKeyRef = useRef('')
@@ -218,6 +221,28 @@ export default function ContactProfileDrawer({
     const customFields = useMemo(() => contact?.custom_fields && typeof contact.custom_fields === 'object' ? contact.custom_fields : {}, [contact])
     const salesInsights = useMemo(() => buildSalesInsights(messages, contact), [messages, contact])
     const extractedInfo = useMemo(() => extractClientInfo(messages), [messages])
+    const displayInsights = useMemo(() => {
+        if (!handoffSummary) return salesInsights
+        const factTopics = Array.isArray(handoffSummary.important_facts)
+            ? handoffSummary.important_facts.map((item) => typeof item === 'string' ? item : item?.label || item?.text).filter(Boolean)
+            : []
+        const productTopics = Array.isArray(handoffSummary.products_discussed)
+            ? handoffSummary.products_discussed.map((item) => typeof item === 'string' ? item : item?.name || item?.text).filter(Boolean)
+            : []
+        const quality = handoffSummary.lead_quality || salesInsights.temperature
+        const normalizedQuality = String(quality || '').toLowerCase()
+        const score = normalizedQuality.includes('hot') ? 85 : normalizedQuality.includes('warm') ? 60 : normalizedQuality.includes('cold') ? 25 : salesInsights.score
+        return {
+            ...salesInsights,
+            score,
+            temperature: quality,
+            interest: handoffSummary.customer_intent || handoffSummary.customer_stage || salesInsights.interest,
+            topics: [...factTopics, ...productTopics].slice(0, 6).length ? [...factTopics, ...productTopics].slice(0, 6) : salesInsights.topics,
+            summary: handoffSummary.summary_text || salesInsights.summary,
+            nextStep: handoffSummary.next_best_action || salesInsights.nextStep,
+            objections: Array.isArray(handoffSummary.objections) && handoffSummary.objections.length ? handoffSummary.objections : salesInsights.objections,
+        }
+    }, [handoffSummary, salesInsights])
 
     const manualNotes = useMemo(() => {
         const notes = customFields.private_notes
@@ -275,6 +300,22 @@ export default function ContactProfileDrawer({
     }, [apiCall, contact?.id, contact?.custom_name])
 
     useEffect(() => {
+        if (!isOpen || !conversationId) {
+            setHandoffSummary(null)
+            setSummaryMeta(null)
+            return
+        }
+
+        apiCall(`${API_BASE}/conversations/${conversationId}/summary`)
+            .then((res) => res.ok ? res.json() : null)
+            .then((data) => {
+                setHandoffSummary(data?.summary || null)
+                setSummaryMeta(data?.conversation || null)
+            })
+            .catch((err) => console.error('Error fetching handoff summary', err))
+    }, [apiCall, conversationId, isOpen])
+
+    useEffect(() => {
         if (!isOpen || !contact?.id) return
 
         const fieldsPatch = {}
@@ -283,12 +324,12 @@ export default function ContactProfileDrawer({
         if (extractedInfo.amount && customFields.captured_amount !== extractedInfo.amount) fieldsPatch.captured_amount = extractedInfo.amount
 
         const insightPatch = {
-            lead_temperature: salesInsights.temperature,
-            lead_interest: salesInsights.interest,
-            lead_summary: salesInsights.summary,
-            lead_next_step: salesInsights.nextStep,
-            lead_topics: salesInsights.topics.join(', '),
-            sales_note_auto: `Lead ${salesInsights.temperature} (${salesInsights.interest}). ${salesInsights.summary} Next: ${salesInsights.nextStep}`,
+            lead_temperature: displayInsights.temperature,
+            lead_interest: displayInsights.interest,
+            lead_summary: displayInsights.summary,
+            lead_next_step: displayInsights.nextStep,
+            lead_topics: displayInsights.topics.join(', '),
+            sales_note_auto: `Lead ${displayInsights.temperature} (${displayInsights.interest}). ${displayInsights.summary} Next: ${displayInsights.nextStep}`,
         }
 
         Object.entries(insightPatch).forEach(([key, value]) => {
@@ -306,7 +347,7 @@ export default function ContactProfileDrawer({
                 console.error('Failed to auto-save contact insights', err)
                 setAutoSaveStatus('Auto-save failed')
             })
-    }, [isOpen, contact?.id, extractedInfo, salesInsights, customFields, patchCustomFields])
+    }, [isOpen, contact?.id, extractedInfo, displayInsights, customFields, patchCustomFields])
 
     useEffect(() => {
         if (!isOpen || !focusAliasOnOpen) return
@@ -366,9 +407,9 @@ export default function ContactProfileDrawer({
 
     if (!isOpen || !contact) return null
 
-    const heatClass = salesInsights.temperature === 'Hot'
+    const heatClass = displayInsights.temperature === 'Hot'
         ? 'bg-red-50 text-red-700 border-red-200'
-        : salesInsights.temperature === 'Warm'
+        : displayInsights.temperature === 'Warm'
             ? 'bg-amber-50 text-amber-700 border-amber-200'
             : 'bg-slate-50 text-slate-700 border-slate-200'
 
@@ -416,11 +457,11 @@ export default function ContactProfileDrawer({
                             <div className="mt-4 flex flex-wrap justify-center gap-2">
                                 <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${heatClass}`}>
                                     <Flame className="h-3.5 w-3.5" />
-                                    {salesInsights.temperature} lead
+                                    {displayInsights.temperature} lead
                                 </span>
                                 <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
                                     <Target className="h-3.5 w-3.5" />
-                                    {salesInsights.interest}
+                                    {displayInsights.interest}
                                 </span>
                             </div>
                             <div className="mt-5 grid w-full grid-cols-2 gap-2.5">
@@ -586,26 +627,32 @@ export default function ContactProfileDrawer({
                                     <div className="flex items-center justify-between gap-3">
                                         <div>
                                             <div className="text-sm font-semibold text-gray-900">Human handoff summary</div>
-                                            <p className="mt-1 text-xs text-gray-500">Condensed from recent messages for the sales executive.</p>
+                                            <p className="mt-1 text-xs text-gray-500">
+                                                {handoffSummary
+                                                    ? `Generated by ${handoffSummary.generated_by || 'n8n'}`
+                                                    : summaryMeta?.summary_status === 'pending'
+                                                        ? 'n8n summary is pending.'
+                                                        : 'Condensed from recent messages for the sales executive.'}
+                                            </p>
                                         </div>
                                         <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${heatClass}`}>
                                             <Flame className="h-3.5 w-3.5" />
-                                            {salesInsights.score}/100
+                                            {displayInsights.score}/100
                                         </span>
                                     </div>
                                     <div className="mt-4 h-2 rounded-full bg-gray-100">
-                                        <div className="h-2 rounded-full bg-green-500" style={{ width: `${salesInsights.score}%` }} />
+                                        <div className="h-2 rounded-full bg-green-500" style={{ width: `${displayInsights.score}%` }} />
                                     </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                                         <div className="text-xs font-semibold uppercase text-gray-500">Lead quality</div>
-                                        <div className="mt-2 text-lg font-semibold text-gray-900">{salesInsights.temperature}</div>
+                                        <div className="mt-2 text-lg font-semibold text-gray-900">{displayInsights.temperature}</div>
                                     </div>
                                     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                                         <div className="text-xs font-semibold uppercase text-gray-500">Intent</div>
-                                        <div className="mt-2 text-lg font-semibold text-gray-900">{salesInsights.interest}</div>
+                                        <div className="mt-2 text-lg font-semibold text-gray-900">{displayInsights.interest}</div>
                                     </div>
                                 </div>
 
@@ -614,7 +661,7 @@ export default function ContactProfileDrawer({
                                         <ClipboardList className="h-4 w-4 text-green-600" />
                                         Conversation summary
                                     </div>
-                                    <p className="mt-3 text-sm leading-6 text-gray-700">{salesInsights.summary}</p>
+                                    <p className="mt-3 text-sm leading-6 text-gray-700">{displayInsights.summary}</p>
                                 </div>
 
                                 <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -622,13 +669,13 @@ export default function ContactProfileDrawer({
                                         <Target className="h-4 w-4 text-green-600" />
                                         Next best action
                                     </div>
-                                    <p className="mt-3 text-sm leading-6 text-gray-700">{salesInsights.nextStep}</p>
+                                    <p className="mt-3 text-sm leading-6 text-gray-700">{displayInsights.nextStep}</p>
                                 </div>
 
                                 <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                                     <div className="text-sm font-semibold text-gray-900">Main topics</div>
                                     <div className="mt-3 flex flex-wrap gap-2">
-                                        {salesInsights.topics.map((topic) => (
+                                        {displayInsights.topics.map((topic) => (
                                             <span key={topic} className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
                                                 {topic}
                                             </span>
@@ -647,14 +694,14 @@ export default function ContactProfileDrawer({
                                     {autoSaveStatus ? <div className="mt-3 text-xs text-gray-500">{autoSaveStatus}</div> : null}
                                 </div>
 
-                                {salesInsights.objections.length ? (
+                                {displayInsights.objections.length ? (
                                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
                                         <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
                                             <BadgeInfo className="h-4 w-4" />
                                             Watch points
                                         </div>
                                         <div className="mt-3 flex flex-wrap gap-2">
-                                            {salesInsights.objections.map((item) => (
+                                            {displayInsights.objections.map((item) => (
                                                 <span key={item} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-800">
                                                     {item}
                                                 </span>
@@ -672,7 +719,7 @@ export default function ContactProfileDrawer({
                                         <CheckCircle2 className="h-4 w-4" />
                                         Auto-saved insight
                                     </div>
-                                    <p className="mt-2 text-sm leading-6 text-green-900">{customFields.sales_note_auto || salesInsights.summary}</p>
+                                    <p className="mt-2 text-sm leading-6 text-green-900">{customFields.sales_note_auto || displayInsights.summary}</p>
                                     {autoSaveStatus ? <div className="mt-2 text-xs text-green-700">{autoSaveStatus}</div> : null}
                                 </div>
 

@@ -10,8 +10,9 @@ import ReactFlow, {
     Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { Save, ArrowLeft, Play, Zap } from 'lucide-react';
+import { Save, ArrowLeft, Play, Zap, Handshake, Square } from 'lucide-react';
 import axios from 'axios';
+import { useAuth } from '../../context/AuthContext';
 
 // Import all node components
 import StartBotFlowNode from './StartBotFlowNode';
@@ -33,6 +34,7 @@ import ProductNode from './ProductNode';
 // Import UI components
 import EnhancedFlowSidebar from './EnhancedFlowSidebar';
 import NodeConfigPanel from './NodeConfigPanel';
+import BaseNode from './BaseNode';
 
 // Register all node types
 const nodeTypes = {
@@ -54,9 +56,20 @@ const nodeTypes = {
     template: TemplateMessageNode,
     appointment: AppointmentNode,
     product: ProductNode,
+    handoff: ({ id, data, selected }) => (
+        <BaseNode id={id} data={data} selected={selected} icon={Handshake} title="Handoff to Human" color="orange">
+            <div className="text-xs text-gray-600">{data?.config?.reason || 'Request sales agent help'}</div>
+        </BaseNode>
+    ),
+    end: ({ id, data, selected }) => (
+        <BaseNode id={id} data={data} selected={selected} icon={Square} title="End Flow" color="teal" handles={{ input: true, output: false }}>
+            <div className="text-xs text-gray-600">Complete the automation</div>
+        </BaseNode>
+    ),
 };
 
 function FlowEditorContent({ flow, onClose }) {
+    const { session } = useAuth();
     const reactFlowWrapper = useRef(null);
     const [nodes, setNodes, onNodesChange] = useNodesState(flow?.nodes || []);
     const [edges, setEdges, onEdgesChange] = useEdgesState(flow?.edges || []);
@@ -155,12 +168,30 @@ function FlowEditorContent({ flow, onClose }) {
     const handleSave = async () => {
         try {
             const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            await axios.put(`${API_URL}/api/flows/${flow.id}`, { nodes, edges });
+            await axios.put(`${API_URL}/api/flows/${flow.id}`, { nodes, edges }, {
+                headers: { Authorization: `Bearer ${session?.access_token}` }
+            });
             // alert('Flow saved successfully! ✅');
-            onClose(); // Redirect out of editor
+            alert('Draft saved. Click Publish to make this flow live on WhatsApp.');
         } catch (error) {
             console.error('Error saving flow:', error);
             alert('Failed to save flow ❌');
+        }
+    };
+
+    const handlePublish = async () => {
+        try {
+            const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+            await axios.put(`${API_URL}/api/flows/${flow.id}`, { nodes, edges }, {
+                headers: { Authorization: `Bearer ${session?.access_token}` }
+            });
+            await axios.post(`${API_URL}/api/flows/${flow.id}/publish`, {}, {
+                headers: { Authorization: `Bearer ${session?.access_token}` }
+            });
+            onClose();
+        } catch (error) {
+            const details = error?.response?.data?.validation?.errors || [error?.response?.data?.error || 'Failed to publish flow'];
+            alert(details.join('\n'));
         }
     };
 
@@ -202,6 +233,13 @@ function FlowEditorContent({ flow, onClose }) {
                     >
                         <Save className="h-4 w-4" />
                         Save Flow
+                    </button>
+                    <button
+                        onClick={handlePublish}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-sm transition-all"
+                    >
+                        <Zap className="h-4 w-4" />
+                        Publish
                     </button>
                 </div>
             </div>

@@ -94,6 +94,10 @@ function renderConfigForm(nodeType, config, updateConfig) {
             return <TemplateConfig config={config} updateConfig={updateConfig} />;
         case 'interactive':
             return <InteractiveListConfig config={config} updateConfig={updateConfig} />;
+        case 'handoff':
+            return <HandoffConfig config={config} updateConfig={updateConfig} />;
+        case 'end':
+            return <EndConfig config={config} updateConfig={updateConfig} />;
         default:
             return <DefaultConfig config={config} updateConfig={updateConfig} />;
     }
@@ -213,6 +217,64 @@ function TextMessageConfig({ config, updateConfig }) {
     );
 }
 
+function HandoffConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Handoff Reason</label>
+                <input
+                    type="text"
+                    value={config.reason || ''}
+                    onChange={(e) => updateConfig('reason', e.target.value)}
+                    placeholder="Customer needs a sales agent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Message Before Handoff</label>
+                <textarea
+                    value={config.message || ''}
+                    onChange={(e) => updateConfig('message', e.target.value)}
+                    placeholder="Thanks. I am connecting you with a sales agent."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                    type="checkbox"
+                    checked={config.summaryRequired !== false}
+                    onChange={(e) => updateConfig('summaryRequired', e.target.checked)}
+                />
+                Request n8n summary
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                    type="checkbox"
+                    checked={config.disableBotAfterHandoff !== false}
+                    onChange={(e) => updateConfig('disableBotAfterHandoff', e.target.checked)}
+                />
+                Disable bot after handoff
+            </label>
+        </div>
+    );
+}
+
+function EndConfig({ config, updateConfig }) {
+    return (
+        <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Final Message</label>
+            <textarea
+                value={config.message || ''}
+                onChange={(e) => updateConfig('message', e.target.value)}
+                placeholder="Optional message before ending the flow"
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500"
+            />
+        </div>
+    );
+}
+
 function MediaConfig({ config, updateConfig, nodeType }) {
     return (
         <div className="space-y-4">
@@ -297,6 +359,18 @@ function UserInputConfig({ config, updateConfig }) {
         <div className="space-y-4">
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Prompt Message (Optional)
+                </label>
+                <textarea
+                    value={config.question || ''}
+                    onChange={(e) => updateConfig('question', e.target.value)}
+                    placeholder="Leave empty if the previous Text Message already asks the question"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    rows={3}
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                     Input Type
                 </label>
                 <select
@@ -318,10 +392,18 @@ function UserInputConfig({ config, updateConfig }) {
                 <input
                     type="text"
                     value={config.saveToField || ''}
-                    onChange={(e) => updateConfig('saveToField', e.target.value)}
-                    placeholder="userResponse"
+                    onChange={(e) => {
+                        const cleaned = e.target.value
+                            .replace(/^\{\{\s*/, '')
+                            .replace(/\s*\}\}$/, '')
+                            .replace(/[^a-zA-Z0-9_]/g, '_')
+                            .toLowerCase();
+                        updateConfig('saveToField', cleaned);
+                    }}
+                    placeholder="name"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
+                <p className="mt-1 text-xs text-gray-500">Use a simple key like <span className="font-mono">name</span>. Later messages can use <span className="font-mono">{'{{name}}'}</span>.</p>
             </div>
         </div>
     );

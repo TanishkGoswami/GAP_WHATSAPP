@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap } from 'lucide-react';
+import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap, Activity, X } from 'lucide-react';
 import axios from 'axios';
 import FlowEditor from '../components/flow-builder/FlowEditor';
 import { useAuth } from '../context/AuthContext';
@@ -12,6 +12,9 @@ export default function FlowBuilder() {
     const [newFlowName, setNewFlowName] = useState('');
     const [newFlowDescription, setNewFlowDescription] = useState('');
     const [loading, setLoading] = useState(true);
+    const [runsModalFlow, setRunsModalFlow] = useState(null);
+    const [flowRuns, setFlowRuns] = useState([]);
+    const [runsLoading, setRunsLoading] = useState(false);
 
     const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -95,14 +98,37 @@ export default function FlowBuilder() {
     };
 
     const toggleFlowStatus = async (flow) => {
-        const newStatus = flow.status === 'active' ? 'draft' : 'active';
         try {
-            const res = await axios.put(`${API_URL}/api/flows/${flow.id}`, { status: newStatus }, {
+            if (flow.status === 'active') {
+                const res = await axios.put(`${API_URL}/api/flows/${flow.id}`, { status: 'paused' }, {
+                    headers: { 'Authorization': `Bearer ${session?.access_token}` }
+                });
+                setFlows(flows.map(f => f.id === flow.id ? res.data : f));
+            } else {
+                const res = await axios.post(`${API_URL}/api/flows/${flow.id}/publish`, {}, {
+                    headers: { 'Authorization': `Bearer ${session?.access_token}` }
+                });
+                setFlows(flows.map(f => f.id === flow.id ? res.data.flow : f));
+            }
+        } catch (error) {
+            const details = error?.response?.data?.validation?.errors || [error?.response?.data?.error || 'Failed to update status'];
+            alert(details.join('\n'));
+        }
+    };
+
+    const openRunsModal = async (flow) => {
+        setRunsModalFlow(flow);
+        setRunsLoading(true);
+        try {
+            const res = await axios.get(`${API_URL}/api/flows/${flow.id}/runs`, {
                 headers: { 'Authorization': `Bearer ${session?.access_token}` }
             });
-            setFlows(flows.map(f => f.id === flow.id ? res.data : f));
+            setFlowRuns(res.data || []);
         } catch (error) {
-            console.error('Failed to update status', error);
+            console.error('Failed to load flow runs:', error);
+            setFlowRuns([]);
+        } finally {
+            setRunsLoading(false);
         }
     };
 
@@ -246,10 +272,76 @@ export default function FlowBuilder() {
                                 <Edit2 className="h-4 w-4" />
                                 Edit Flow
                             </button>
+                            <button
+                                onClick={() => openRunsModal(flow)}
+                                className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center"
+                                title="Run logs"
+                            >
+                                <Activity className="h-4 w-4" />
+                            </button>
                         </div>
                     </div>
                 ))}
             </div>
+
+            {runsModalFlow && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                    <div className="w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-2xl">
+                        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                            <div>
+                                <h2 className="text-lg font-bold text-gray-900">Flow Runs</h2>
+                                <p className="text-sm text-gray-500">{runsModalFlow.name}</p>
+                            </div>
+                            <button
+                                onClick={() => { setRunsModalFlow(null); setFlowRuns([]); }}
+                                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <div className="max-h-[60vh] overflow-y-auto p-5">
+                            {runsLoading ? (
+                                <div className="py-10 text-center text-sm text-gray-500">Loading runs...</div>
+                            ) : flowRuns.length === 0 ? (
+                                <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
+                                    No runs yet. Send a matching WhatsApp keyword to trigger this flow.
+                                </div>
+                            ) : (
+                                <div className="overflow-hidden rounded-lg border border-gray-200">
+                                    <table className="min-w-full divide-y divide-gray-200 text-sm">
+                                        <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                                            <tr>
+                                                <th className="px-4 py-3 text-left font-semibold">Started</th>
+                                                <th className="px-4 py-3 text-left font-semibold">Status</th>
+                                                <th className="px-4 py-3 text-left font-semibold">Conversation</th>
+                                                <th className="px-4 py-3 text-left font-semibold">Error</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-gray-100 bg-white">
+                                            {flowRuns.map(run => (
+                                                <tr key={run.id}>
+                                                    <td className="px-4 py-3 text-gray-700">{run.started_at ? new Date(run.started_at).toLocaleString() : '-'}</td>
+                                                    <td className="px-4 py-3">
+                                                        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                                                            run.status === 'completed' ? 'bg-green-50 text-green-700' :
+                                                            run.status === 'failed' ? 'bg-red-50 text-red-700' :
+                                                            'bg-blue-50 text-blue-700'
+                                                        }`}>
+                                                            {run.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 font-mono text-xs text-gray-500">{run.conversation_id}</td>
+                                                    <td className="px-4 py-3 text-red-600">{run.error_message || '-'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Create Flow Modal */}
             {showCreateModal && (

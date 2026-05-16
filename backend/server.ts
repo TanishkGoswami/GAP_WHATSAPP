@@ -18,7 +18,7 @@ import makeWASocket, {
     proto,
 } from "@whiskeysockets/baileys";
 import * as fs from "fs";
-import { sendEmail } from "./email";
+import { sendEmail } from "./email.js";
 import pino from "pino";
 
 const app = express();
@@ -41,6 +41,7 @@ const corsAllowedHeaders = [
     "Content-Type",
     "Authorization",
     "X-Auth-Portal",
+    "X-N8N-Secret",
     "ngrok-skip-browser-warning"
 ];
 
@@ -73,6 +74,8 @@ const io = new Server(httpServer, {
 const PORT = Number(process.env.PORT || 3001);
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
 const GRAPH_API_VERSION = process.env.META_GRAPH_VERSION || 'v21.0';
+const N8N_HANDOFF_WEBHOOK_URL = process.env.N8N_HANDOFF_WEBHOOK_URL || '';
+const N8N_WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET || '';
 
 const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'wa-media';
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -1579,9 +1582,9 @@ async function performAutoAssignment(organization_id: string, conversation_id: s
         // 4. Update the conversation
         const { data: updatedConv, error: updErr } = await supabase
             .from('w_conversations')
-            .update({ assigned_agent_id: nextAgentId })
+            .update({ assigned_agent_id: nextAgentId, assigned_to: nextAgentId })
             .eq('id', conversation_id)
-            .select('assigned_agent_id')
+            .select('assigned_agent_id, assigned_to')
             .single();
         
         if (updErr) throw updErr;
@@ -1691,6 +1694,14 @@ async function storeMessage(params: {
     type: string;
     content: any;
     status: "sent" | "delivered" | "read" | "failed";
+    is_bot_reply?: boolean;
+    bot_agent_id?: string | null;
+    sender_type?: "customer" | "human_agent" | "ai_agent" | "system";
+    sender_user_id?: string | null;
+    is_internal_note?: boolean;
+    automation_source?: "flow" | "ai_agent" | "broadcast" | "manual" | "webhook" | "n8n" | "system" | null;
+    handoff_triggered?: boolean;
+    metadata?: any;
 }) {
     const textBody = typeof params.content?.text === 'string' ? params.content.text : null;
     const mediaUrl = typeof params.content?.media_url === 'string' ? params.content.media_url : null;
@@ -1698,6 +1709,20 @@ async function storeMessage(params: {
     const mediaSize = Number.isFinite(Number(params.content?.size)) ? Number(params.content.size) : null;
     const durationSeconds = Number.isFinite(Number(params.content?.duration_seconds)) ? Number(params.content.duration_seconds) : null;
     const waveform = params.content?.waveform ?? null;
+    const isBotReply = params.is_bot_reply === true
+        || params.content?.is_bot_reply === true
+        || params.content?.is_flow === true
+        || !!params.bot_agent_id
+        || !!params.content?.bot_agent_id;
+    const botAgentId = params.bot_agent_id || params.content?.bot_agent_id || null;
+    const senderType = params.sender_type
+        || (params.is_internal_note ? 'system' : null)
+        || (params.direction === 'inbound' ? 'customer' : null)
+        || (isBotReply ? 'ai_agent' : 'human_agent');
+    const automationSource = params.automation_source
+        || (params.content?.is_flow ? 'flow' : null)
+        || (isBotReply ? 'ai_agent' : null)
+        || (params.direction === 'outbound' ? 'manual' : 'webhook');
 
     const payload = {
         organization_id: params.organization_id,
@@ -1714,6 +1739,14 @@ async function storeMessage(params: {
         duration_seconds: durationSeconds,
         waveform,
         status: params.status,
+        is_bot_reply: isBotReply,
+        bot_agent_id: botAgentId,
+        sender_type: senderType,
+        sender_user_id: params.sender_user_id || null,
+        is_internal_note: params.is_internal_note === true,
+        automation_source: automationSource,
+        handoff_triggered: params.handoff_triggered === true,
+        metadata: params.metadata || {},
     };
 
     // During history sync Baileys can deliver the same WA message again.
@@ -1784,7 +1817,10 @@ async function getBotAgentReply(params: {
 
         if (convErr) throw convErr;
 
-        // If no bot enabled for this conversation, check for globally active bots
+        // Per-chat toggle disables only AI-agent fallback. Flow Builder still runs first.
+        if (conv?.bot_enabled === false) return null;
+
+        // If no specific bot is selected for this conversation, check workspace bot rules.
         let targetAgent = null;
 
         if (conv?.bot_enabled && conv?.assigned_bot_id) {
@@ -1909,32 +1945,285 @@ async function getBotAgentReply(params: {
     }
 }
 
+const SUPPORTED_FLOW_NODE_TYPES = new Set([
+    'startBotFlow',
+    'textMessage',
+    'button',
+    'userInput',
+    'condition',
+    'image',
+    'video',
+    'audio',
+    'file',
+    'location',
+    'handoff',
+    'end',
+]);
+
+type FlowEngineResult = {
+    consumed: boolean;
+    output: string | null;
+    interactive?: any;
+    handoff?: boolean;
+    flow_id?: string | null;
+    flow_version_id?: string | null;
+    flow_session_id?: string | null;
+    flow_run_id?: string | null;
+    flow_node_id?: string | null;
+};
+
+function parseFlowKeywords(value: any): string[] {
+    if (Array.isArray(value)) {
+        return value.map((v) => String(v || '').trim()).filter(Boolean);
+    }
+    if (typeof value === 'string') {
+        return value.split(',').map((v) => v.trim()).filter(Boolean);
+    }
+    return [];
+}
+
+function getFlowTriggerKeywords(flow: any, nodesOverride?: any[]): string[] {
+    const nodes = Array.isArray(nodesOverride) ? nodesOverride : (Array.isArray(flow?.nodes) ? flow.nodes : []);
+    const startNode = nodes.find((n: any) => n?.type === 'startBotFlow');
+    return [...new Set([
+        ...parseFlowKeywords(flow?.trigger_keywords),
+        ...parseFlowKeywords(flow?.triggers),
+        ...parseFlowKeywords(startNode?.data?.config?.keywords),
+    ])];
+}
+
+function normalizeFlowVariableKey(value: any) {
+    return String(value || '')
+        .trim()
+        .replace(/^\{\{\s*/, '')
+        .replace(/\s*\}\}$/, '')
+        .trim()
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .replace(/^_+|_+$/g, '')
+        .toLowerCase();
+}
+
+function renderFlowTemplate(value: any, state: any = {}) {
+    return String(value || '').replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, rawKey) => {
+        const key = normalizeFlowVariableKey(rawKey);
+        const foundKey = Object.keys(state || {}).find((candidate) => normalizeFlowVariableKey(candidate) === key);
+        const replacement = foundKey ? state[foundKey] : state?.[key];
+        return replacement == null ? '' : String(replacement);
+    });
+}
+
+function validateFlowDefinition(flow: any) {
+    const errors: string[] = [];
+    const nodes: any[] = Array.isArray(flow?.nodes) ? flow.nodes : [];
+    const edges: any[] = Array.isArray(flow?.edges) ? flow.edges : [];
+    const nodeIds = new Set(nodes.map((n) => n?.id).filter(Boolean));
+    const startNodes = nodes.filter((n) => n?.type === 'startBotFlow');
+
+    if (startNodes.length !== 1) errors.push('Flow must have exactly one Start Bot Flow node.');
+    if (nodes.length === 0) errors.push('Flow must contain at least one node.');
+
+    for (const node of nodes) {
+        if (!SUPPORTED_FLOW_NODE_TYPES.has(node?.type)) {
+            errors.push(`Unsupported node "${node?.type || 'unknown'}" is not available in Phase 1.`);
+        }
+        const config = node?.data?.config || {};
+        if (node?.type === 'textMessage' && !String(config.message || config.text || '').trim()) {
+            errors.push('Text Message node must have message text.');
+        }
+        if (node?.type === 'button') {
+            const buttons = Array.isArray(config.buttons) ? config.buttons.filter((b: any) => String(b?.text || '').trim()) : [];
+            if (buttons.length === 0) errors.push('Button node must have at least one button.');
+            if (buttons.length > 3) errors.push('Button node can have maximum 3 WhatsApp buttons.');
+        }
+        if (node?.type === 'userInput' && !String(config.saveToField || '').trim()) {
+            errors.push('User Input node must save the answer to a field.');
+        }
+        if (node?.type === 'condition' && (!config.variable || !config.operator || !config.value)) {
+            errors.push('Condition node must have variable, operator, and value.');
+        }
+    }
+
+    if (startNodes.length === 1) {
+        const keywords = getFlowTriggerKeywords(flow, nodes);
+        if ((flow?.trigger_type || 'keyword') === 'keyword' && keywords.length === 0) {
+            errors.push('Start node must have trigger keywords.');
+        }
+    }
+
+    for (const edge of edges) {
+        if (!nodeIds.has(edge?.source) || !nodeIds.has(edge?.target)) {
+            errors.push('Flow has a broken connection.');
+            break;
+        }
+    }
+
+    if (startNodes.length === 1) {
+        const reachable = new Set<string>();
+        const stack = [startNodes[0].id];
+        while (stack.length) {
+            const id = stack.pop();
+            if (!id || reachable.has(id)) continue;
+            reachable.add(id);
+            edges.filter((e) => e.source === id).forEach((e) => stack.push(e.target));
+        }
+        const unreachable = nodes.filter((n) => n?.id && !reachable.has(n.id));
+        if (unreachable.length > 0) errors.push(`${unreachable.length} node(s) are not connected to the Start node.`);
+    }
+
+    return { valid: errors.length === 0, errors };
+}
+
+async function logFlowStep(params: {
+    organization_id: string;
+    run_id?: string | null;
+    node_id: string;
+    node_type: string;
+    input_data?: any;
+    output_data?: any;
+    status?: 'success' | 'failed' | 'skipped' | 'waiting';
+    error_message?: string | null;
+}) {
+    if (!params.run_id) return;
+    try {
+        await supabase.from('w_flow_run_steps').insert({
+            organization_id: params.organization_id,
+            run_id: params.run_id,
+            node_id: params.node_id,
+            node_type: params.node_type,
+            input_data: params.input_data || {},
+            output_data: params.output_data || {},
+            status: params.status || 'success',
+            error_message: params.error_message || null,
+        });
+    } catch (err: any) {
+        console.warn('[Flow] Step log failed:', err?.message || err);
+    }
+}
+
+async function triggerHandoffWebhook(params: {
+    organization_id: string;
+    conversation_id: string;
+    contact_id: string;
+    flow_id?: string | null;
+    flow_version_id?: string | null;
+    flow_session_id?: string | null;
+    flow_run_id?: string | null;
+    flow_node_id?: string | null;
+    handoff_reason?: string | null;
+    summary_required?: boolean;
+    state_data?: any;
+    selected_text?: string | null;
+    trigger_message_id?: string | null;
+}) {
+    if (!N8N_HANDOFF_WEBHOOK_URL || params.summary_required === false) return;
+
+    try {
+        const { data: conversation } = await supabase
+            .from('w_conversations')
+            .select('id, assigned_agent_id, assigned_to, handoff_status, summary_status, last_message_at')
+            .eq('id', params.conversation_id)
+            .eq('organization_id', params.organization_id)
+            .maybeSingle();
+
+        const { data: contact } = await supabase
+            .from('w_contacts')
+            .select('id, name, custom_name, phone, wa_id, custom_fields')
+            .eq('id', params.contact_id)
+            .eq('organization_id', params.organization_id)
+            .maybeSingle();
+
+        const { data: recentRows } = await supabase
+            .from('w_messages')
+            .select('id, direction, sender_type, automation_source, text_body, content, created_at')
+            .eq('organization_id', params.organization_id)
+            .eq('conversation_id', params.conversation_id)
+            .order('created_at', { ascending: false })
+            .limit(50);
+
+        const messages = (recentRows || []).reverse().map((message: any) => ({
+            id: message.id,
+            direction: message.direction,
+            sender_type: message.sender_type,
+            automation_source: message.automation_source,
+            text: message.text_body || message.content?.text || message.content?.body || '',
+            created_at: message.created_at,
+        }));
+
+        const payload = {
+            event: 'flow_handoff_requested',
+            organization_id: params.organization_id,
+            conversation_id: params.conversation_id,
+            contact_id: params.contact_id,
+            flow_id: params.flow_id || null,
+            flow_version_id: params.flow_version_id || null,
+            flow_session_id: params.flow_session_id || null,
+            flow_run_id: params.flow_run_id || null,
+            flow_node_id: params.flow_node_id || null,
+            trigger_message_id: params.trigger_message_id || null,
+            selected_text: params.selected_text || null,
+            handoff_reason: params.handoff_reason || 'Flow requested human handoff',
+            state_data: params.state_data || {},
+            summary_required: true,
+            callback_url: `${PUBLIC_BASE_URL}/api/n8n/conversations/${params.conversation_id}/summary`,
+            contact,
+            conversation,
+            messages,
+            created_at: new Date().toISOString(),
+        };
+
+        const response = await fetch(N8N_HANDOFF_WEBHOOK_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(N8N_WEBHOOK_SECRET ? { 'X-N8N-Secret': N8N_WEBHOOK_SECRET } : {}),
+            },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const body = await response.text().catch(() => '');
+            throw new Error(`HTTP ${response.status} ${body}`.trim());
+        }
+    } catch (err: any) {
+        console.error('[n8n] Handoff webhook failed:', err?.message || err);
+        await supabase
+            .from('w_conversations')
+            .update({
+                summary_status: 'failed',
+            })
+            .eq('id', params.conversation_id)
+            .eq('organization_id', params.organization_id);
+    }
+}
+
 // ====== Helper: Process Flow Engine ======
-async function processFlowEngine(organization_id: string, contact_id: string, conversation_id: string, text: string): Promise<{consumed: boolean, output: string | null, interactive?: any}> {
+async function processFlowEngine(organization_id: string, contact_id: string, conversation_id: string, text: string, triggerMessageId?: string | null): Promise<FlowEngineResult> {
     const normalized = text.toLowerCase().trim();
 
-    // 0. Respect Bot Toggle
-    const { data: conv } = await supabase.from('w_conversations').select('bot_enabled').eq('id', conversation_id).single();
-    if (conv?.bot_enabled === false) return { consumed: false, output: null };
+    // Flow Builder has priority and is independent from the per-chat AI-agent toggle.
 
     // 1. Check for active session
     const { data: session } = await supabase
         .from('w_flow_sessions')
         .select('*')
         .eq('organization_id', organization_id)
-        .eq('contact_id', contact_id)
-        .eq('status', 'active')
+        .eq('conversation_id', conversation_id)
+        .in('status', ['active', 'waiting'])
         .maybeSingle();
 
-    let currentFlowId = null;
-    let currentNodeId = null;
-    let session_id = null;
+    let currentFlowId: string | null = null;
+    let currentNodeId: string | null = null;
+    let session_id: string | null = null;
+    let currentFlowVersionId: string | null = null;
+    let run_id: string | null = null;
     let isResuming = false;
 
     if (session) {
         currentFlowId = session.flow_id;
+        currentFlowVersionId = session.flow_version_id || null;
         currentNodeId = session.current_node_id;
         session_id = session.id;
+        run_id = session.active_run_id || null;
         isResuming = true;
     } else {
         // 2. Check for trigger matches in active flows
@@ -1945,27 +2234,55 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             .eq('status', 'active');
 
         let matchedFlow = null;
+        let matchedVersion = null;
         for (const flow of activeFlows || []) {
-            // Check flow-level triggers AND startBotFlow node keywords
-            const flowTriggers = flow.triggers || [];
-            const nodes = flow.nodes || [];
-            const startNode = nodes.find((n: any) => n.type === 'startBotFlow');
-            const nodeTriggers = startNode?.data?.config?.keywords
-                ? String(startNode.data.config.keywords).split(',').map((k: string) => k.trim()).filter(Boolean)
-                : [];
-            const allTriggers = [...new Set([...flowTriggers, ...nodeTriggers])];
+            let version = null;
+            if (flow.current_version_id) {
+                const { data } = await supabase
+                    .from('w_flow_versions')
+                    .select('*')
+                    .eq('id', flow.current_version_id)
+                    .maybeSingle();
+                version = data;
+            }
+            const nodes = version?.nodes || flow.nodes || [];
+            const allTriggers = getFlowTriggerKeywords(version || flow, nodes);
 
             if (allTriggers.some((t: string) => normalized.includes(t.toLowerCase()))) {
                 matchedFlow = flow;
+                matchedVersion = version;
                 break;
             }
         }
 
-        if (!matchedFlow) return { consumed: false, output: null }; // Pass to AI Agent if no flow triggers
+        if (!matchedFlow) {
+            console.log('[Flow] No active flow matched; AI fallback may run', {
+                organization_id,
+                conversation_id,
+                text: normalized,
+                active_flow_count: activeFlows?.length || 0,
+                triggers: (activeFlows || []).map((flow: any) => ({
+                    id: flow.id,
+                    name: flow.name,
+                    trigger_keywords: flow.trigger_keywords,
+                    triggers: flow.triggers,
+                })),
+            });
+            return { consumed: false, output: null };
+        }
+
+        console.log('[Flow] Matched active flow', {
+            organization_id,
+            conversation_id,
+            flow_id: matchedFlow.id,
+            flow_name: matchedFlow.name,
+            flow_version_id: matchedVersion?.id || matchedFlow.current_version_id || null,
+        });
 
         currentFlowId = matchedFlow.id;
+        currentFlowVersionId = matchedVersion?.id || matchedFlow.current_version_id || null;
         // Find start node
-        const nodes = matchedFlow.nodes || [];
+        const nodes = matchedVersion?.nodes || matchedFlow.nodes || [];
         const startNode = nodes.find((n: any) => n.type === 'startBotFlow');
         if (!startNode) return { consumed: false, output: null };
 
@@ -1976,8 +2293,10 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             .from('w_flow_sessions')
             .insert({
                 organization_id,
+                conversation_id,
                 contact_id,
                 flow_id: currentFlowId,
+                flow_version_id: currentFlowVersionId,
                 current_node_id: currentNodeId,
                 status: 'active',
                 state_data: {}
@@ -1993,18 +2312,41 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
                     .from('w_flow_sessions')
                     .select('*')
                     .eq('organization_id', organization_id)
-                    .eq('contact_id', contact_id)
-                    .eq('status', 'active')
+                    .eq('conversation_id', conversation_id)
+                    .in('status', ['active', 'waiting'])
                     .maybeSingle();
                 if (existingSession) {
                     currentFlowId = existingSession.flow_id;
+                    currentFlowVersionId = existingSession.flow_version_id || currentFlowVersionId;
                     currentNodeId = existingSession.current_node_id;
                     session_id = existingSession.id;
+                    run_id = existingSession.active_run_id || null;
                     isResuming = true;
                 }
             }
         } else if (newSession) {
             session_id = newSession.id;
+        }
+
+        if (!run_id) {
+            const { data: newRun } = await supabase
+                .from('w_flow_runs')
+                .insert({
+                    organization_id,
+                    conversation_id,
+                    contact_id,
+                    flow_id: currentFlowId,
+                    flow_version_id: currentFlowVersionId,
+                    session_id,
+                    trigger_message_id: triggerMessageId || null,
+                    status: 'running',
+                })
+                .select('id')
+                .maybeSingle();
+            run_id = newRun?.id || null;
+            if (session_id && run_id) {
+                await supabase.from('w_flow_sessions').update({ active_run_id: run_id }).eq('id', session_id);
+            }
         }
 
         console.log(`🆕 New flow session created: ${session_id}, starting at node: ${currentNodeId}`);
@@ -2015,16 +2357,40 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
     }
 
     // Flow data load karo
-    const { data: flowData } = await supabase
-        .from('w_flows')
-        .select('nodes, edges')
-        .eq('id', currentFlowId)
-        .single();
+    let flowData = null;
+    if (currentFlowVersionId) {
+        const { data } = await supabase
+            .from('w_flow_versions')
+            .select('nodes, edges')
+            .eq('id', currentFlowVersionId)
+            .maybeSingle();
+        flowData = data;
+    }
+    if (!flowData) {
+        const { data } = await supabase
+            .from('w_flows')
+            .select('nodes, edges')
+            .eq('id', currentFlowId)
+            .single();
+        flowData = data;
+    }
 
     if (!flowData) return { consumed: true, output: null };
 
     const nodes: any[] = flowData.nodes || [];
     const edges: any[] = flowData.edges || [];
+    const { data: latestSessionState } = await supabase
+        .from('w_flow_sessions')
+        .select('state_data')
+        .eq('id', session_id)
+        .maybeSingle();
+    let flowState = latestSessionState?.state_data || session?.state_data || {};
+    const flowMeta = {
+        flow_id: currentFlowId,
+        flow_version_id: currentFlowVersionId,
+        flow_session_id: session_id,
+        flow_run_id: run_id,
+    };
 
     // ----------------------------------------------------------------
     // RESUMING: User ne button click kiya ya kuch type kiya
@@ -2034,6 +2400,14 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
         const currentNode = nodes.find((n: any) => n.id === currentNodeId);
 
         if (currentNode?.type === 'button' || currentNode?.type === 'userInput') {
+            if (currentNode.type === 'userInput') {
+                const saveToField = normalizeFlowVariableKey(currentNode.data?.config?.saveToField);
+                if (saveToField) {
+                    const nextState = { ...(session?.state_data || {}), [saveToField]: text };
+                    await supabase.from('w_flow_sessions').update({ state_data: nextState }).eq('id', session_id);
+                    flowState = nextState;
+                }
+            }
             // User ka response match karo outgoing edges se
             const outEdges = edges.filter((e: any) => e.source === currentNodeId);
             let nextEdge: any = null;
@@ -2041,8 +2415,13 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             if (outEdges.length === 1) {
                 nextEdge = outEdges[0];
             } else if (outEdges.length > 1) {
+                const buttons = currentNode?.data?.config?.buttons || [];
+                const matchedButtonIndex = buttons.findIndex((b: any) => String(b?.text || '').trim().toLowerCase() === normalized);
+                if (matchedButtonIndex >= 0) {
+                    nextEdge = outEdges.find((e: any) => e.sourceHandle === `button-${matchedButtonIndex}`);
+                }
                 // Button ID, title, ya label se match karo
-                nextEdge = outEdges.find((e: any) => {
+                nextEdge = nextEdge || outEdges.find((e: any) => {
                     const handle = (e.sourceHandle || '').toLowerCase();
                     const label = (e.label || '').toLowerCase();
                     return handle === normalized || label === normalized || normalized.includes(handle);
@@ -2061,8 +2440,9 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
                 console.log(`➡️ Advancing to node: ${currentNodeId}`);
             } else {
                 // Koi edge nahi — flow complete
-                await supabase.from('w_flow_sessions').update({ status: 'completed' }).eq('id', session_id);
-                return { consumed: true, output: null };
+                await supabase.from('w_flow_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', session_id);
+                if (run_id) await supabase.from('w_flow_runs').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', run_id);
+                return { consumed: true, output: null, ...flowMeta };
             }
         }
     }
@@ -2080,17 +2460,25 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
         const config = activeNode.data?.config || {};
 
         console.log(`⚙️ Executing node: ${nodeType} (${activeNode.id})`);
+        await logFlowStep({
+            organization_id,
+            run_id,
+            node_id: activeNode.id,
+            node_type: nodeType,
+            input_data: { text },
+            status: nodeType === 'button' || nodeType === 'userInput' ? 'waiting' : 'success',
+        });
 
         // --- TEXT MESSAGE ---
         if (nodeType === 'textMessage') {
             const msg = config.message || config.text || activeNode.data?.label || '';
-            if (msg) outputText.push(msg);
+            if (msg) outputText.push(renderFlowTemplate(msg, flowState));
         }
 
         // --- BUTTON NODE ---
         else if (nodeType === 'button') {
-            const body = config.text || config.headerText || 'Choose an option:';
-            const footer = config.footerText || '';
+            const body = renderFlowTemplate(config.text || config.headerText || 'Choose an option:', flowState);
+            const footer = renderFlowTemplate(config.footerText || '', flowState);
             const buttons = (config.buttons || [])
                 .filter((b: any) => b.text)
                 .slice(0, 3);
@@ -2102,6 +2490,8 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
                 return {
                     consumed: true,
                     output: outputText.length > 0 ? outputText.join('\n\n') : null,
+                    ...flowMeta,
+                    flow_node_id: activeNode.id,
                     interactive: {
                         type: 'button',
                         body,
@@ -2115,17 +2505,17 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             } else {
                 // Buttons nahi hain toh text fallback
                 outputText.push(body);
-                return { consumed: true, output: outputText.join('\n\n') };
+                return { consumed: true, output: outputText.join('\n\n'), ...flowMeta, flow_node_id: activeNode.id };
             }
         }
 
         // --- USER INPUT NODE ---
         else if (nodeType === 'userInput') {
-            const question = config.question || config.text || 'Please reply:';
-            outputText.push(question);
+            const question = renderFlowTemplate(config.question || config.text || '', flowState);
+            if (question) outputText.push(question);
             // Session save karo
             await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
-            return { consumed: true, output: outputText.join('\n\n') };
+            return { consumed: true, output: outputText.join('\n\n'), ...flowMeta, flow_node_id: activeNode.id };
         }
 
         // --- CONDITION NODE ---
@@ -2188,12 +2578,50 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
         }
 
         // Automatic advance — next edge dhundo
+        if (nodeType === 'handoff') {
+            const handoffMessage = config.message || config.label || activeNode.data?.label || '';
+            const conversationPatch: any = {
+                handoff_status: 'handoff_requested',
+                handoff_reason: config.reason || 'Flow requested human handoff',
+                handoff_requested_at: new Date().toISOString(),
+                summary_status: config.summaryRequired === false ? 'not_started' : 'pending',
+            };
+            if (config.disableBotAfterHandoff !== false) conversationPatch.bot_enabled = false;
+            await supabase.from('w_conversations').update(conversationPatch).eq('id', conversation_id);
+            await supabase.from('w_flow_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', session_id);
+            if (run_id) await supabase.from('w_flow_runs').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', run_id);
+            triggerHandoffWebhook({
+                organization_id,
+                conversation_id,
+                contact_id,
+                flow_id: flowMeta.flow_id,
+                flow_version_id: flowMeta.flow_version_id,
+                flow_session_id: flowMeta.flow_session_id,
+                flow_run_id: flowMeta.flow_run_id,
+                flow_node_id: activeNode.id,
+                handoff_reason: conversationPatch.handoff_reason,
+                summary_required: config.summaryRequired !== false,
+                state_data: flowState,
+                selected_text: text,
+                trigger_message_id: triggerMessageId || null,
+            }).catch((err) => console.error('[n8n] Handoff webhook failed:', err?.message || err));
+            return { consumed: true, output: renderFlowTemplate(handoffMessage, flowState) || null, handoff: true, ...flowMeta, flow_node_id: activeNode.id };
+        }
+
+        if (nodeType === 'end') {
+            await supabase.from('w_flow_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', session_id);
+            if (run_id) await supabase.from('w_flow_runs').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', run_id);
+            const finalMessage = config.message ? renderFlowTemplate(config.message, flowState) : null;
+            return { consumed: true, output: finalMessage || (outputText.length > 0 ? outputText.join('\n\n') : null), ...flowMeta, flow_node_id: activeNode.id };
+        }
+
         const nextEdge = edges.find((e: any) => e.source === activeNode.id);
         if (nextEdge) {
             activeNode = nodes.find((n: any) => n.id === nextEdge.target);
         } else {
             // Flow khatam
-            await supabase.from('w_flow_sessions').update({ status: 'completed' }).eq('id', session_id);
+            await supabase.from('w_flow_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', session_id);
+            if (run_id) await supabase.from('w_flow_runs').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', run_id);
             console.log(`✅ Flow completed for session ${session_id}`);
             activeNode = null;
         }
@@ -2201,7 +2629,8 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
 
     return {
         consumed: true,
-        output: outputText.length > 0 ? outputText.join('\n\n') : null
+        output: outputText.length > 0 ? outputText.join('\n\n') : null,
+        ...flowMeta
     };
 }
 
@@ -2422,7 +2851,7 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
 
         // ROLE BASED FILTERING (Step 2G)
         if (user_role === 'agent') {
-            query = query.eq('assigned_to', user_id);
+            query = query.eq('assigned_agent_id', user_id);
         }
 
         if (wa_account_id && wa_account_id !== 'All') {
@@ -2541,7 +2970,7 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
                             }
                         })
                         .eq('id', next.contact.id)
-                        .then(({ error }) => {
+                        .then(({ error }: { error: any }) => {
                             if (error) console.warn('Failed to persist profile photo URL:', error.message);
                         });
                 }
@@ -3496,39 +3925,217 @@ app.get("/api/dashboard-stats", authMiddleware, async (req: any, res) => {
 });
 
 // ====== Flow Builder API ======
-app.get('/api/flows', async (req, res) => {
-    const orgId = req.query.organization_id as string || await ensureDefaultOrganizationId();
+app.get('/api/flows', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
     try {
-        const { data, error } = await supabase.from('w_flows').select('*').eq('organization_id', orgId).order('created_at', { ascending: false });
+        const { data, error } = await supabase
+            .from('w_flows')
+            .select('*')
+            .eq('organization_id', orgId)
+            .neq('status', 'archived')
+            .order('updated_at', { ascending: false });
         if (error) throw error;
         res.json(data || []);
     } catch(e: any) { res.status(500).json({error: e.message}); }
 });
 
-app.post('/api/flows', async (req, res) => {
-    const orgId = req.query.organization_id as string || await ensureDefaultOrganizationId();
+app.get('/api/flows/:id', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
     try {
-        const payload = { ...req.body, organization_id: orgId };
+        const { data, error } = await supabase
+            .from('w_flows')
+            .select('*')
+            .eq('id', req.params.id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Flow not found' });
+        res.json(data);
+    } catch(e: any) { res.status(500).json({error: e.message}); }
+});
+
+app.post('/api/flows', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    try {
+        const nodes = Array.isArray(req.body?.nodes) ? req.body.nodes : [];
+        const triggerKeywords = getFlowTriggerKeywords({ ...req.body, nodes }, nodes);
+        const payload = {
+            name: String(req.body?.name || '').trim(),
+            description: req.body?.description || null,
+            status: req.body?.status === 'active' ? 'draft' : (req.body?.status || 'draft'),
+            trigger_type: req.body?.trigger_type || 'keyword',
+            trigger_keywords: triggerKeywords,
+            triggers: triggerKeywords,
+            nodes,
+            edges: Array.isArray(req.body?.edges) ? req.body.edges : [],
+            organization_id: orgId,
+            created_by_user_id: req.user?.id || null,
+            updated_by_user_id: req.user?.id || null,
+        };
+        if (!payload.name) return res.status(400).json({ error: 'Flow name is required' });
         const { data, error } = await supabase.from('w_flows').insert(payload).select().single();
         if (error) throw error;
         res.status(201).json(data);
     } catch(e: any) { res.status(500).json({error: e.message}); }
 });
 
-app.put('/api/flows/:id', async (req, res) => {
+app.put('/api/flows/:id', authMiddleware, async (req: any, res) => {
     const { id } = req.params;
+    const orgId = req.organization_id;
     try {
-        const { id: _, created_at, ...updateData } = req.body;
+        const updateData: any = {};
+        if (req.body.name !== undefined) updateData.name = String(req.body.name || '').trim();
+        if (req.body.description !== undefined) updateData.description = req.body.description || null;
+        if (req.body.nodes !== undefined) updateData.nodes = Array.isArray(req.body.nodes) ? req.body.nodes : [];
+        if (req.body.edges !== undefined) updateData.edges = Array.isArray(req.body.edges) ? req.body.edges : [];
+        if (req.body.trigger_type !== undefined) updateData.trigger_type = req.body.trigger_type || 'keyword';
+        if (req.body.status !== undefined && ['draft', 'paused', 'archived'].includes(req.body.status)) updateData.status = req.body.status;
+        if (updateData.nodes !== undefined || req.body.triggers !== undefined || req.body.trigger_keywords !== undefined) {
+            const nodes = updateData.nodes !== undefined ? updateData.nodes : req.body.nodes;
+            const triggerKeywords = getFlowTriggerKeywords({ ...req.body, nodes }, nodes);
+            updateData.trigger_keywords = triggerKeywords;
+            updateData.triggers = triggerKeywords;
+        }
         updateData.updated_at = new Date().toISOString();
-        const { data, error } = await supabase.from('w_flows').update(updateData).eq('id', id).select().single();
+        updateData.updated_by_user_id = req.user?.id || null;
+
+        const { data, error } = await supabase
+            .from('w_flows')
+            .update(updateData)
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .select()
+            .maybeSingle();
         if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Flow not found' });
         res.json(data);
     } catch(e: any) { res.status(500).json({error: e.message}); }
 });
 
-app.delete('/api/flows/:id', async (req, res) => {
+app.post('/api/flows/:id/validate', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
     try {
-        await supabase.from('w_flows').delete().eq('id', req.params.id);
+        const { data: flow, error } = await supabase
+            .from('w_flows')
+            .select('*')
+            .eq('id', req.params.id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (error) throw error;
+        if (!flow) return res.status(404).json({ error: 'Flow not found' });
+        res.json(validateFlowDefinition(flow));
+    } catch(e: any) { res.status(500).json({error: e.message}); }
+});
+
+app.post('/api/flows/:id/publish', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    try {
+        const { data: flow, error } = await supabase
+            .from('w_flows')
+            .select('*')
+            .eq('id', req.params.id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (error) throw error;
+        if (!flow) return res.status(404).json({ error: 'Flow not found' });
+
+        const validation = validateFlowDefinition(flow);
+        if (!validation.valid) return res.status(400).json({ error: 'Flow validation failed', validation });
+
+        const { data: latestVersion } = await supabase
+            .from('w_flow_versions')
+            .select('version_number')
+            .eq('flow_id', flow.id)
+            .order('version_number', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        const versionNumber = Number(latestVersion?.version_number || 0) + 1;
+        const triggerKeywords = getFlowTriggerKeywords(flow, flow.nodes || []);
+
+        const { data: version, error: versionErr } = await supabase
+            .from('w_flow_versions')
+            .insert({
+                organization_id: orgId,
+                flow_id: flow.id,
+                version_number: versionNumber,
+                nodes: flow.nodes || [],
+                edges: flow.edges || [],
+                trigger_type: flow.trigger_type || 'keyword',
+                trigger_keywords: triggerKeywords,
+                status: 'published',
+                validation_errors: [],
+                published_by_user_id: req.user?.id || null,
+            })
+            .select()
+            .single();
+        if (versionErr) throw versionErr;
+
+        const { data: updated, error: updateErr } = await supabase
+            .from('w_flows')
+            .update({
+                status: 'active',
+                current_version_id: version.id,
+                trigger_keywords: triggerKeywords,
+                triggers: triggerKeywords,
+                updated_at: new Date().toISOString(),
+                updated_by_user_id: req.user?.id || null,
+            })
+            .eq('id', flow.id)
+            .eq('organization_id', orgId)
+            .select()
+            .single();
+        if (updateErr) throw updateErr;
+
+        res.json({ success: true, flow: updated, version });
+    } catch(e: any) { res.status(500).json({error: e.message}); }
+});
+
+app.get('/api/flows/:id/runs', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    try {
+        const { data, error } = await supabase
+            .from('w_flow_runs')
+            .select('*')
+            .eq('organization_id', orgId)
+            .eq('flow_id', req.params.id)
+            .order('started_at', { ascending: false })
+            .limit(50);
+        if (error) throw error;
+        res.json(data || []);
+    } catch(e: any) { res.status(500).json({error: e.message}); }
+});
+
+app.get('/api/flow-runs/:id', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    try {
+        const { data: run, error } = await supabase
+            .from('w_flow_runs')
+            .select('*')
+            .eq('organization_id', orgId)
+            .eq('id', req.params.id)
+            .maybeSingle();
+        if (error) throw error;
+        if (!run) return res.status(404).json({ error: 'Flow run not found' });
+        const { data: steps, error: stepErr } = await supabase
+            .from('w_flow_run_steps')
+            .select('*')
+            .eq('organization_id', orgId)
+            .eq('run_id', run.id)
+            .order('started_at', { ascending: true });
+        if (stepErr) throw stepErr;
+        res.json({ ...run, steps: steps || [] });
+    } catch(e: any) { res.status(500).json({error: e.message}); }
+});
+
+app.delete('/api/flows/:id', authMiddleware, async (req: any, res) => {
+    try {
+        const { error } = await supabase
+            .from('w_flows')
+            .update({ status: 'archived', archived_at: new Date().toISOString() })
+            .eq('id', req.params.id)
+            .eq('organization_id', req.organization_id);
+        if (error) throw error;
         res.json({success: true});
     } catch(e: any) { res.status(500).json({error: e.message}); }
 });
@@ -3700,9 +4307,10 @@ app.delete('/api/agents/:id', authMiddleware, async (req: any, res) => {
     }
 });
 
-// Toggle bot for a specific conversation
-app.patch('/api/conversations/:id/bot', async (req, res) => {
+// Toggle AI-agent fallback for a specific conversation. Flow Builder remains active.
+app.patch('/api/conversations/:id/bot', authMiddleware, async (req: any, res) => {
     const { id } = req.params;
+    const orgId = req.organization_id;
     const { bot_enabled, assigned_bot_id } = req.body;
 
     try {
@@ -3718,13 +4326,14 @@ app.patch('/api/conversations/:id/bot', async (req, res) => {
             .from('w_conversations')
             .update(updateData)
             .eq('id', id)
+            .eq('organization_id', orgId)
             .select('id, bot_enabled, assigned_bot_id')
-            .single();
+            .maybeSingle();
 
         if (error) throw error;
         if (!data) return res.status(404).json({ error: 'Conversation not found' });
 
-        io.emit('conversation_bot_updated', { conversation_id: id, ...data });
+        io.to(`org:${orgId}`).emit('conversation_bot_updated', { conversation_id: id, ...data });
         res.json(data);
     } catch (err: any) {
         console.error('Error updating conversation bot settings:', err);
@@ -3910,6 +4519,120 @@ app.get("/api/messages/:conversationId", authMiddleware, async (req: any, res) =
     } catch (err: any) {
         console.error("Error fetching messages:", err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/conversations/:id/summary', authMiddleware, async (req: any, res) => {
+    const conversationId = req.params.id;
+    const orgId = req.organization_id;
+    try {
+        const { data: conversation, error: convErr } = await supabase
+            .from('w_conversations')
+            .select('id, handoff_status, handoff_reason, handoff_requested_at, summary_status, latest_summary_id')
+            .eq('id', conversationId)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+        if (convErr) throw convErr;
+        if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+
+        const { data: summary, error: summaryErr } = await supabase
+            .from('w_conversation_summaries')
+            .select('*')
+            .eq('conversation_id', conversationId)
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (summaryErr) throw summaryErr;
+
+        res.json({ conversation, summary: summary || null });
+    } catch (err: any) {
+        console.error('Error fetching conversation summary:', err);
+        res.status(500).json({ error: err.message || 'Failed to fetch summary' });
+    }
+});
+
+app.post('/api/n8n/conversations/:conversationId/summary', async (req: any, res) => {
+    const conversationId = String(req.params.conversationId || '').trim();
+    const providedSecret = String(req.headers['x-n8n-secret'] || req.body?.secret || '');
+
+    if (N8N_WEBHOOK_SECRET && providedSecret !== N8N_WEBHOOK_SECRET) {
+        return res.status(401).json({ error: 'Invalid n8n secret' });
+    }
+
+    try {
+        const { data: conversation, error: convErr } = await supabase
+            .from('w_conversations')
+            .select('id, organization_id')
+            .eq('id', conversationId)
+            .maybeSingle();
+        if (convErr) throw convErr;
+        if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+
+        const body = req.body || {};
+        const summaryText = String(body.summary_text || body.summary || body.conversation_summary || '').trim();
+        if (!summaryText) return res.status(400).json({ error: 'summary_text is required' });
+
+        const asArray = (value: any) => {
+            if (Array.isArray(value)) return value;
+            if (value == null || value === '') return [];
+            return [value];
+        };
+
+        const { data: inserted, error: insertErr } = await supabase
+            .from('w_conversation_summaries')
+            .insert({
+                organization_id: conversation.organization_id,
+                conversation_id: conversationId,
+                summary_text: summaryText,
+                customer_intent: body.customer_intent || body.intent || null,
+                customer_stage: body.customer_stage || body.stage || null,
+                lead_quality: body.lead_quality || body.quality || null,
+                next_best_action: body.next_best_action || body.next_action || null,
+                open_questions: asArray(body.open_questions),
+                important_facts: asArray(body.important_facts || body.key_facts),
+                objections: asArray(body.objections),
+                products_discussed: asArray(body.products_discussed || body.products),
+                summary_from_message_id: body.summary_from_message_id || null,
+                summary_to_message_id: body.summary_to_message_id || null,
+                generated_by: body.generated_by || 'n8n',
+                model: body.model || null,
+                metadata: body.metadata && typeof body.metadata === 'object' ? body.metadata : {},
+            })
+            .select()
+            .single();
+        if (insertErr) throw insertErr;
+
+        await supabase
+            .from('w_conversations')
+            .update({
+                latest_summary_id: inserted.id,
+                summary_status: 'ready',
+            })
+            .eq('id', conversationId)
+            .eq('organization_id', conversation.organization_id);
+
+        await supabase
+            .from('w_conversation_notes')
+            .insert({
+                organization_id: conversation.organization_id,
+                conversation_id: conversationId,
+                note_type: 'ai_summary',
+                body: summaryText,
+                source: 'n8n',
+                metadata: { summary_id: inserted.id },
+            });
+
+        io.to(`org:${conversation.organization_id}`).emit('conversation_summary_updated', {
+            conversation_id: conversationId,
+            summary: inserted,
+            summary_status: 'ready',
+        });
+
+        res.json({ success: true, summary: inserted });
+    } catch (err: any) {
+        console.error('[n8n] Error saving summary:', err);
+        res.status(500).json({ error: err.message || 'Failed to save summary' });
     }
 });
 
@@ -4123,7 +4846,10 @@ app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: 
             direction: 'outbound',
             type: 'text',
             content: { text, quoted: quotedMessage, forwarded: !!forward_from_message_id },
-            status: 'sent'
+            status: 'sent',
+            sender_type: 'human_agent',
+            sender_user_id: (req as any).user?.id || null,
+            automation_source: 'manual',
         } as any);
 
         // 3) Update conversation preview/unread
@@ -4283,6 +5009,9 @@ app.post('/api/conversations/:conversationId/send-media', upload.single('file'),
                 raw_send: sendRaw,
             },
             status: 'sent',
+            sender_type: 'human_agent',
+            sender_user_id: (req as any).user?.id || null,
+            automation_source: 'manual',
         } as any);
 
         await upsertConversation(orgId, conv.wa_account_id, conv.contact.id, { direction: 'outbound', preview });
@@ -4436,6 +5165,9 @@ app.post('/api/messages/audio', upload.single('file'), async (req, res) => {
                 raw_send: sendRaw,
             },
             status: 'sent',
+            sender_type: 'human_agent',
+            sender_user_id: (req as any).user?.id || null,
+            automation_source: 'manual',
         } as any);
 
         await upsertConversation(orgId, conv.wa_account_id, conv.contact.id, {
@@ -4946,6 +5678,9 @@ app.post('/api/dev/simulate-message', async (req, res) => {
             type: 'text',
             content: { text: String(text) },
             status,
+            sender_type: direction === 'outbound' ? 'human_agent' : 'customer',
+            sender_user_id: direction === 'outbound' ? ((req as any).user?.id || null) : null,
+            automation_source: direction === 'outbound' ? 'manual' : 'webhook',
         });
 
         await upsertConversation(orgId, conv.wa_account_id, conv.contact_id, {
@@ -5157,6 +5892,8 @@ app.post("/webhook", async (req, res) => {
                 type,
                 content: enrichedContent,
                 status: "delivered",
+                sender_type: 'customer',
+                automation_source: 'webhook',
             } as any);
 
             // D. Emit Realtime
@@ -5241,7 +5978,7 @@ app.post("/webhook", async (req, res) => {
                 const isFlowEligible = (type === 'text' || type === 'interactive' || type === 'button') && text;
 
                 if (isFlowEligible) {
-                    const flowResult = await processFlowEngine(organization_id, contact.id, conv.id, text);
+                    const flowResult = await processFlowEngine(organization_id, contact.id, conv.id, text, storedInbound?.id || null);
                     if (flowResult?.consumed) {
                         flowConsumedMessage = true;
 
@@ -5255,6 +5992,17 @@ app.post("/webhook", async (req, res) => {
                                 organization_id, contact_id: contact.id, conversation_id: conv.id,
                                 wa_message_id: botWaMessageId, direction: "outbound", type: "text",
                                 content: { text: flowResult.output, is_flow: true }, status: "sent",
+                                is_bot_reply: true,
+                                sender_type: 'ai_agent',
+                                automation_source: 'flow',
+                                metadata: {
+                                    flow_id: flowResult.flow_id,
+                                    flow_version_id: flowResult.flow_version_id,
+                                    flow_session_id: flowResult.flow_session_id,
+                                    flow_run_id: flowResult.flow_run_id,
+                                    flow_node_id: flowResult.flow_node_id,
+                                    handoff: flowResult.handoff === true,
+                                },
                             } as any);
 
                             io.emit("new_message", {
@@ -5278,6 +6026,17 @@ app.post("/webhook", async (req, res) => {
                                 organization_id, contact_id: contact.id, conversation_id: conv.id,
                                 wa_message_id: botWaMessageId, direction: "outbound", type: "interactive",
                                 content: { text: body, interactive: flowResult.interactive, is_flow: true }, status: "sent",
+                                is_bot_reply: true,
+                                sender_type: 'ai_agent',
+                                automation_source: 'flow',
+                                metadata: {
+                                    flow_id: flowResult.flow_id,
+                                    flow_version_id: flowResult.flow_version_id,
+                                    flow_session_id: flowResult.flow_session_id,
+                                    flow_run_id: flowResult.flow_run_id,
+                                    flow_node_id: flowResult.flow_node_id,
+                                    handoff: flowResult.handoff === true,
+                                },
                             } as any);
 
                             io.emit("new_message", {
@@ -5311,6 +6070,10 @@ app.post("/webhook", async (req, res) => {
                             wa_message_id: botWaMessageId, direction: "outbound", type: "text",
                             content: { text: botResult.reply, bot_agent_id: botResult.agent?.id },
                             status: "sent",
+                            is_bot_reply: true,
+                            bot_agent_id: botResult.agent?.id || null,
+                            sender_type: 'ai_agent',
+                            automation_source: 'ai_agent',
                         } as any);
                         io.emit("new_message", {
                             from: metadata?.display_phone_number || phone_number_id, phone: from, text: botResult.reply,
@@ -5805,7 +6568,9 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                         direction,
                         type: normalizedType,
                         content: enrichedContent,
-                        status: isOutbound ? 'sent' : 'delivered'
+                        status: isOutbound ? 'sent' : 'delivered',
+                        sender_type: isOutbound ? 'human_agent' : 'customer',
+                        automation_source: isOutbound ? 'manual' : 'webhook',
                     });
 
                     // 4) Emit only realtime (not history sync)
@@ -5834,7 +6599,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                         if (!isOutbound && normalizedType === 'text' && captionText) {
                             try {
                                 let flowConsumedMessage = false;
-                                const flowResult = await processFlowEngine(orgId, contact.id, conv.id, captionText);
+                                const flowResult = await processFlowEngine(orgId, contact.id, conv.id, captionText, stored?.id || null);
                                 
                                 if (flowResult?.consumed) {
                                     flowConsumedMessage = true;
@@ -5848,6 +6613,17 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                                             organization_id: orgId, contact_id: contact.id, conversation_id: conv.id,
                                             wa_message_id: botWaMessageId, direction: "outbound", type: "text",
                                             content: { text: flowResult.output, is_flow: true }, status: "sent",
+                                            is_bot_reply: true,
+                                            sender_type: 'ai_agent',
+                                            automation_source: 'flow',
+                                            metadata: {
+                                                flow_id: flowResult.flow_id,
+                                                flow_version_id: flowResult.flow_version_id,
+                                                flow_session_id: flowResult.flow_session_id,
+                                                flow_run_id: flowResult.flow_run_id,
+                                                flow_node_id: flowResult.flow_node_id,
+                                                handoff: flowResult.handoff === true,
+                                            },
                                         } as any);
                                         
                                         io.emit("new_message", {
@@ -5885,6 +6661,10 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                                         type: "text",
                                         content: { text: botResult.reply, bot_agent_id: botResult.agent?.id },
                                         status: "sent",
+                                        is_bot_reply: true,
+                                        bot_agent_id: botResult.agent?.id || null,
+                                        sender_type: 'ai_agent',
+                                        automation_source: 'ai_agent',
                                     } as any);
 
                                     // Emit the bot reply to frontend
@@ -6464,7 +7244,7 @@ async function processCampaign(campaign: any) {
             const templateVariableKeys = Array.isArray(mapping._template_variables)
                 ? mapping._template_variables.map((key: any) => String(key).trim()).filter(Boolean)
                 : [...String(renderedText || '').matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)].map(match => String(match[1] || '').trim()).filter(Boolean);
-            const sortedKeys = [...new Set(templateVariableKeys.length
+            const sortedKeys = [...new Set<string>(templateVariableKeys.length
                 ? templateVariableKeys
                 : Object.keys(mapping).filter(k => /^\d+$/.test(k)).sort((a, b) => parseInt(a) - parseInt(b)))];
 
@@ -6588,7 +7368,9 @@ async function processCampaign(campaign: any) {
                                         } : null,
                                         buttons: templateButtons
                                     }
-                                }
+                                },
+                                sender_type: 'system',
+                                automation_source: 'broadcast',
                             });
                         }
                     }
