@@ -1,6 +1,6 @@
 import {
     Rocket, MessageSquare, Image, Video, Music, FileText, MapPin,
-    UserCircle, Link2, GitBranch, Globe, Bot, List, PackageSearch, Calendar, Workflow, FileSpreadsheet, FileClock
+    UserCircle, Link2, GitBranch, Handshake, Square
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -19,7 +19,6 @@ const nodeCategories = [
             { type: 'video', icon: Video, label: 'Video', color: 'pink' },
             { type: 'audio', icon: Music, label: 'Audio', color: 'green' },
             { type: 'file', icon: FileText, label: 'File', color: 'indigo' },
-            { type: 'template', icon: FileClock, label: 'Template Message', color: 'indigo' },
         ]
     },
     {
@@ -27,7 +26,6 @@ const nodeCategories = [
         nodes: [
             { type: 'button', icon: Link2, label: 'Buttons', color: 'green' },
             { type: 'location', icon: MapPin, label: 'Location', color: 'red' },
-            { type: 'interactive', icon: List, label: 'Interactive List', color: 'teal' },
         ]
     },
     {
@@ -38,19 +36,10 @@ const nodeCategories = [
         ]
     },
     {
-        title: 'Integrations',
+        title: 'Flow Control',
         nodes: [
-            { type: 'httpApi', icon: Globe, label: 'HTTP API', color: 'indigo' },
-            { type: 'whatsappFlow', icon: Workflow, label: 'WhatsApp Flow', color: 'green' },
-            { type: 'googleSheets', icon: FileSpreadsheet, label: 'Google Sheets', color: 'green' },
-        ]
-    },
-    {
-        title: 'AI & Automation',
-        nodes: [
-            { type: 'ai', icon: Bot, label: 'AI Agent', color: 'pink' },
-            { type: 'appointment', icon: Calendar, label: 'Appointment', color: 'blue' },
-            { type: 'product', icon: PackageSearch, label: 'Product', color: 'yellow' },
+            { type: 'handoff', icon: Handshake, label: 'Handoff to Human', color: 'orange' },
+            { type: 'end', icon: Square, label: 'End Flow', color: 'teal' },
         ]
     }
 ];

@@ -62,13 +62,7 @@ export default function AgentLogin() {
                 <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
                 <div className="relative z-10">
                     <div className="flex items-center gap-3 mb-16">
-                        <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-white/10 backdrop-blur-md shadow-lg border border-white/20">
-                            <UserCheck className="w-7 h-7 text-white drop-shadow-md" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-bold text-white tracking-tight">FlowsApp</h1>
-                            <p className="text-indigo-300 text-sm font-medium tracking-wide uppercase">Agent Portal</p>
-                        </div>
+                        <img src="/logo.png" alt="FLOWSAPP" className="h-10 w-auto object-contain" />
                     </div>
                     
                     <h2 className="text-5xl font-extrabold text-white leading-tight mb-6">
@@ -85,14 +79,8 @@ export default function AgentLogin() {
                 <div className="mx-auto w-full max-w-sm lg:max-w-md">
                     
                     {/* Mobile Header */}
-                    <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center">
-                            <UserCheck className="w-6 h-6 text-white" />
-                        </div>
-                        <div className="flex flex-col">
-                            <h1 className="text-xl font-bold text-gray-900 leading-none">FlowsApp</h1>
-                            <span className="text-indigo-600 text-[11px] font-bold tracking-wider uppercase mt-1">Agent Portal</span>
-                        </div>
+                    <div className="lg:hidden flex items-center justify-center mb-8">
+                        <img src="/logo.png" alt="FLOWSAPP" className="h-10 w-auto object-contain" />
                     </div>
 
                     <div>

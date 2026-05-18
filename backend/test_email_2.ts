@@ -1,4 +1,4 @@
-import { sendEmail } from './email';
+import { sendEmail } from './email.js';
 import dotenv from 'dotenv';
 dotenv.config();
 

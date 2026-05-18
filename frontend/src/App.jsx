@@ -16,6 +16,7 @@ import BotAgents from './pages/BotAgents'
 import Settings from './pages/Settings'
 import SSOLogin from './pages/SSOLogin'
 import AcceptInvite from './pages/AcceptInvite'
+import HelpCenter from './pages/HelpCenter'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -51,6 +52,7 @@ export default function App() {
               <Route path="live-chat" element={<LiveChat />} />
               <Route path="bot-agents" element={<BotAgents />} />
               <Route path="settings" element={<Settings />} />
+              <Route path="help" element={<HelpCenter />} />
             </Route>
           </Routes>
         </BrowserRouter>
