@@ -12,12 +12,12 @@ async function test() {
 
         await sendEmail(
             email,
-            'Invitation to join FlowsApp Team',
+            'Invitation to join GAP FlowPilot Team',
             `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
                     <h2 style="color: #25D366;">You've been invited!</h2>
                     <p>Hello <strong>${name}</strong>,</p>
-                    <p>You have been invited to join the <strong>FlowsApp</strong> team as an <strong>${role}</strong>.</p>
+                    <p>You have been invited to join the <strong>GAP FlowPilot</strong> team as an <strong>${role}</strong>.</p>
                     <p>As a team member, you'll be able to manage WhatsApp chats and help automate customer interactions.</p>
                     
                     <div style="background-color: #f9f9f9; padding: 15px; border-radius: 6px; margin: 20px 0;">
@@ -32,7 +32,7 @@ async function test() {
                     </div>
                     <p style="color: #666; font-size: 14px;">If you already have an account, your existing password will continue to work.</p>
                     <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                    <p style="color: #999; font-size: 12px;">This invitation was sent from the FlowsApp Dashboard.</p>
+                    <p style="color: #999; font-size: 12px;">This invitation was sent from the GAP FlowPilot Dashboard.</p>
                 </div>
                 `
         );

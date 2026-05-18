@@ -62,7 +62,7 @@ export default function AgentLogin() {
                 <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10 mix-blend-overlay"></div>
                 <div className="relative z-10">
                     <div className="flex items-center gap-3 mb-16">
-                        <img src="/logo.png" alt="FLOWSAPP" className="h-10 w-auto object-contain" />
+                        <img src="/logo.png" alt="GAP FlowPilot" className="h-10 w-auto object-contain" />
                     </div>
                     
                     <h2 className="text-5xl font-extrabold text-white leading-tight mb-6">
@@ -80,7 +80,7 @@ export default function AgentLogin() {
                     
                     {/* Mobile Header */}
                     <div className="lg:hidden flex items-center justify-center mb-8">
-                        <img src="/logo.png" alt="FLOWSAPP" className="h-10 w-auto object-contain" />
+                        <img src="/logo.png" alt="GAP FlowPilot" className="h-10 w-auto object-contain" />
                     </div>
 
                     <div>

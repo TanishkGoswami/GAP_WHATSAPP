@@ -245,7 +245,19 @@ export default function LiveChat() {
 
     // Account Selection
     const [connectedAccounts, setConnectedAccounts] = useState([]);
-    const [selectedAccount, setSelectedAccount] = useState('All');
+    const [selectedAccount, setSelectedAccount] = useState(() => localStorage.getItem('selected_wa_account_id') || 'All');
+
+    useEffect(() => {
+        const handleSelectedAccountChange = (event) => {
+            setSelectedAccount(event?.detail?.accountId || localStorage.getItem('selected_wa_account_id') || 'All')
+        }
+        window.addEventListener('selected-wa-account-change', handleSelectedAccountChange)
+        window.addEventListener('storage', handleSelectedAccountChange)
+        return () => {
+            window.removeEventListener('selected-wa-account-change', handleSelectedAccountChange)
+            window.removeEventListener('storage', handleSelectedAccountChange)
+        }
+    }, [])
 
     const normalizeAccountKey = (value) => String(value || '').replace(/[^0-9]/g, '')
 
@@ -2128,7 +2140,12 @@ export default function LiveChat() {
                         <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Inbox</label>
                         <select
                             value={selectedAccount}
-                            onChange={(e) => setSelectedAccount(e.target.value)}
+                            onChange={(e) => {
+                                const next = e.target.value
+                                setSelectedAccount(next)
+                                localStorage.setItem('selected_wa_account_id', next)
+                                window.dispatchEvent(new CustomEvent('selected-wa-account-change', { detail: { accountId: next } }))
+                            }}
                             className="bg-transparent text-xs font-medium text-indigo-600 focus:outline-none cursor-pointer"
                         >
                             <option value="All">All Accounts</option>
@@ -2226,19 +2243,22 @@ export default function LiveChat() {
                             <div
                                 key={chat.id}
                                 onClick={() => setSelectedChat(chat)}
-                                className={`group relative flex items-start gap-3 px-4 py-3.5 border-b border-gray-100 cursor-pointer transition-all duration-200 ${selectedChat?.id === chat.id ? 'bg-green-50/70 border-green-100' : 'hover:bg-gray-50'}`}
+                                className={`group relative flex cursor-pointer items-start gap-3 border-b border-gray-100 px-4 py-3.5 transition-all duration-200 ${selectedChat?.id === chat.id ? 'bg-emerald-50/45' : 'hover:bg-gray-50'}`}
                             >
+                                {selectedChat?.id === chat.id ? (
+                                    <div className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-emerald-500" />
+                                ) : null}
                                 <div className="relative shrink-0">
                                     {chat.profilePhotoUrl ? (
                                         <img
                                             src={chat.profilePhotoUrl}
                                             alt={chat.name}
-                                            className={`h-11 w-11 rounded-full object-cover shadow-sm ${selectedChat?.id === chat.id ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-white' : ''}`}
+                                            className="h-11 w-11 rounded-full object-cover shadow-sm ring-1 ring-gray-200"
                                             loading="lazy"
                                         />
                                     ) : (
                                         <div
-                                            className={`h-11 w-11 rounded-full flex items-center justify-center shadow-sm ${selectedChat?.id === chat.id ? 'ring-2 ring-green-500 ring-offset-2 ring-offset-white' : ''} bg-rose-50 text-rose-600 border border-rose-200`}
+                                            className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600 shadow-sm"
                                         >
                                             <User className="h-6 w-6" />
                                         </div>
@@ -2247,7 +2267,7 @@ export default function LiveChat() {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex justify-between items-baseline gap-2 mb-0.5">
-                                        <h3 className={`text-sm font-semibold truncate ${selectedChat?.id === chat.id ? 'text-green-950' : 'text-gray-900'}`}>
+                                        <h3 className={`truncate text-sm font-semibold ${selectedChat?.id === chat.id ? 'text-gray-950' : 'text-gray-900'}`}>
                                             {chat.name}
                                         </h3>
                                         <div className="flex shrink-0 items-center gap-1">
@@ -2274,7 +2294,7 @@ export default function LiveChat() {
                                             {formatPhoneForDisplay(chat.phone || chat.waId)}
                                         </div>
                                     ) : null}
-                                    <p className="text-xs text-gray-500 truncate mb-1">{chat.lastMessage}</p>
+                                    <p className={`mb-1 truncate text-xs ${selectedChat?.id === chat.id ? 'text-gray-600' : 'text-gray-500'}`}>{chat.lastMessage}</p>
                                     <div className="flex items-center gap-1.5">
                                         {(Array.isArray(chat.tags) ? chat.tags : []).filter(tag => {
                                             const normalized = String(tag).toLowerCase()

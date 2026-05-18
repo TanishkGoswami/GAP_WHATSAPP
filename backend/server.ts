@@ -2753,12 +2753,12 @@ async function sendTeamInviteEmail(params: {
 }) {
     await sendEmail(
         params.email,
-        `Invitation to join FlowsApp Team`,
+        `Invitation to join GAP FlowPilot Team`,
         `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
             <h2 style="color: #25D366;">You've been invited!</h2>
             <p>Hello <strong>${params.name}</strong>,</p>
-            <p>You have been invited to join the <strong>FlowsApp</strong> team as an <strong>${params.role}</strong>.</p>
+            <p>You have been invited to join the <strong>GAP FlowPilot</strong> team as an <strong>${params.role}</strong>.</p>
             <p>Accept this invitation to activate your account and open your agent workspace.</p>
             
             <div style="background-color: #f9f9f9; padding: 15px; border-radius: 6px; margin: 20px 0;">
@@ -2778,7 +2778,7 @@ async function sendTeamInviteEmail(params: {
             </div>
             <p style="color: #666; font-size: 14px;">For security, this invitation expires in ${INVITE_TTL_HOURS} hour${INVITE_TTL_HOURS === 1 ? '' : 's'}.</p>
             <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="color: #999; font-size: 12px;">This invitation was sent from the FlowsApp Dashboard.</p>
+            <p style="color: #999; font-size: 12px;">This invitation was sent from the GAP FlowPilot Dashboard.</p>
         </div>
         `
     );
@@ -4587,7 +4587,16 @@ app.get('/api/conversations/:id/summary', authMiddleware, async (req: any, res) 
             .maybeSingle();
         if (summaryErr) throw summaryErr;
 
-        res.json({ conversation, summary: summary || null });
+        const { data: notes, error: notesErr } = await supabase
+            .from('w_conversation_notes')
+            .select('*')
+            .eq('conversation_id', conversationId)
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: false })
+            .limit(30);
+        if (notesErr) throw notesErr;
+
+        res.json({ conversation, summary: summary || null, notes: notes || [] });
     } catch (err: any) {
         console.error('Error fetching conversation summary:', err);
         res.status(500).json({ error: err.message || 'Failed to fetch summary' });

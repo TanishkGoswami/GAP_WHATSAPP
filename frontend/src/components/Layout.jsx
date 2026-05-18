@@ -2,7 +2,7 @@ import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import Sidebar from './Sidebar'
 import Modal from './Modal'
-import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield } from 'lucide-react'
+import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield, ExternalLink } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 export default function Layout() {
@@ -16,12 +16,29 @@ export default function Layout() {
     const [profileError, setProfileError] = useState('')
     const [profileDraft, setProfileDraft] = useState({ name: '', avatar_color: '#4f46e5' })
 
+    const isOwner = userRole === 'owner'
+    const isLiveChat = location.pathname === '/live-chat'
+    const displayName = memberProfile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'
+    const avatarColor = memberProfile?.avatar_color || user?.user_metadata?.avatar_color || '#4f46e5'
+    const userEmail = memberProfile?.email || user?.email || ''
+    const roleLabel = userRole ? userRole.charAt(0).toUpperCase() + userRole.slice(1) : 'User'
+    const avatarInitials = useMemo(() => {
+        const parts = String(displayName || 'User').trim().split(/\s+/).filter(Boolean)
+        return (parts[0]?.[0] || 'U') + (parts.length > 1 ? parts[parts.length - 1][0] : '')
+    }, [displayName])
+
+    useEffect(() => {
+        if (!isProfileOpen) return
+        setProfileDraft({
+            name: displayName,
+            avatar_color: avatarColor,
+        })
+        setProfileError('')
+    }, [isProfileOpen, displayName, avatarColor])
+
     if (loading) return null // wait only for the initial auth check, never block on profile re-fetch
     if (!user) return <Navigate to="/login" replace />
 
-    const isOwner = userRole === 'owner'
-    const isLiveChat = location.pathname === '/live-chat'
-    
     // Redirect non-owners to live-chat if they try to access restricted paths
     if (!isOwner && location.pathname !== '/live-chat') {
         return <Navigate to="/live-chat" replace />
@@ -47,27 +64,14 @@ export default function Layout() {
         }
     }
 
+    const handleContinueToGetAiPilot = () => {
+        setIsLogoutConfirmOpen(false)
+        window.location.href = 'https://getaipilot.in'
+    }
+
     const handleCancelLogout = () => {
         setIsLogoutConfirmOpen(false)
     }
-
-    const displayName = memberProfile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'
-    const avatarColor = memberProfile?.avatar_color || user?.user_metadata?.avatar_color || '#4f46e5'
-    const userEmail = memberProfile?.email || user?.email || ''
-    const roleLabel = userRole ? userRole.charAt(0).toUpperCase() + userRole.slice(1) : 'User'
-    const avatarInitials = useMemo(() => {
-        const parts = String(displayName || 'User').trim().split(/\s+/).filter(Boolean)
-        return (parts[0]?.[0] || 'U') + (parts.length > 1 ? parts[parts.length - 1][0] : '')
-    }, [displayName])
-
-    useEffect(() => {
-        if (!isProfileOpen) return
-        setProfileDraft({
-            name: displayName,
-            avatar_color: avatarColor,
-        })
-        setProfileError('')
-    }, [isProfileOpen, displayName, avatarColor])
 
     const avatarColors = ['#4f46e5', '#16a34a', '#0891b2', '#dc2626', '#db2777', '#ea580c']
 
@@ -95,7 +99,7 @@ export default function Layout() {
 
     return (
         <div className="flex h-screen bg-gray-50">
-            <Sidebar />
+            <Sidebar onRequestLogout={handleLogoutClick} />
 
             <div className="flex flex-1 flex-col overflow-hidden">
                 {/* Topbar */}
@@ -235,7 +239,7 @@ export default function Layout() {
                 <Modal 
                     isOpen={isLogoutConfirmOpen} 
                     onClose={handleCancelLogout}
-                    title="Confirm Logout"
+                    title="Leave GAP FlowPilot?"
                     maxWidth="max-w-md"
                 >
                     <div className="flex flex-col items-center gap-4">
@@ -243,22 +247,26 @@ export default function Layout() {
                             <AlertCircle className="h-6 w-6 text-amber-600" />
                         </div>
                         <div className="text-center">
-                            <p className="text-sm text-gray-600 mb-3">
-                                Are you sure you want to logout? You will be redirected to the login page.
+                            <p className="mb-2 text-sm font-semibold text-gray-900">
+                                Aap session end karna chahte ho?
+                            </p>
+                            <p className="text-sm leading-6 text-gray-600">
+                                Logout karne par aap login page par jaoge. GetAiPilot services par jaana ho to session active rakho, phir dobara login nahi karna padega.
                             </p>
                         </div>
-                        <div className="flex w-full gap-3">
+                        <div className="grid w-full gap-3">
                             <button
-                                onClick={handleCancelLogout}
+                                onClick={handleContinueToGetAiPilot}
                                 disabled={isLoggingOut}
-                                className="flex-1 rounded-lg border border-gray-300 py-2 px-4 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                                className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
                             >
-                                Cancel
+                                <ExternalLink className="h-4 w-4" />
+                                Keep me signed in and go to GetAiPilot
                             </button>
                             <button
                                 onClick={handleConfirmLogout}
                                 disabled={isLoggingOut}
-                                className="flex-1 rounded-lg bg-red-600 py-2 px-4 text-sm font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
                             >
                                 {isLoggingOut ? (
                                     <>
@@ -266,8 +274,18 @@ export default function Layout() {
                                         Logging out...
                                     </>
                                 ) : (
-                                    'Logout'
+                                    <>
+                                        <LogOut className="h-4 w-4" />
+                                        Logout and go to login
+                                    </>
                                 )}
+                            </button>
+                            <button
+                                onClick={handleCancelLogout}
+                                disabled={isLoggingOut}
+                                className="rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                Cancel
                             </button>
                         </div>
                     </div>
