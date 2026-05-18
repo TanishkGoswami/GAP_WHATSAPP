@@ -1,473 +1,510 @@
 import { createElement, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useAuth } from '../context/AuthContext'
 import {
     Activity,
     AlertTriangle,
     ArrowRight,
     BarChart3,
     Bot,
-    CheckCheck,
+    CheckCircle2,
     Clock3,
-    Eye,
     FileText,
     Gauge,
-    LayoutDashboard,
-    MessageSquare,
+    Grid2X2,
+    MessageSquareText,
     RefreshCw,
     Send,
-    ShieldCheck,
-    Sparkles,
+    Smartphone,
     TrendingUp,
+    UserRoundCheck,
     Users,
-    Wifi,
     Workflow,
     Zap,
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
 
-const timeRanges = ['Today', '7 days', '30 days']
+const ranges = [
+    { label: 'Today', value: 'today' },
+    { label: '7 days', value: '7d' },
+    { label: '30 days', value: '30d' },
+]
 
-const numberFormat = new Intl.NumberFormat('en-IN')
+const formatter = new Intl.NumberFormat('en-IN')
 
-function asNumber(value, fallback = 0) {
+function n(value, fallback = 0) {
     const parsed = Number(value)
     return Number.isFinite(parsed) ? parsed : fallback
 }
 
-function pct(value) {
-    return `${Math.max(0, Math.min(100, Math.round(asNumber(value))))}%`
+function fmt(value) {
+    return formatter.format(n(value))
 }
 
-function getFreshnessLabel(updatedAt) {
-    if (!updatedAt) return 'Waiting for first sync'
+function pct(value) {
+    return `${Math.max(0, Math.min(100, Math.round(n(value))))}%`
+}
+
+function contactsFrom(stats) {
+    return typeof stats?.contacts === 'number'
+        ? { total: stats.contacts, saved: 0 }
+        : { total: n(stats?.contacts?.total), saved: n(stats?.contacts?.saved) }
+}
+
+function freshness(updatedAt) {
+    if (!updatedAt) return 'Waiting for sync'
     const seconds = Math.max(0, Math.round((Date.now() - updatedAt) / 1000))
     if (seconds < 10) return 'Updated just now'
     if (seconds < 60) return `Updated ${seconds}s ago`
-    const minutes = Math.round(seconds / 60)
-    return `Updated ${minutes}m ago`
-}
-
-function MetricCard({ title, value, helper, icon, tone, trend, loading }) {
-    const tones = {
-        blue: 'bg-blue-50 text-blue-700 border-blue-100',
-        green: 'bg-green-50 text-green-700 border-green-100',
-        violet: 'bg-violet-50 text-violet-700 border-violet-100',
-        red: 'bg-red-50 text-red-700 border-red-100',
-    }
-
-    return (
-        <div className="group rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md">
-            <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-500">{title}</p>
-                    {loading ? (
-                        <div className="mt-3 h-8 w-24 animate-pulse rounded-md bg-gray-100" />
-                    ) : (
-                        <div className="mt-2 text-3xl font-bold tracking-tight text-gray-950">{value}</div>
-                    )}
-                </div>
-                <div className={`rounded-xl border p-3 ${tones[tone] || tones.blue}`}>
-                    {createElement(icon, { className: 'h-5 w-5' })}
-                </div>
-            </div>
-            <div className="mt-5 flex items-center justify-between gap-3">
-                <p className="truncate text-sm text-gray-500">{helper}</p>
-                {trend ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-700">
-                        <TrendingUp className="h-3.5 w-3.5 text-green-600" />
-                        {trend}
-                    </span>
-                ) : null}
-            </div>
-        </div>
-    )
-}
-
-function ProgressRow({ label, value, count, tone = 'bg-green-500' }) {
-    return (
-        <div>
-            <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-                <span className="font-medium text-gray-700">{label}</span>
-                <span className="font-semibold text-gray-950">{count}</span>
-            </div>
-            <div className="h-2 rounded-full bg-gray-100">
-                <div className={`h-2 rounded-full ${tone} transition-all duration-500`} style={{ width: pct(value) }} />
-            </div>
-        </div>
-    )
-}
-
-function HealthBadge({ failedRate }) {
-    const failed = asNumber(failedRate)
-    const config = failed > 10
-        ? ['Needs attention', 'bg-red-50 text-red-700 border-red-200']
-        : failed > 4
-            ? ['Monitor', 'bg-amber-50 text-amber-700 border-amber-200']
-            : ['Healthy', 'bg-green-50 text-green-700 border-green-200']
-
-    return (
-        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${config[1]}`}>
-            <ShieldCheck className="h-3.5 w-3.5" />
-            {config[0]}
-        </span>
-    )
-}
-
-function QuickAction({ to, icon, title, description, accent }) {
-    return (
-        <Link
-            to={to}
-            className="group flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-green-200 hover:shadow-md"
-        >
-            <div className={`rounded-lg p-2 ${accent}`}>
-                {createElement(icon, { className: 'h-5 w-5' })}
-            </div>
-            <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-semibold text-gray-950">{title}</h3>
-                    <ArrowRight className="h-4 w-4 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-green-600" />
-                </div>
-                <p className="mt-1 text-sm leading-5 text-gray-500">{description}</p>
-            </div>
-        </Link>
-    )
-}
-
-function ActivityItem({ icon, title, description, status, tone }) {
-    return (
-        <div className="flex gap-3 rounded-xl px-3 py-3 transition-colors hover:bg-gray-50">
-            <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tone}`}>
-                {createElement(icon, { className: 'h-4 w-4' })}
-            </div>
-            <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-semibold text-gray-950">{title}</p>
-                    <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">{status}</span>
-                </div>
-                <p className="mt-1 text-sm leading-5 text-gray-500">{description}</p>
-            </div>
-        </div>
-    )
+    return `Updated ${Math.round(seconds / 60)}m ago`
 }
 
 export default function Dashboard() {
     const { apiCall, session } = useAuth()
-    const [range, setRange] = useState('Today')
+    const [range, setRange] = useState('today')
 
     const {
         data: stats,
         isLoading,
         isFetching,
         dataUpdatedAt,
+        error,
         refetch,
     } = useQuery({
-        queryKey: ['dashboard-stats', session?.access_token],
+        queryKey: ['dashboard-stats', session?.access_token, range],
         queryFn: async () => {
-            const res = await apiCall(`${API_BASE}/dashboard-stats`)
-            if (!res.ok) throw new Error('Failed to fetch dashboard stats')
-            return res.json()
+            const res = await apiCall(`${API_BASE}/dashboard-stats?range=${encodeURIComponent(range)}`)
+            const body = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(body?.error || 'Failed to fetch dashboard stats')
+            return body
         },
         staleTime: 1000 * 30,
-        refetchInterval: 10000,
+        refetchInterval: 15000,
         enabled: !!session?.access_token,
     })
 
     const model = useMemo(() => {
         const metrics = stats?.metrics || {}
-        const totalMessages = asNumber(metrics.totalMessages)
-        const delivered = asNumber(metrics.delivered)
-        const readRate = asNumber(metrics.readRate)
-        const failedRate = asNumber(metrics.failedRate)
-        const deliveryRate = asNumber(metrics.deliveryRate, totalMessages ? (delivered / totalMessages) * 100 : 0)
-        const readCount = Math.round((readRate / 100) * totalMessages)
-        const failedCount = Math.round((failedRate / 100) * totalMessages)
-        const pendingCount = Math.max(0, totalMessages - delivered - failedCount)
-        const quality = stats?.health?.quality ?? Math.max(0, 100 - Math.round(failedRate * 2))
-        const contacts = asNumber(stats?.contacts)
-        const conversations = Math.max(contacts, totalMessages ? Math.ceil(totalMessages / 4) : 0)
-        const engagement = totalMessages > 0 ? Math.round((readCount / totalMessages) * 100) : 0
+        const contacts = contactsFrom(stats)
+        const conversations = stats?.conversations || {}
+        const accounts = stats?.accounts || {}
+        const automation = stats?.automation || {}
+        const campaigns = stats?.campaigns || {}
+
+        const totalMessages = n(metrics.totalMessages)
+        const delivered = n(metrics.delivered)
+        const read = n(metrics.read)
+        const failed = n(metrics.failed)
+        const pending = Math.max(0, n(metrics.pending, totalMessages - delivered - failed))
+        const deliveryRate = n(metrics.deliveryRate, totalMessages ? (delivered / totalMessages) * 100 : 0)
+        const readRate = n(metrics.readRate, totalMessages ? (read / totalMessages) * 100 : 0)
+        const failedRate = n(metrics.failedRate, totalMessages ? (failed / totalMessages) * 100 : 0)
+        const quality = n(stats?.health?.quality, Math.max(0, 100 - Math.round(failedRate * 2)))
 
         return {
-            totalMessages,
-            delivered,
-            readRate,
-            failedRate,
-            deliveryRate,
-            readCount,
-            failedCount,
-            pendingCount,
-            quality,
+            metrics,
             contacts,
             conversations,
-            engagement,
+            accounts,
+            automation,
+            campaigns,
+            totalMessages,
+            delivered,
+            read,
+            failed,
+            pending,
+            deliveryRate,
+            readRate,
+            failedRate,
+            quality,
+            timeline: Array.isArray(stats?.timeline) ? stats.timeline : [],
+            recentActivity: Array.isArray(stats?.recentActivity) ? stats.recentActivity : [],
         }
     }, [stats])
 
-    const healthCopy = model.failedRate > 10
-        ? 'Failure rate is above the comfort zone. Check account connection and templates.'
-        : model.failedRate > 4
-            ? 'Delivery is usable, but failures deserve monitoring.'
-            : 'Message delivery and read quality look stable.'
+    const rangeLabel = ranges.find(item => item.value === range)?.label || 'Today'
+    const healthLabel = model.failedRate > 15 ? 'Needs review' : model.failedRate > 5 ? 'Monitor' : 'Healthy'
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                    <div className="flex items-center gap-2 text-sm font-semibold text-green-700">
-                        <LayoutDashboard className="h-4 w-4" />
-                        Command center
-                    </div>
-                    <h1 className="mt-1 text-3xl font-bold tracking-tight text-gray-950">Dashboard</h1>
-                    <p className="mt-1 text-sm text-gray-500">Live WhatsApp performance, sales readiness, and automation health.</p>
-                </div>
+        <div className="min-h-full bg-[#f5f7fa]">
+            <div className="mx-auto max-w-[1680px] space-y-5">
+                <Header
+                    range={range}
+                    setRange={setRange}
+                    isFetching={isFetching}
+                    refetch={refetch}
+                    freshness={freshness(dataUpdatedAt)}
+                />
 
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
-                        {timeRanges.map((item) => (
-                            <button
-                                key={item}
-                                type="button"
-                                onClick={() => setRange(item)}
-                                className={`rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors ${
-                                    range === item ? 'bg-gray-950 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-950'
-                                }`}
-                            >
-                                {item}
-                            </button>
-                        ))}
+                {error ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {error.message}
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => refetch()}
-                        className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm transition-colors hover:border-green-200 hover:bg-green-50 hover:text-green-700"
+                ) : null}
+
+                <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <MetricCard icon={MessageSquareText} label="Messages" value={fmt(model.totalMessages)} detail={`${rangeLabel} synced`} loading={isLoading} />
+                    <MetricCard icon={Users} label="Customer messages" value={fmt(model.metrics.inbound)} detail="Inbound activity" loading={isLoading} />
+                    <MetricCard icon={Bot} label="AI + team replies" value={fmt(n(model.metrics.aiAgent) + n(model.metrics.humanAgent))} detail={`${fmt(model.metrics.aiAgent)} AI / ${fmt(model.metrics.humanAgent)} human`} loading={isLoading} />
+                    <MetricCard icon={AlertTriangle} label="Failed delivery" value={`${model.failedRate.toFixed(1)}%`} detail={`${fmt(model.failed)} messages`} warning={model.failedRate > 5} loading={isLoading} />
+                </section>
+
+                <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.55fr)]">
+                    <Panel
+                        title="Message performance"
+                        subtitle="Delivery, reads, and failures from real WhatsApp message rows."
+                        action={<StatusPill label={healthLabel} warning={model.failedRate > 5} />}
                     >
-                        <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                        Refresh
-                    </button>
-                    <div className="inline-flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm font-semibold text-green-700">
-                        <span className="relative flex h-2.5 w-2.5">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-60" />
-                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500" />
-                        </span>
-                        {getFreshnessLabel(dataUpdatedAt)}
-                    </div>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <MetricCard
-                    title="Total messages"
-                    value={numberFormat.format(model.totalMessages)}
-                    helper={`${range} performance view`}
-                    icon={MessageSquare}
-                    tone="blue"
-                    trend={model.totalMessages ? 'Live' : ''}
-                    loading={isLoading}
-                />
-                <MetricCard
-                    title="Delivered"
-                    value={numberFormat.format(model.delivered)}
-                    helper={`${pct(model.deliveryRate)} delivery efficiency`}
-                    icon={CheckCheck}
-                    tone="green"
-                    trend={pct(model.deliveryRate)}
-                    loading={isLoading}
-                />
-                <MetricCard
-                    title="Read rate"
-                    value={pct(model.readRate)}
-                    helper={`${numberFormat.format(model.readCount)} estimated reads`}
-                    icon={Eye}
-                    tone="violet"
-                    trend={model.readRate >= 80 ? 'Strong' : 'Track'}
-                    loading={isLoading}
-                />
-                <MetricCard
-                    title="Failed post"
-                    value={`${asNumber(model.failedRate).toFixed(1)}%`}
-                    helper={`${numberFormat.format(model.failedCount)} messages need review`}
-                    icon={AlertTriangle}
-                    tone="red"
-                    trend={model.failedRate > 4 ? 'Review' : 'Low'}
-                    loading={isLoading}
-                />
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-                <section className="xl:col-span-8 rounded-xl border border-gray-200 bg-white shadow-sm">
-                    <div className="flex flex-col gap-3 border-b border-gray-100 p-5 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <h2 className="text-base font-bold text-gray-950">Message operations</h2>
-                            <p className="mt-1 text-sm text-gray-500">Delivery funnel and engagement signal from the latest synced data.</p>
+                        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_360px]">
+                            <TrendChart timeline={model.timeline} loading={isLoading} />
+                            <QualityCard model={model} rangeLabel={rangeLabel} />
                         </div>
-                        <HealthBadge failedRate={model.failedRate} />
-                    </div>
-                    <div className="grid gap-6 p-5 lg:grid-cols-5">
-                        <div className="lg:col-span-3 space-y-5">
-                            <ProgressRow label="Delivered or read" value={model.deliveryRate} count={numberFormat.format(model.delivered)} tone="bg-green-500" />
-                            <ProgressRow label="Read engagement" value={model.readRate} count={numberFormat.format(model.readCount)} tone="bg-violet-500" />
-                            <ProgressRow label="Pending status" value={model.totalMessages ? (model.pendingCount / model.totalMessages) * 100 : 0} count={numberFormat.format(model.pendingCount)} tone="bg-amber-500" />
-                            <ProgressRow label="Failed delivery" value={model.failedRate} count={numberFormat.format(model.failedCount)} tone="bg-red-500" />
+                        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <RateCard label="Delivery rate" value={model.deliveryRate} count={fmt(model.delivered)} color="bg-[#0070d1]" />
+                            <RateCard label="Read rate" value={model.readRate} count={fmt(model.read)} color="bg-emerald-500" />
+                            <RateCard label="Pending" value={model.totalMessages ? (model.pending / model.totalMessages) * 100 : 0} count={fmt(model.pending)} color="bg-amber-400" />
+                            <RateCard label="Failure risk" value={model.failedRate} count={`${model.failedRate.toFixed(1)}%`} color="bg-red-500" />
                         </div>
+                    </Panel>
 
-                        <div className="lg:col-span-2 rounded-xl bg-gray-950 p-5 text-white">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-gray-400">Audience synced</p>
-                                    <div className="mt-2 text-4xl font-bold">{numberFormat.format(model.contacts)}</div>
-                                </div>
-                                <Users className="h-6 w-6 text-green-400" />
-                            </div>
-                            <div className="mt-6 grid grid-cols-2 gap-3">
-                                <div className="rounded-lg bg-white/8 p-3">
-                                    <div className="text-xs uppercase tracking-wide text-gray-400">Conversations</div>
-                                    <div className="mt-1 text-xl font-bold">{numberFormat.format(model.conversations)}</div>
-                                </div>
-                                <div className="rounded-lg bg-white/8 p-3">
-                                    <div className="text-xs uppercase tracking-wide text-gray-400">Quality</div>
-                                    <div className="mt-1 text-xl font-bold">{model.quality}/100</div>
-                                </div>
-                            </div>
-                            <p className="mt-5 text-sm leading-6 text-gray-300">{healthCopy}</p>
+                    <Panel title="System health" subtitle="Current account, inbox, and automation state." action={<Gauge className="h-4 w-4 text-gray-400" />}>
+                        <div className="space-y-2.5">
+                            <HealthRow icon={Smartphone} label="WhatsApp accounts" value={`${fmt(model.accounts.active)} active / ${fmt(model.accounts.total)} total`} active={n(model.accounts.active) > 0} />
+                            <HealthRow icon={MessageSquareText} label="Conversations" value={fmt(model.conversations.total)} active />
+                            <HealthRow icon={Bot} label="Bot active chats" value={fmt(model.conversations.botActive)} active />
+                            <HealthRow icon={FileText} label="AI summaries ready" value={fmt(model.conversations.summariesReady)} active />
+                            <HealthRow icon={AlertTriangle} label="Unread messages" value={fmt(model.conversations.unread)} active={n(model.conversations.unread) === 0} />
                         </div>
-                    </div>
+                    </Panel>
                 </section>
 
-                <section className="xl:col-span-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-center justify-between gap-3">
-                        <div>
-                            <h2 className="text-base font-bold text-gray-950">System health</h2>
-                            <p className="mt-1 text-sm text-gray-500">Operational checks for WhatsApp automation.</p>
+                <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+                    <Panel title="Contact readiness" subtitle="Customer data and saved-contact coverage.">
+                        <div className="grid grid-cols-2 gap-3">
+                            <MiniStat icon={Users} label="Contacts" value={fmt(model.contacts.total)} />
+                            <MiniStat icon={UserRoundCheck} label="Saved" value={fmt(model.contacts.saved)} />
+                            <MiniStat icon={TrendingUp} label="AI notes" value={fmt(model.automation.notesGenerated)} />
+                            <MiniStat icon={Clock3} label="Handoffs" value={fmt(model.conversations.humanHandoff)} />
                         </div>
-                        <Gauge className="h-5 w-5 text-gray-400" />
-                    </div>
-                    <div className="mt-5 space-y-3">
-                        <HealthLine icon={Wifi} label="Realtime sync" value={isFetching ? 'Syncing' : 'Active'} good />
-                        <HealthLine icon={ShieldCheck} label="Quality rating" value={`${model.quality}/100`} good={model.quality >= 85} />
-                        <HealthLine icon={Clock3} label="API latency" value="~245ms" good />
-                        <HealthLine icon={AlertTriangle} label="Failure risk" value={`${asNumber(model.failedRate).toFixed(1)}%`} good={model.failedRate <= 4} />
-                    </div>
-                </section>
-            </div>
+                    </Panel>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-                <section className="xl:col-span-7 rounded-xl border border-gray-200 bg-white shadow-sm">
-                    <div className="border-b border-gray-100 p-5">
-                        <h2 className="text-base font-bold text-gray-950">Recent activity</h2>
-                        <p className="mt-1 text-sm text-gray-500">A compact operator feed for what needs attention next.</p>
-                    </div>
-                    <div className="p-3">
-                        <ActivityItem
-                            icon={Activity}
-                            title="Database sync is live"
-                            description={`${numberFormat.format(model.totalMessages)} messages and ${numberFormat.format(model.contacts)} contacts are available for reporting.`}
-                            status="Live"
-                            tone="bg-green-50 text-green-700"
-                        />
-                        <ActivityItem
-                            icon={Eye}
-                            title="Read engagement"
-                            description={model.readRate >= 80 ? 'Customers are opening most delivered messages.' : 'Read rate has room to improve. Try clearer first lines and timing.'}
-                            status={pct(model.readRate)}
-                            tone="bg-violet-50 text-violet-700"
-                        />
-                        <ActivityItem
-                            icon={AlertTriangle}
-                            title="Delivery watch"
-                            description={model.failedRate > 4 ? 'Failed messages are above the ideal range. Review account health and templates.' : 'Failure rate is under control.'}
-                            status={`${asNumber(model.failedRate).toFixed(1)}%`}
-                            tone={model.failedRate > 4 ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}
-                        />
-                    </div>
+                    <Panel title="Automation" subtitle="Flows, bot coverage, and broadcast output.">
+                        <div className="space-y-2.5">
+                            <InfoLine icon={Workflow} label="Flows" value={`${fmt(model.automation.publishedFlows)} published / ${fmt(model.automation.flows)} total`} />
+                            <InfoLine icon={Bot} label="Bot-enabled chats" value={fmt(model.automation.activeFlowSessions)} />
+                            <InfoLine icon={Send} label="Broadcast messages" value={`${fmt(model.campaigns.sent)} sent / ${fmt(model.campaigns.failed)} failed`} />
+                        </div>
+                    </Panel>
+
+                    <Panel title="Quick actions" subtitle="Shortcuts for daily operations." action={<Zap className="h-4 w-4 text-[#0070d1]" />}>
+                        <div className="space-y-2.5">
+                            <QuickAction to="/live-chat" icon={MessageSquareText} title="Open chats" text="Reply and review summaries." />
+                            <QuickAction to="/bot-agents" icon={Bot} title="Manage AI agents" text="Tune replies and handoff rules." />
+                            <QuickAction to="/broadcast" icon={Send} title="Create broadcast" text="Send campaigns with quality in view." />
+                        </div>
+                    </Panel>
                 </section>
 
-                <section className="xl:col-span-5 space-y-4">
-                    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                        <div className="flex items-center justify-between gap-3">
-                            <div>
-                                <h2 className="text-base font-bold text-gray-950">Quick actions</h2>
-                                <p className="mt-1 text-sm text-gray-500">Shortcuts for the next operational task.</p>
-                            </div>
-                            <Zap className="h-5 w-5 text-amber-500" />
+                <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.3fr_0.7fr]">
+                    <Panel title="Recent activity" subtitle="Latest real messages synced from WhatsApp.">
+                        <div className="space-y-2">
+                            {isLoading ? (
+                                Array.from({ length: 4 }).map((_, index) => <SkeletonRow key={index} />)
+                            ) : model.recentActivity.length ? (
+                                model.recentActivity.map(item => <ActivityRow key={item.id} item={item} />)
+                            ) : (
+                                <EmptyState icon={Activity} title="No activity yet" text={`No messages found for ${rangeLabel.toLowerCase()}.`} />
+                            )}
                         </div>
-                        <div className="mt-5 grid gap-3">
-                            <QuickAction
-                                to="/live-chat"
-                                icon={MessageSquare}
-                                title="Open shared inbox"
-                                description="Handle replies, assign owners, and review bot handoff summaries."
-                                accent="bg-green-50 text-green-700"
-                            />
-                            <QuickAction
-                                to="/bot-agents"
-                                icon={Bot}
-                                title="Tune bot agents"
-                                description="Train knowledge, default replies, and unknown-number automation."
-                                accent="bg-blue-50 text-blue-700"
-                            />
-                            <QuickAction
-                                to="/broadcast"
-                                icon={Send}
-                                title="Plan broadcast"
-                                description="Send targeted updates when delivery quality is stable."
-                                accent="bg-violet-50 text-violet-700"
-                            />
-                        </div>
-                    </div>
-                </section>
-            </div>
+                    </Panel>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-                <InsightCard
-                    icon={Sparkles}
-                    title="Automation opportunity"
-                    text="Keep one trained agent ready for new and unknown chats, then hand off only warm or hot leads to sales."
-                />
-                <InsightCard
-                    icon={Workflow}
-                    title="Flow suggestion"
-                    text="Use flow builder for common follow-ups like pricing, meeting booking, payment reminders, and invoice collection."
-                />
-                <InsightCard
-                    icon={FileText}
-                    title="Template hygiene"
-                    text="Review failed posts before scaling broadcasts. Good templates protect delivery quality."
-                />
+                    <Panel title="Campaigns" subtitle="Broadcast rows from your database.">
+                        <div className="space-y-2">
+                            {model.campaigns.latest?.length ? (
+                                model.campaigns.latest.map(campaign => <CampaignRow key={campaign.id} campaign={campaign} />)
+                            ) : (
+                                <EmptyState icon={Send} title="No campaigns yet" text="Campaigns will appear here once created." />
+                            )}
+                        </div>
+                    </Panel>
+                </section>
             </div>
         </div>
     )
 }
 
-function HealthLine({ icon, label, value, good }) {
+function Header({ range, setRange, isFetching, refetch, freshness }) {
     return (
-        <div className="flex items-center justify-between gap-4 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-            <div className="flex items-center gap-3">
-                <div className={`rounded-lg p-2 ${good ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {createElement(icon, { className: 'h-4 w-4' })}
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+            <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-[#0064b7]">
+                    <Grid2X2 className="h-4 w-4" />
+                    Command center
                 </div>
-                <span className="text-sm font-medium text-gray-700">{label}</span>
+                <h1 className="mt-1 text-[34px] font-light leading-tight tracking-normal text-black">Dashboard</h1>
+                <p className="mt-1 text-sm leading-5 text-gray-600">Real WhatsApp performance, customer readiness, and automation health.</p>
             </div>
-            <span className="text-sm font-bold text-gray-950">{value}</span>
+            <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-full border border-gray-200 bg-white p-1">
+                    {ranges.map(item => (
+                        <button
+                            key={item.value}
+                            type="button"
+                            onClick={() => setRange(item.value)}
+                            className={`h-9 rounded-full px-4 text-sm font-semibold transition-colors ${range === item.value ? 'bg-[#0070d1] text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-black'}`}
+                        >
+                            {item.label}
+                        </button>
+                    ))}
+                </div>
+                <button
+                    type="button"
+                    onClick={() => refetch()}
+                    className="inline-flex h-10 items-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100"
+                >
+                    <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                    Refresh
+                </button>
+                <span className="inline-flex h-10 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 text-sm font-medium text-emerald-700">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    {freshness}
+                </span>
+            </div>
         </div>
     )
 }
 
-function InsightCard({ icon, title, text }) {
+function Panel({ title, subtitle, action, children }) {
     return (
-        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-            <div className="flex items-start gap-3">
-                <div className="rounded-lg bg-gray-100 p-2 text-gray-700">
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
+                <div>
+                    <h2 className="text-base font-semibold text-black">{title}</h2>
+                    {subtitle ? <p className="mt-1 text-sm leading-5 text-gray-600">{subtitle}</p> : null}
+                </div>
+                {action}
+            </div>
+            <div className="p-5">{children}</div>
+        </section>
+    )
+}
+
+function MetricCard({ icon, label, value, detail, warning, loading }) {
+    return (
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+            <div className="flex items-start justify-between gap-4">
+                <div>
+                    <p className="text-sm font-medium text-gray-600">{label}</p>
+                    {loading ? (
+                        <div className="mt-3 h-8 w-20 animate-pulse rounded bg-gray-100" />
+                    ) : (
+                        <p className="mt-2 text-[32px] font-light leading-none text-black">{value}</p>
+                    )}
+                </div>
+                <div className={`rounded-lg p-2.5 ${warning ? 'bg-red-50 text-red-600' : 'bg-[#f5f7fa] text-[#0064b7]'}`}>
                     {createElement(icon, { className: 'h-5 w-5' })}
                 </div>
+            </div>
+            <p className="mt-5 text-sm text-gray-600">{detail}</p>
+        </div>
+    )
+}
+
+function TrendChart({ timeline, loading }) {
+    const max = Math.max(1, ...timeline.map(day => n(day.total)))
+    return (
+        <div className="rounded-lg bg-[#f5f7fa] p-4">
+            <div className="mb-4 flex items-center justify-between">
                 <div>
-                    <h3 className="text-sm font-bold text-gray-950">{title}</h3>
-                    <p className="mt-2 text-sm leading-6 text-gray-500">{text}</p>
+                    <h3 className="text-sm font-semibold text-black">Message trend</h3>
+                    <p className="mt-1 text-xs text-gray-600">Daily totals from synced messages.</p>
                 </div>
+                <BarChart3 className="h-4 w-4 text-gray-400" />
+            </div>
+            {loading ? (
+                <div className="h-56 animate-pulse rounded-lg bg-white" />
+            ) : timeline.length ? (
+                <div className="rounded-lg bg-white p-4">
+                    <div className="flex h-44 items-end gap-3">
+                        {timeline.map(day => {
+                            const height = Math.max(6, (n(day.total) / max) * 100)
+                            return (
+                                <div key={day.date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                                    <div className="flex h-36 w-full max-w-8 items-end justify-center rounded bg-gray-100">
+                                        <div className="w-full rounded bg-[#0070d1]" style={{ height: `${height}%` }} title={`${day.date}: ${day.total}`} />
+                                    </div>
+                                    <span className="w-full truncate text-center text-[11px] text-gray-500">{day.date.slice(5)}</span>
+                                </div>
+                            )
+                        })}
+                    </div>
+                </div>
+            ) : (
+                <EmptyState icon={BarChart3} title="No trend data" text="Messages in this range will create the chart." compact />
+            )}
+        </div>
+    )
+}
+
+function QualityCard({ model, rangeLabel }) {
+    return (
+        <div className="rounded-lg bg-black p-5 text-white">
+            <div className="flex items-start justify-between">
+                <div>
+                    <p className="text-sm text-white/70">Delivery quality</p>
+                    <p className="mt-2 text-[42px] font-light leading-none">{model.quality}<span className="text-xl text-white/45">/100</span></p>
+                </div>
+                <CheckCircle2 className="h-5 w-5 text-[#53b1ff]" />
+            </div>
+            <div className="mt-6 grid grid-cols-2 gap-x-6 gap-y-5">
+                <QualityStat label="Delivered" value={fmt(model.delivered)} />
+                <QualityStat label="Read" value={fmt(model.read)} />
+                <QualityStat label="Pending" value={fmt(model.pending)} />
+                <QualityStat label="Failed" value={fmt(model.failed)} />
+            </div>
+            <p className="mt-6 text-sm leading-6 text-white/72">
+                {model.totalMessages
+                    ? `${pct(model.deliveryRate)} delivery and ${pct(model.readRate)} read rate for ${rangeLabel.toLowerCase()}.`
+                    : `No message activity found for ${rangeLabel.toLowerCase()}.`}
+            </p>
+        </div>
+    )
+}
+
+function QualityStat({ label, value }) {
+    return (
+        <div>
+            <p className="text-xs font-medium uppercase text-white/45">{label}</p>
+            <p className="mt-1 text-xl font-medium">{value}</p>
+        </div>
+    )
+}
+
+function RateCard({ label, value, count, color }) {
+    return (
+        <div className="rounded-lg bg-[#f5f7fa] p-4">
+            <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-gray-700">{label}</span>
+                <span className="text-sm font-semibold text-black">{count}</span>
+            </div>
+            <div className="mt-4 h-1.5 rounded-full bg-white">
+                <div className={`h-1.5 rounded-full ${color}`} style={{ width: pct(value) }} />
             </div>
         </div>
+    )
+}
+
+function HealthRow({ icon, label, value, active }) {
+    return (
+        <div className="flex items-center justify-between gap-4 rounded-lg bg-[#f5f7fa] px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+                <span className={`rounded-lg p-2 ${active ? 'bg-white text-[#0064b7]' : 'bg-amber-50 text-amber-600'}`}>
+                    {createElement(icon, { className: 'h-4 w-4' })}
+                </span>
+                <span className="truncate text-sm font-medium text-gray-700">{label}</span>
+            </div>
+            <span className="shrink-0 text-sm font-semibold text-black">{value}</span>
+        </div>
+    )
+}
+
+function MiniStat({ icon, label, value }) {
+    return (
+        <div className="rounded-lg bg-[#f5f7fa] p-4">
+            <span className="mb-4 flex h-8 w-8 items-center justify-center rounded-lg bg-white text-gray-600">
+                {createElement(icon, { className: 'h-4 w-4' })}
+            </span>
+            <p className="text-xs font-medium uppercase text-gray-500">{label}</p>
+            <p className="mt-1 text-2xl font-light text-black">{value}</p>
+        </div>
+    )
+}
+
+function InfoLine({ icon, label, value }) {
+    return (
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-[#f5f7fa] px-4 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+                <span className="rounded-lg bg-white p-2 text-gray-600">{createElement(icon, { className: 'h-4 w-4' })}</span>
+                <span className="truncate text-sm font-medium text-gray-700">{label}</span>
+            </div>
+            <span className="text-right text-sm font-semibold text-black">{value}</span>
+        </div>
+    )
+}
+
+function QuickAction({ to, icon, title, text }) {
+    return (
+        <Link to={to} className="group flex items-center gap-3 rounded-lg bg-[#f5f7fa] p-4 transition-colors hover:bg-gray-100">
+            <span className="rounded-lg bg-white p-2 text-[#0064b7]">{createElement(icon, { className: 'h-4 w-4' })}</span>
+            <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-black">{title}</span>
+                <span className="mt-0.5 block truncate text-xs text-gray-600">{text}</span>
+            </span>
+            <ArrowRight className="h-4 w-4 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-[#0064b7]" />
+        </Link>
+    )
+}
+
+function ActivityRow({ item }) {
+    return (
+        <div className="flex items-start gap-3 rounded-lg bg-[#f5f7fa] p-4">
+            <span className="mt-0.5 rounded-lg bg-white p-2 text-[#0064b7]">
+                <Activity className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-semibold text-black">{item.title}</p>
+                    <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600">{item.status}</span>
+                </div>
+                <p className="mt-1 line-clamp-2 text-sm leading-5 text-gray-700">{item.description}</p>
+                <p className="mt-2 text-xs text-gray-500">{item.meta}</p>
+            </div>
+        </div>
+    )
+}
+
+function CampaignRow({ campaign }) {
+    return (
+        <div className="rounded-lg bg-[#f5f7fa] p-4">
+            <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-black">{campaign.name || 'Campaign'}</p>
+                    <p className="mt-1 text-xs text-gray-500">{campaign.status || 'No status'}</p>
+                </div>
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600">
+                    {fmt(campaign.total_contacts)} contacts
+                </span>
+            </div>
+        </div>
+    )
+}
+
+function EmptyState({ icon, title, text, compact }) {
+    return (
+        <div className={`flex flex-col items-center justify-center rounded-lg border border-dashed border-gray-200 bg-[#f5f7fa] p-6 text-center ${compact ? 'min-h-40' : 'min-h-36'}`}>
+            <div className="rounded-full bg-white p-3 text-gray-400">{createElement(icon, { className: 'h-5 w-5' })}</div>
+            <p className="mt-3 text-sm font-semibold text-black">{title}</p>
+            <p className="mt-1 max-w-sm text-sm text-gray-600">{text}</p>
+        </div>
+    )
+}
+
+function SkeletonRow() {
+    return (
+        <div className="rounded-lg bg-[#f5f7fa] p-4">
+            <div className="h-4 w-32 animate-pulse rounded bg-gray-200" />
+            <div className="mt-3 h-3 w-full animate-pulse rounded bg-gray-200" />
+        </div>
+    )
+}
+
+function StatusPill({ label, warning }) {
+    return (
+        <span className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-semibold ${warning ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+            {label}
+        </span>
     )
 }

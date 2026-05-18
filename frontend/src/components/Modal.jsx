@@ -31,7 +31,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
                             leaveTo="opacity-0 scale-95"
                         >
                             <Dialog.Panel className={clsx(
-                                "w-full transform overflow-hidden rounded-2xl bg-white p-6 text-left align-middle shadow-xl transition-all",
+                                "w-full transform overflow-hidden rounded-lg border border-gray-200 bg-white p-6 text-left align-middle transition-all",
                                 maxWidth
                             )}>
                                 <div className="flex items-center justify-between mb-5">

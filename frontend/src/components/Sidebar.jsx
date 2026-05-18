@@ -150,7 +150,7 @@ export default function Sidebar({ onRequestLogout }) {
                                 onClick={() => selectWaAccount('All')}
                                 className={clsx(
                                     'flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-gray-50',
-                                    selectedWaAccount === 'All' ? 'bg-gray-100 font-semibold text-gray-950' : 'text-gray-700'
+                                    selectedWaAccount === 'All' ? 'bg-[#f5f7fa] font-semibold text-black' : 'text-gray-700'
                                 )}
                             >
                                 <Blocks className="h-4 w-4 text-gray-500" />
@@ -163,7 +163,7 @@ export default function Sidebar({ onRequestLogout }) {
                                     onClick={() => selectWaAccount(getAccountSwitchKey(account))}
                                     className={clsx(
                                         'flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left text-sm hover:bg-gray-50',
-                                        String(selectedWaAccount) === String(getAccountSwitchKey(account)) ? 'bg-gray-100 font-semibold text-gray-950' : 'text-gray-700'
+                                        String(selectedWaAccount) === String(getAccountSwitchKey(account)) ? 'bg-[#f5f7fa] font-semibold text-black' : 'text-gray-700'
                                     )}
                                 >
                                     <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
@@ -287,14 +287,14 @@ function NavItem({ item, active, collapsed }) {
             className={clsx(
                 'group flex h-9 items-center rounded-md text-[14px] font-medium transition-colors',
                 collapsed ? 'justify-center px-0' : 'gap-2 px-2',
-                active ? 'bg-gray-100 text-gray-950' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-950'
+                active ? 'bg-[#f5f7fa] text-[#0064b7]' : 'text-gray-600 hover:bg-[#f5f7fa] hover:text-black'
             )}
         >
-            <Icon className={clsx('h-4 w-4 shrink-0 stroke-[1.9]', active ? 'text-gray-950' : 'text-gray-500 group-hover:text-gray-700')} />
+            <Icon className={clsx('h-4 w-4 shrink-0 stroke-[1.9]', active ? 'text-[#0064b7]' : 'text-gray-500 group-hover:text-gray-700')} />
             <span className={labelTransition(isExpanded, 'flex min-w-0 flex-1 items-center')}>
                 <span className="min-w-0 flex-1 truncate">{item.name}</span>
                 {item.badge ? (
-                    <span className="ml-2 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold leading-none text-blue-600">
+                    <span className="ml-2 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-[#0064b7]">
                         {item.badge}
                     </span>
                 ) : null}

@@ -98,12 +98,12 @@ export default function Layout() {
     }
 
     return (
-        <div className="flex h-screen bg-gray-50">
+        <div className="flex h-screen bg-[#f5f7fa]">
             <Sidebar onRequestLogout={handleLogoutClick} />
 
             <div className="flex flex-1 flex-col overflow-hidden">
                 {/* Topbar */}
-                <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6 shadow-sm">
+                <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6">
                     <div className="flex items-center gap-4">
                         {/* Breadcrumbs or Title could go here */}
                         {/* For now, just a placeholder or empty */}
@@ -117,7 +117,7 @@ export default function Layout() {
                             <button
                                 type="button"
                                 onClick={() => setIsProfileOpen(true)}
-                                className="flex items-center gap-2 rounded-full bg-gray-100 p-1 pr-3 transition-colors hover:bg-gray-200"
+                                className="flex items-center gap-2 rounded-full bg-[#f5f7fa] p-1 pr-3 transition-colors hover:bg-gray-100"
                                 title="Edit profile"
                             >
                                 <div
