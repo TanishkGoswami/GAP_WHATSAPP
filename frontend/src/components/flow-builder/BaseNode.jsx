@@ -12,14 +12,14 @@ export default function BaseNode({
     selected = false
 }) {
     const colorClasses = {
-        blue: 'bg-blue-500 border-blue-400 text-blue-700',
-        green: 'bg-green-500 border-green-400 text-green-700',
-        purple: 'bg-purple-500 border-purple-400 text-purple-700',
-        orange: 'bg-orange-500 border-orange-400 text-orange-700',
-        pink: 'bg-pink-500 border-pink-400 text-pink-700',
-        red: 'bg-red-500 border-red-400 text-red-700',
-        teal: 'bg-teal-500 border-teal-400 text-teal-700',
-        indigo: 'bg-indigo-500 border-indigo-400 text-indigo-700',
+        blue: 'bg-[#128C7E] border-[#0b6f63] text-teal-700',
+        green: 'bg-[#25D366] border-[#1fb85a] text-green-700',
+        purple: 'bg-purple-600 border-purple-500 text-purple-700',
+        orange: 'bg-orange-600 border-orange-500 text-orange-700',
+        pink: 'bg-pink-600 border-pink-500 text-pink-700',
+        red: 'bg-red-600 border-red-500 text-red-700',
+        teal: 'bg-teal-600 border-teal-500 text-teal-700',
+        indigo: 'bg-indigo-600 border-indigo-500 text-indigo-700',
         yellow: 'bg-yellow-500 border-yellow-400 text-yellow-700',
     };
 
@@ -30,7 +30,7 @@ export default function BaseNode({
 
     return (
         <div
-            className={`bg-white rounded-lg shadow-md transition-all ${selected ? 'ring-2 ring-blue-400 shadow-lg scale-105' : 'hover:shadow-lg'
+            className={`flow-node bg-white rounded-lg border border-gray-200 transition-all ${selected ? 'ring-2 ring-[#25D366] ring-offset-2 ring-offset-[#f5f7fa]' : 'hover:border-gray-300'
                 }`}
             style={{ minWidth: '240px', maxWidth: '280px' }}
         >
@@ -38,7 +38,7 @@ export default function BaseNode({
                 <Handle
                     type="target"
                     position={Position.Top}
-                    className="w-3 h-3 bg-gray-400 border-2 border-white"
+                    className="flow-handle w-3 h-3 bg-white border-2 border-gray-400"
                 />
             )}
 
@@ -46,15 +46,22 @@ export default function BaseNode({
             <div className={`${bgColor} text-white px-3 py-2 rounded-t-lg flex items-center justify-between`}>
                 <div className="flex items-center gap-2">
                     {Icon && <Icon className="h-4 w-4" />}
-                    <span className="text-sm font-semibold">{title}</span>
+                    <span className="text-xs font-semibold">{title}</span>
                 </div>
                 <div className="flex items-center gap-1">
                     {data?.configured && (
                         <Check className="h-3 w-3 text-white opacity-70" />
                     )}
                     <button
-                        onClick={() => data?.onDelete?.(id)}
-                        className="text-white hover:text-red-200 transition-colors"
+                        type="button"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            data?.onDelete?.(id);
+                        }}
+                        className="text-white/80 hover:text-white transition-colors nodrag nopan"
+                        title="Delete node"
                     >
                         <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -68,7 +75,7 @@ export default function BaseNode({
 
             {/* Status Footer */}
             {(status.sent > 0 || status.delivered > 0 || status.subscribers > 0 || status.errors > 0) && (
-                <div className="border-t border-gray-200 px-3 py-2 bg-gray-50 rounded-b-lg">
+                <div className="border-t border-gray-200 px-3 py-2 bg-[#f5f7fa] rounded-b-lg">
                     <div className="grid grid-cols-4 gap-2 text-[10px]">
                         <div className="flex flex-col items-center">
                             <span className="text-blue-600 font-semibold">{status.sent}</span>
@@ -96,7 +103,7 @@ export default function BaseNode({
                 <Handle
                     type="source"
                     position={Position.Bottom}
-                    className="w-3 h-3 bg-gray-400 border-2 border-white"
+                    className="flow-handle w-3 h-3 bg-white border-2 border-gray-400"
                 />
             )}
         </div>

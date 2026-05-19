@@ -173,17 +173,19 @@ export default function Sidebar({ onRequestLogout }) {
                                     </span>
                                 </button>
                             ))}
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setIsOrgMenuOpen(false)
-                                    navigate('/whatsapp-connect')
-                                }}
-                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                            >
-                                <Plus className="h-4 w-4 text-gray-500" />
-                                Connect another account
-                            </button>
+                            {isOwner ? (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsOrgMenuOpen(false)
+                                        navigate('/whatsapp-connect')
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                >
+                                    <Plus className="h-4 w-4 text-gray-500" />
+                                    Connect another account
+                                </button>
+                            ) : null}
                         </div>
                     ) : null}
                 </div>
@@ -214,16 +216,20 @@ export default function Sidebar({ onRequestLogout }) {
                 </nav>
 
                 <div className="border-t border-gray-100 p-2">
-                    <NavItem
-                        item={{ name: 'Settings', href: '/settings', icon: Settings }}
-                        active={isActive('/settings')}
-                        collapsed={isCollapsed}
-                    />
-                    <NavItem
-                        item={{ name: 'Help Center', href: '/help', icon: HelpCircle }}
-                        active={isActive('/help')}
-                        collapsed={isCollapsed}
-                    />
+                    {isOwner ? (
+                        <>
+                            <NavItem
+                                item={{ name: 'Settings', href: '/settings', icon: Settings }}
+                                active={isActive('/settings')}
+                                collapsed={isCollapsed}
+                            />
+                            <NavItem
+                                item={{ name: 'Help Center', href: '/help', icon: HelpCircle }}
+                                active={isActive('/help')}
+                                collapsed={isCollapsed}
+                            />
+                        </>
+                    ) : null}
 
                     <div className="relative mt-1">
                         <button

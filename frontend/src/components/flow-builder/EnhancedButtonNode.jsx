@@ -7,21 +7,31 @@ export default function EnhancedButtonNode({ id, data, selected }) {
 
     return (
         <div
-            className={`bg-white rounded-lg shadow-md transition-all ${selected ? 'ring-2 ring-green-400 shadow-lg' : 'hover:shadow-lg'}`}
+            className={`flow-node bg-white rounded-lg border border-gray-200 transition-all ${selected ? 'ring-2 ring-[#25D366] ring-offset-2 ring-offset-[#f5f7fa]' : 'hover:border-gray-300'}`}
             style={{ minWidth: '240px', maxWidth: '280px' }}
         >
             {/* Input Handle - Top */}
-            <Handle type="target" position={Position.Top} className="w-3 h-3 bg-gray-400 border-2 border-white" />
+            <Handle type="target" position={Position.Top} className="flow-handle w-3 h-3 bg-white border-2 border-gray-400" />
 
             {/* Header */}
-            <div className="bg-green-500 text-white px-3 py-2 rounded-t-lg flex items-center justify-between">
+            <div className="bg-[#25D366] text-white px-3 py-2 rounded-t-lg flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <Link2 className="h-4 w-4" />
-                    <span className="text-sm font-semibold">Buttons</span>
+                    <span className="text-xs font-semibold">Buttons</span>
                 </div>
                 <div className="flex items-center gap-1">
                     {data?.configured && <Check className="h-3 w-3 text-white opacity-70" />}
-                    <button onClick={() => data?.onDelete?.(id)} className="text-white hover:text-red-200">
+                    <button
+                        type="button"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            data?.onDelete?.(id);
+                        }}
+                        className="text-white/80 hover:text-white nodrag nopan"
+                        title="Delete node"
+                    >
                         <Trash2 className="h-3.5 w-3.5" />
                     </button>
                 </div>
@@ -37,7 +47,7 @@ export default function EnhancedButtonNode({ id, data, selected }) {
                     buttons.map((btn, idx) => (
                         btn.text && (
                             <div key={idx} className="relative">
-                                <div className="bg-green-50 border border-green-200 rounded px-2 py-1.5 pr-6">
+                                <div className="bg-green-50/80 border border-green-200 rounded px-2 py-1.5 pr-6">
                                     <div className="text-xs font-medium text-green-800">{btn.text}</div>
                                     <div className="text-[10px] text-green-500">
                                         {btn.type === 'url' ? '🔗 URL' : btn.type === 'phone' ? '📞 Call' : '↩ Reply'}
@@ -50,7 +60,7 @@ export default function EnhancedButtonNode({ id, data, selected }) {
                                         position={Position.Right}
                                         id={`button-${idx}`}
                                         style={{ top: '50%', right: -8 }}
-                                        className="w-3 h-3 bg-green-400 border-2 border-white"
+                                        className="flow-handle w-3 h-3 bg-white border-2 border-green-500"
                                     />
                                 )}
                             </div>

@@ -18,6 +18,7 @@ export default function Layout() {
 
     const isOwner = userRole === 'owner'
     const isLiveChat = location.pathname === '/live-chat'
+    const isFlowBuilder = location.pathname.startsWith('/flow-builder')
     const displayName = memberProfile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'
     const avatarColor = memberProfile?.avatar_color || user?.user_metadata?.avatar_color || '#4f46e5'
     const userEmail = memberProfile?.email || user?.email || ''
@@ -38,6 +39,7 @@ export default function Layout() {
 
     if (loading) return null // wait only for the initial auth check, never block on profile re-fetch
     if (!user) return <Navigate to="/login" replace />
+    if (userRole === null) return null
 
     // Redirect non-owners to live-chat if they try to access restricted paths
     if (!isOwner && location.pathname !== '/live-chat') {
@@ -98,7 +100,7 @@ export default function Layout() {
     }
 
     return (
-        <div className="flex h-screen bg-[#f5f7fa]">
+        <div className="fixed inset-0 flex bg-[#f5f7fa]">
             <Sidebar onRequestLogout={handleLogoutClick} />
 
             <div className="flex flex-1 flex-col overflow-hidden">
@@ -140,7 +142,7 @@ export default function Layout() {
                 </header>
 
                 {/* Main Content */}
-                <main className={`flex-1 ${isLiveChat ? 'overflow-hidden p-0' : 'overflow-y-auto p-6'}`}>
+                <main className={`flex-1 ${(isLiveChat || isFlowBuilder) ? 'overflow-hidden p-0' : 'overflow-y-auto p-6'}`}>
                     <Outlet />
                 </main>
 
@@ -236,56 +238,89 @@ export default function Layout() {
                     </form>
                 </Modal>
 
-                <Modal 
-                    isOpen={isLogoutConfirmOpen} 
+                <Modal
+                    isOpen={isLogoutConfirmOpen}
                     onClose={handleCancelLogout}
-                    title="Leave GAP FlowPilot?"
-                    maxWidth="max-w-md"
+                    title="Sign out options"
+                    maxWidth="max-w-lg"
                 >
-                    <div className="flex flex-col items-center gap-4">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-50">
-                            <AlertCircle className="h-6 w-6 text-amber-600" />
+                    <div className="space-y-5">
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                            <div className="flex gap-3">
+                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-amber-600 ring-1 ring-amber-200">
+                                    <AlertCircle className="h-5 w-5" />
+                                </span>
+                                <div>
+                                    <p className="text-sm font-semibold text-gray-950">Choose how you want to leave this workspace</p>
+                                    <p className="mt-1 text-sm leading-6 text-gray-600">
+                                        You can keep this session active for GetAiPilot, or fully sign out and return to the login page.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
-                        <div className="text-center">
-                            <p className="mb-2 text-sm font-semibold text-gray-900">
-                                Aap session end karna chahte ho?
-                            </p>
-                            <p className="text-sm leading-6 text-gray-600">
-                                Logout karne par aap login page par jaoge. GetAiPilot services par jaana ho to session active rakho, phir dobara login nahi karna padega.
-                            </p>
-                        </div>
-                        <div className="grid w-full gap-3">
+
+                        <div className="grid gap-3">
                             <button
                                 onClick={handleContinueToGetAiPilot}
                                 disabled={isLoggingOut}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+                                className="group flex w-full items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-left transition-colors hover:bg-emerald-100 disabled:opacity-50"
                             >
-                                <ExternalLink className="h-4 w-4" />
-                                Keep me signed in and go to GetAiPilot
+                                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white text-emerald-700 ring-1 ring-emerald-200">
+                                    <ExternalLink className="h-4 w-4" />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block text-sm font-semibold text-emerald-900">Keep me signed in</span>
+                                    <span className="mt-1 block text-sm leading-5 text-emerald-800/80">
+                                        Go to GetAiPilot without ending your current workspace session.
+                                    </span>
+                                </span>
+                                <span className="mt-2 text-emerald-700 transition-transform group-hover:translate-x-0.5">
+                                    <ExternalLink className="h-4 w-4" />
+                                </span>
                             </button>
+
                             <button
                                 onClick={handleConfirmLogout}
                                 disabled={isLoggingOut}
-                                className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                                className="group flex w-full items-start gap-3 rounded-lg border border-gray-200 bg-white p-4 text-left transition-colors hover:border-red-200 hover:bg-red-50 disabled:opacity-50"
                             >
                                 {isLoggingOut ? (
                                     <>
-                                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
-                                        Logging out...
+                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600 ring-1 ring-red-100">
+                                            <span className="h-4 w-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent" />
+                                        </span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block text-sm font-semibold text-gray-950">Signing out...</span>
+                                            <span className="mt-1 block text-sm leading-5 text-gray-500">Please wait while we close your session.</span>
+                                        </span>
                                     </>
                                 ) : (
                                     <>
-                                        <LogOut className="h-4 w-4" />
-                                        Logout and go to login
+                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600 ring-1 ring-red-100">
+                                            <LogOut className="h-4 w-4" />
+                                        </span>
+                                        <span className="min-w-0 flex-1">
+                                            <span className="block text-sm font-semibold text-gray-950">Sign out and go to login</span>
+                                            <span className="mt-1 block text-sm leading-5 text-gray-500">
+                                                End this session on this browser and return to the login screen.
+                                            </span>
+                                        </span>
+                                        <span className="mt-2 text-gray-400 transition-colors group-hover:text-red-600">
+                                            <LogOut className="h-4 w-4" />
+                                        </span>
                                     </>
                                 )}
                             </button>
+                        </div>
+
+                        <div className="flex items-center justify-between border-t border-gray-100 pt-4">
+                            <p className="text-xs text-gray-500">Nothing changes until you choose an option.</p>
                             <button
                                 onClick={handleCancelLogout}
                                 disabled={isLoggingOut}
-                                className="rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+                                className="inline-flex h-10 items-center justify-center rounded-full border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
                             >
-                                Cancel
+                                Stay here
                             </button>
                         </div>
                     </div>

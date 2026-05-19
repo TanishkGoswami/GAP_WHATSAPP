@@ -12,13 +12,16 @@ export function AuthProvider({ children }) {
     const [userRole, setUserRole] = useState(null)
     const [memberProfile, setMemberProfile] = useState(null)
     const [isProfileLoading, setIsProfileLoading] = useState(false)
-    const fetchedForUserId = useRef(null) // tracks which user we last fetched profile for
+    const fetchedForProfileKey = useRef(null) // tracks which user + portal we last fetched profile for
     const [loginType, setLoginType] = useState(localStorage.getItem('auth_login_type') || 'owner')
 
     const fetchMemberProfile = async (token, userId) => {
         // Avoid re-fetching on TOKEN_REFRESHED (tab focus) — only fetch when user actually changes
-        if (fetchedForUserId.current === userId && userRole !== null) return
-        fetchedForUserId.current = userId
+        const profileKey = `${userId}:${loginType || 'owner'}`
+        if (fetchedForProfileKey.current === profileKey && userRole !== null) return
+        fetchedForProfileKey.current = profileKey
+        setUserRole(null)
+        setMemberProfile(null)
         setIsProfileLoading(true)
         try {
             const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/my-profile`, {
@@ -29,19 +32,20 @@ export function AuthProvider({ children }) {
             })
             if (res.ok) {
                 const data = await res.json()
-                // If loginType is owner, we prefer 'owner' role unless DB says otherwise
-                // But usually if they login via owner portal, we treat them as owner if profile is missing
                 const role = data?.role || (loginType === 'agent' ? 'agent' : 'owner')
                 console.log("Profile Data:", data, "Resolved Role:", role, "Login Type:", loginType)
                 setUserRole(role)
                 setMemberProfile(data)
             } else {
-                // If profile not found, use loginType to decide default
-                setUserRole(loginType === 'agent' ? 'agent' : 'owner')
+                const errorData = await res.json().catch(() => ({}))
+                console.warn("Failed to resolve profile role:", res.status, errorData?.error || res.statusText)
+                setUserRole('agent')
+                setMemberProfile(null)
             }
         } catch (e) {
             console.error("Failed to fetch member profile", e)
-            setUserRole(loginType === 'agent' ? 'agent' : 'owner')
+            setUserRole('agent')
+            setMemberProfile(null)
         } finally {
             setIsProfileLoading(false)
         }
@@ -74,7 +78,7 @@ export function AuthProvider({ children }) {
                 setUserRole(null)
                 setMemberProfile(null)
                 setIsProfileLoading(false)
-                fetchedForUserId.current = null
+                fetchedForProfileKey.current = null
             }
         })
 
@@ -86,7 +90,7 @@ export function AuthProvider({ children }) {
             fetchMemberProfile(session.access_token, session.user.id)
         } else if (!session) {
             // Logged out — reset everything
-            fetchedForUserId.current = null
+            fetchedForProfileKey.current = null
             setUserRole(null)
             setMemberProfile(null)
             setIsProfileLoading(false)
@@ -125,6 +129,9 @@ export function AuthProvider({ children }) {
     const value = {
         signUp: (data) => supabase.auth.signUp(data),
         signIn: async (data, type = 'owner') => {
+            fetchedForProfileKey.current = null
+            setUserRole(null)
+            setMemberProfile(null)
             setLoginType(type)
             localStorage.setItem('auth_login_type', type)
             return supabase.auth.signInWithPassword(data)
@@ -138,6 +145,7 @@ export function AuthProvider({ children }) {
         signOut: () => {
             setUserRole(null)
             setMemberProfile(null)
+            fetchedForProfileKey.current = null
             localStorage.removeItem('auth_login_type')
             return supabase.auth.signOut()
         },

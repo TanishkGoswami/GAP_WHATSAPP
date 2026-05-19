@@ -121,6 +121,7 @@ export default function Dashboard() {
             failedRate,
             quality,
             timeline: Array.isArray(stats?.timeline) ? stats.timeline : [],
+            hourlyTimeline: Array.isArray(stats?.hourlyTimeline) ? stats.hourlyTimeline : [],
             recentActivity: Array.isArray(stats?.recentActivity) ? stats.recentActivity : [],
         }
     }, [stats])
@@ -159,7 +160,7 @@ export default function Dashboard() {
                         action={<StatusPill label={healthLabel} warning={model.failedRate > 5} />}
                     >
                         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_360px]">
-                            <TrendChart timeline={model.timeline} loading={isLoading} />
+                            <TrendChart timeline={range === 'today' ? model.hourlyTimeline : model.timeline} loading={isLoading} range={range} />
                             <QualityCard model={model} rangeLabel={rangeLabel} />
                         </div>
                         <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -313,33 +314,68 @@ function MetricCard({ icon, label, value, detail, warning, loading }) {
     )
 }
 
-function TrendChart({ timeline, loading }) {
-    const max = Math.max(1, ...timeline.map(day => n(day.total)))
+function TrendChart({ timeline, loading, range }) {
+    const isHourly = range === 'today'
+    const max = Math.max(1, ...timeline.map(point => n(point.total)))
+    const total = timeline.reduce((sum, point) => sum + n(point.total), 0)
+    const peak = timeline.reduce((best, point) => n(point.total) > n(best?.total) ? point : best, timeline[0] || null)
+    const activePoints = timeline.filter(point => n(point.total) > 0).length
+    const chartTitle = isHourly ? 'Hourly message activity' : 'Message trend'
+    const chartSubtitle = isHourly ? 'Messages grouped by hour for today.' : 'Daily totals from synced messages.'
+
     return (
-        <div className="rounded-lg bg-[#f5f7fa] p-4">
-            <div className="mb-4 flex items-center justify-between">
+        <div className="rounded-lg border border-gray-200 bg-white">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
                 <div>
-                    <h3 className="text-sm font-semibold text-black">Message trend</h3>
-                    <p className="mt-1 text-xs text-gray-600">Daily totals from synced messages.</p>
+                    <h3 className="text-sm font-semibold text-black">{chartTitle}</h3>
+                    <p className="mt-1 text-xs text-gray-600">{chartSubtitle}</p>
                 </div>
-                <BarChart3 className="h-4 w-4 text-gray-400" />
+                <div className="text-right">
+                    <div className="text-sm font-semibold text-black">{fmt(total)}</div>
+                    <div className="text-xs text-gray-500">{isHourly ? 'today' : 'messages'}</div>
+                </div>
             </div>
             {loading ? (
-                <div className="h-56 animate-pulse rounded-lg bg-white" />
+                <div className="m-5 h-64 animate-pulse rounded-lg bg-[#f5f7fa]" />
             ) : timeline.length ? (
-                <div className="rounded-lg bg-white p-4">
-                    <div className="flex h-44 items-end gap-3">
-                        {timeline.map(day => {
-                            const height = Math.max(6, (n(day.total) / max) * 100)
-                            return (
-                                <div key={day.date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-                                    <div className="flex h-36 w-full max-w-8 items-end justify-center rounded bg-gray-100">
-                                        <div className="w-full rounded bg-[#0070d1]" style={{ height: `${height}%` }} title={`${day.date}: ${day.total}`} />
-                                    </div>
-                                    <span className="w-full truncate text-center text-[11px] text-gray-500">{day.date.slice(5)}</span>
-                                </div>
-                            )
-                        })}
+                <div className="p-5">
+                    <div className="rounded-lg border border-gray-100 bg-[#fbfcfd] p-4">
+                        <div className="mb-3 flex items-center justify-between text-xs text-gray-500">
+                            <span>{isHourly ? `${activePoints} active hours` : `${timeline.length} days`}</span>
+                            <span>Peak {peak ? `${isHourly ? peak.hour : peak.date.slice(5)} · ${fmt(peak.total)}` : '-'}</span>
+                        </div>
+                        <div className="relative h-60">
+                            <div className="absolute inset-x-0 top-0 border-t border-dashed border-gray-200" />
+                            <div className="absolute inset-x-0 top-1/3 border-t border-dashed border-gray-200" />
+                            <div className="absolute inset-x-0 top-2/3 border-t border-dashed border-gray-200" />
+                            <div className="absolute inset-x-0 bottom-8 border-t border-gray-200" />
+
+                            <div className="absolute inset-x-0 bottom-0 top-2 flex items-end justify-between gap-1.5 pb-8">
+                                {timeline.map((point, index) => {
+                                    const value = n(point.total)
+                                    const height = value === 0 ? 0 : Math.max(8, (value / max) * 150)
+                                    const label = isHourly ? point.hour : point.date?.slice(5)
+                                    const showLabel = isHourly ? index % 4 === 0 : true
+                                    return (
+                                        <div key={isHourly ? point.hour : point.date} className="group flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                                            <div className="text-[11px] font-semibold text-gray-700 opacity-0 transition-opacity group-hover:opacity-100">
+                                                {fmt(value)}
+                                            </div>
+                                            <div className="flex h-[150px] w-full max-w-8 items-end justify-center rounded bg-gray-100">
+                                                <div
+                                                    className="w-full rounded bg-[#0070d1] transition-all group-hover:bg-[#0064b7]"
+                                                    style={{ height }}
+                                                    title={`${label}: ${fmt(value)} messages`}
+                                                />
+                                            </div>
+                                            <span className="h-4 w-12 truncate text-center text-[10px] text-gray-500">
+                                                {showLabel ? label : ''}
+                                            </span>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
                     </div>
                 </div>
             ) : (

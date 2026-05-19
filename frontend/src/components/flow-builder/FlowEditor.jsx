@@ -5,9 +5,11 @@ import ReactFlow, {
     useNodesState,
     useEdgesState,
     Controls,
-    Background,
     MarkerType,
     Panel,
+    BaseEdge,
+    EdgeLabelRenderer,
+    getSmoothStepPath,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { Save, ArrowLeft, Play, Zap, Handshake, Square } from 'lucide-react';
@@ -35,6 +37,57 @@ import ProductNode from './ProductNode';
 import EnhancedFlowSidebar from './EnhancedFlowSidebar';
 import NodeConfigPanel from './NodeConfigPanel';
 import BaseNode from './BaseNode';
+
+function DeletableEdge({
+    id,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    markerEnd,
+    selected,
+    data,
+}) {
+    const [edgePath, labelX, labelY] = getSmoothStepPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+        borderRadius: 14,
+    });
+
+    return (
+        <>
+            <BaseEdge
+                id={id}
+                path={edgePath}
+                markerEnd={markerEnd}
+                className={selected ? 'flow-edge-path flow-edge-path-selected' : 'flow-edge-path'}
+            />
+            {selected && (
+                <EdgeLabelRenderer>
+                    <button
+                        type="button"
+                        className="flow-edge-delete nodrag nopan"
+                        style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            data?.onDelete?.(id);
+                        }}
+                        title="Delete connection"
+                    >
+                        ×
+                    </button>
+                </EdgeLabelRenderer>
+            )}
+        </>
+    );
+}
 
 // Register all node types
 const nodeTypes = {
@@ -68,6 +121,10 @@ const nodeTypes = {
     ),
 };
 
+const edgeTypes = {
+    deletable: DeletableEdge,
+};
+
 function FlowEditorContent({ flow, onClose }) {
     const { session } = useAuth();
     const reactFlowWrapper = useRef(null);
@@ -75,6 +132,7 @@ function FlowEditorContent({ flow, onClose }) {
     const [edges, setEdges, onEdgesChange] = useEdgesState(flow?.edges || []);
     const [reactFlowInstance, setReactFlowInstance] = useState(null);
     const [selectedNode, setSelectedNode] = useState(null);
+    const [selectedEdgeId, setSelectedEdgeId] = useState(null);
     const [configPanelOpen, setConfigPanelOpen] = useState(false);
 
     const getId = () => `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -82,10 +140,10 @@ function FlowEditorContent({ flow, onClose }) {
     const onConnect = useCallback(
         (params) => setEdges((eds) => addEdge({
             ...params,
-            type: 'smoothstep',
-            animated: true,
-            style: { stroke: '#94a3b8', strokeWidth: 2 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8' }
+            type: 'deletable',
+            animated: false,
+            style: { stroke: '#9aa4b2', strokeWidth: 1.8 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: '#9aa4b2' }
         }, eds)),
         []
     );
@@ -129,11 +187,17 @@ function FlowEditorContent({ flow, onClose }) {
     const handleDeleteNode = (nodeId) => {
         setNodes((nds) => nds.filter((n) => n.id !== nodeId));
         setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+        setSelectedEdgeId(null);
         if (selectedNode?.id === nodeId) {
             setSelectedNode(null);
             setConfigPanelOpen(false);
         }
     };
+
+    const handleDeleteEdge = useCallback((edgeId) => {
+        setEdges((eds) => eds.filter((edge) => edge.id !== edgeId));
+        setSelectedEdgeId(null);
+    }, [setEdges]);
 
     const handleUpdateNode = (nodeId, newData) => {
         setNodes((nds) =>
@@ -148,12 +212,28 @@ function FlowEditorContent({ flow, onClose }) {
 
     const onNodeClick = useCallback((event, node) => {
         setSelectedNode(node);
+        setSelectedEdgeId(null);
         setConfigPanelOpen(true);
     }, []);
 
     const onPaneClick = useCallback(() => {
         setSelectedNode(null);
+        setSelectedEdgeId(null);
     }, []);
+
+    const onEdgeClick = useCallback((event, edge) => {
+        event.stopPropagation();
+        setSelectedNode(null);
+        setConfigPanelOpen(false);
+        setSelectedEdgeId(edge.id);
+    }, []);
+
+    const onKeyDown = useCallback((event) => {
+        if ((event.key === 'Delete' || event.key === 'Backspace') && selectedEdgeId) {
+            event.preventDefault();
+            handleDeleteEdge(selectedEdgeId);
+        }
+    }, [handleDeleteEdge, selectedEdgeId]);
 
     const handleSaveConfig = (nodeId, config) => {
         setNodes((nds) =>
@@ -201,42 +281,43 @@ function FlowEditorContent({ flow, onClose }) {
     };
 
     return (
-        <div className="h-screen flex flex-col bg-gray-50">
+        <div className="h-full flex flex-col bg-[#f5f7fa]">
             {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-3.5 flex items-center justify-between shadow-sm">
+            <div className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <button
                         onClick={onClose}
-                        className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 p-2 rounded-lg transition-colors"
+                        className="h-10 w-10 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors inline-flex items-center justify-center"
+                        title="Back"
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </button>
                     <div>
-                        <h1 className="text-lg font-bold text-gray-900">{flow.name}</h1>
-                        <p className="text-xs text-gray-500">{flow.description}</p>
+                        <h1 className="text-lg font-semibold leading-tight text-black">{flow.name}</h1>
+                        {flow.description && <p className="text-xs text-gray-500 mt-0.5">{flow.description}</p>}
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
-                    <div className="text-xs text-gray-500 px-3 py-1.5 bg-gray-100 rounded-lg">
+                    <div className="text-xs text-gray-600 px-3 py-2 bg-[#f5f7fa] rounded-full">
                         <span className="font-semibold">{nodes.length}</span> nodes · <span className="font-semibold">{edges.length}</span> connections
                     </div>
                     <button
                         onClick={handleTest}
-                        className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 text-sm font-medium transition-colors"
+                        className="fp-button-secondary"
                     >
                         <Play className="h-4 w-4" />
                         Test Flow
                     </button>
                     <button
                         onClick={handleSave}
-                        className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 text-sm font-medium shadow-sm transition-all"
+                        className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#25D366] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#1fb85a] disabled:opacity-50"
                     >
                         <Save className="h-4 w-4" />
                         Save Flow
                     </button>
                     <button
                         onClick={handlePublish}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium shadow-sm transition-all"
+                        className="fp-button-primary bg-black hover:bg-[#181818]"
                     >
                         <Zap className="h-4 w-4" />
                         Publish
@@ -253,9 +334,24 @@ function FlowEditorContent({ flow, onClose }) {
                     <ReactFlow
                         nodes={nodes.map(node => ({
                             ...node,
-                            selected: selectedNode?.id === node.id
+                            selected: selectedNode?.id === node.id,
+                            data: {
+                                ...node.data,
+                                onDelete: handleDeleteNode,
+                                onUpdate: handleUpdateNode,
+                            },
                         }))}
-                        edges={edges}
+                        edges={edges.map(edge => ({
+                            ...edge,
+                            type: 'deletable',
+                            animated: false,
+                            selected: selectedEdgeId === edge.id,
+                            data: {
+                                ...edge.data,
+                                onDelete: handleDeleteEdge,
+                            },
+                            markerEnd: edge.markerEnd || { type: MarkerType.ArrowClosed, color: '#9aa4b2' },
+                        }))}
                         onNodesChange={onNodesChange}
                         onEdgesChange={onEdgesChange}
                         onConnect={onConnect}
@@ -263,31 +359,30 @@ function FlowEditorContent({ flow, onClose }) {
                         onDrop={onDrop}
                         onDragOver={onDragOver}
                         onNodeClick={onNodeClick}
+                        onEdgeClick={onEdgeClick}
                         onPaneClick={onPaneClick}
+                        onKeyDown={onKeyDown}
                         nodeTypes={nodeTypes}
+                        edgeTypes={edgeTypes}
                         fitView
-                        className="bg-gray-50"
+                        fitViewOptions={{ padding: 0.28, minZoom: 0.55, maxZoom: 0.9 }}
+                        className="flow-canvas"
                         defaultEdgeOptions={{
-                            type: 'smoothstep',
-                            animated: true,
-                            style: { strokeWidth: 2, stroke: '#94a3b8' },
+                            type: 'deletable',
+                            animated: false,
+                            style: { strokeWidth: 1.8, stroke: '#9aa4b2' },
                         }}
-                        minZoom={0.2}
+                        deleteKeyCode={['Backspace', 'Delete']}
+                        minZoom={0.35}
                         maxZoom={2}
                     >
-                        <Controls className="bg-white border border-gray-200 rounded-lg shadow-sm" />
-                        <Background
-                            color="#d1d5db"
-                            gap={20}
-                            size={1}
-                            variant="dots"
-                        />
+                        <Controls className="flow-controls bg-white border border-gray-200 rounded-lg" />
 
                         {/* Empty State */}
                         {nodes.length === 0 && (
                             <Panel position="top-center" className="mt-20">
-                                <div className="bg-white rounded-xl shadow-lg border border-gray-200 p-8 max-w-md text-center">
-                                    <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <div className="bg-white rounded-lg border border-gray-200 p-8 max-w-md text-center">
+                                    <div className="w-14 h-14 bg-[#25D366] rounded-full flex items-center justify-center mx-auto mb-4">
                                         <Zap className="h-8 w-8 text-white" />
                                     </div>
                                     <h3 className="text-lg font-bold text-gray-900 mb-2">

@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap, Activity, X } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap, Activity, X, LayoutTemplate, Star, Search, Sparkles, Clock, Layers, CheckCircle2 } from 'lucide-react';
 import axios from 'axios';
 import FlowEditor from '../components/flow-builder/FlowEditor';
 import { useAuth } from '../context/AuthContext';
+import { FLOW_TEMPLATE_CATEGORIES, FLOW_TEMPLATES, buildFlowFromTemplate } from '../components/flow-builder/flowTemplates';
 
 export default function FlowBuilder() {
     const { session } = useAuth();
@@ -15,12 +16,76 @@ export default function FlowBuilder() {
     const [runsModalFlow, setRunsModalFlow] = useState(null);
     const [flowRuns, setFlowRuns] = useState([]);
     const [runsLoading, setRunsLoading] = useState(false);
+    const [showTemplatesModal, setShowTemplatesModal] = useState(false);
+    const [templateQuery, setTemplateQuery] = useState('');
+    const [templateCategory, setTemplateCategory] = useState('All');
+    const [selectedTemplate, setSelectedTemplate] = useState(FLOW_TEMPLATES[0]);
+    const [templateDraft, setTemplateDraft] = useState(() => getDefaultTemplateDraft(FLOW_TEMPLATES[0]));
+    const [templateStarStats, setTemplateStarStats] = useState({});
 
     const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+
+    const filteredTemplates = useMemo(() => {
+        const query = templateQuery.trim().toLowerCase();
+        return FLOW_TEMPLATES
+            .filter(template => templateCategory === 'All' || template.category === templateCategory)
+            .filter(template => {
+                if (!query) return true;
+                return [template.name, template.description, template.bestFor, template.category].some(value =>
+                    String(value || '').toLowerCase().includes(query)
+                );
+            })
+            .sort((a, b) => getTemplateStars(b, templateStarStats) - getTemplateStars(a, templateStarStats));
+    }, [templateStarStats, templateCategory, templateQuery]);
+
+    const handleSelectTemplate = (template) => {
+        setSelectedTemplate(template);
+        setTemplateDraft(getDefaultTemplateDraft(template));
+    };
+
+    const fetchTemplateStars = async () => {
+        if (!session?.access_token) return;
+        try {
+            const res = await axios.get(`${API_URL}/api/flow-template-stars`, {
+                headers: { 'Authorization': `Bearer ${session.access_token}` }
+            });
+            setTemplateStarStats(res.data || {});
+        } catch (error) {
+            console.error('Failed to fetch template stars:', error);
+        }
+    };
+
+    const toggleTemplateStar = async (templateId) => {
+        const previous = templateStarStats;
+        const current = previous[templateId] || { stars: 0, starred: false };
+        const optimistic = {
+            ...previous,
+            [templateId]: {
+                stars: Math.max(0, current.stars + (current.starred ? -1 : 1)),
+                starred: !current.starred,
+            }
+        };
+        setTemplateStarStats(optimistic);
+
+        try {
+            const res = await axios.post(`${API_URL}/api/flow-template-stars/${templateId}`, {}, {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            });
+            setTemplateStarStats(prev => ({
+                ...prev,
+                [templateId]: { stars: res.data?.stars || 0, starred: res.data?.starred === true }
+            }));
+        } catch (error) {
+            console.error('Failed to update template star:', error);
+            setTemplateStarStats(previous);
+            alert(error?.response?.data?.error || 'Could not update template star');
+        }
+    };
 
     useEffect(() => {
         if (session?.access_token) {
             fetchFlows();
+            fetchTemplateStars();
         }
     }, [session]);
 
@@ -116,6 +181,23 @@ export default function FlowBuilder() {
         }
     };
 
+    const handleCreateFromTemplate = async () => {
+        if (!selectedTemplate) return;
+        const newFlow = buildFlowFromTemplate(selectedTemplate, templateDraft);
+
+        try {
+            const res = await axios.post(`${API_URL}/api/flows`, newFlow, {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            });
+            setFlows([res.data, ...flows]);
+            setShowTemplatesModal(false);
+            setEditingFlow(res.data);
+        } catch (error) {
+            console.error('Failed to create flow from template', error);
+            alert('Error creating template flow');
+        }
+    };
+
     const openRunsModal = async (flow) => {
         setRunsModalFlow(flow);
         setRunsLoading(true);
@@ -137,7 +219,7 @@ export default function FlowBuilder() {
     }
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 p-6">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
@@ -146,13 +228,22 @@ export default function FlowBuilder() {
                         Create automated message flows for your WhatsApp automation
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowCreateModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium shadow-sm"
-                >
-                    <Plus className="h-4 w-4" />
-                    Create Flow
-                </button>
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => setShowTemplatesModal(true)}
+                        className="fp-button-secondary"
+                    >
+                        <LayoutTemplate className="h-4 w-4" />
+                        Flow Templates
+                    </button>
+                    <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="fp-button-primary"
+                    >
+                        <Plus className="h-4 w-4" />
+                        Create Flow
+                    </button>
+                </div>
             </div>
 
             {/* Stats Cards */}
@@ -284,6 +375,25 @@ export default function FlowBuilder() {
                 ))}
             </div>
 
+            {showTemplatesModal && (
+                <TemplateGalleryModal
+                    templates={filteredTemplates}
+                    categories={FLOW_TEMPLATE_CATEGORIES}
+                    selectedTemplate={selectedTemplate}
+                    templateDraft={templateDraft}
+                    templateStarStats={templateStarStats}
+                    query={templateQuery}
+                    category={templateCategory}
+                    onQueryChange={setTemplateQuery}
+                    onCategoryChange={setTemplateCategory}
+                    onSelectTemplate={handleSelectTemplate}
+                    onDraftChange={setTemplateDraft}
+                    onToggleStar={toggleTemplateStar}
+                    onClose={() => setShowTemplatesModal(false)}
+                    onUseTemplate={handleCreateFromTemplate}
+                />
+            )}
+
             {runsModalFlow && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
                     <div className="w-full max-w-3xl overflow-hidden rounded-xl bg-white shadow-2xl">
@@ -402,4 +512,319 @@ export default function FlowBuilder() {
             )}
         </div>
     );
+}
+
+function TemplateGalleryModal({
+    templates,
+    categories,
+    selectedTemplate,
+    templateDraft,
+    templateStarStats,
+    query,
+    category,
+    onQueryChange,
+    onCategoryChange,
+    onSelectTemplate,
+    onDraftChange,
+    onToggleStar,
+    onClose,
+    onUseTemplate,
+}) {
+    const preview = selectedTemplate?.preview || { nodes: [], edges: [] };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="flex h-[88vh] w-full max-w-7xl overflow-hidden rounded-lg border border-gray-200 bg-white">
+                <div className="flex w-[420px] flex-col border-r border-gray-200 bg-white">
+                    <div className="border-b border-gray-200 bg-white p-5">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-semibold text-[#128C7E]">
+                                    <Sparkles className="h-4 w-4" />
+                                    Flow Templates
+                                </div>
+                                <h2 className="mt-1 text-2xl font-light text-black">Start from a proven flow</h2>
+                                <p className="mt-1 text-sm leading-5 text-gray-500">Choose a workflow, fill details, and generate a ready-to-edit draft.</p>
+                            </div>
+                            <button onClick={onClose} className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-black">
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="relative mt-4">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                            <input
+                                value={query}
+                                onChange={(event) => onQueryChange(event.target.value)}
+                                placeholder="Search sales, support, booking..."
+                                className="fp-input h-10 pl-9"
+                            />
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            {categories.map(item => (
+                                <button
+                                    key={item}
+                                    onClick={() => onCategoryChange(item)}
+                                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                                        category === item ? 'bg-black text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {item}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto bg-[#f5f7fa] p-3">
+                        <div className="space-y-2">
+                            {templates.map(template => {
+                                const selected = selectedTemplate?.id === template.id;
+                                const starred = Boolean(templateStarStats[template.id]?.starred);
+
+                                return (
+                                    <button
+                                        key={template.id}
+                                        type="button"
+                                        onClick={() => onSelectTemplate(template)}
+                                        className={`w-full rounded-lg border bg-white p-4 text-left transition-colors ${
+                                            selected ? 'border-[#25D366] ring-2 ring-[#25D366]/10' : 'border-gray-200 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <h3 className="truncate text-sm font-semibold text-gray-950">{template.name}</h3>
+                                                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">{template.category}</span>
+                                                </div>
+                                                <p className="mt-1 line-clamp-2 text-xs leading-5 text-gray-600">{template.description}</p>
+                                            </div>
+                                            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${starred ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-500'}`}>
+                                                <Star className={`h-3.5 w-3.5 ${starred ? 'fill-current' : ''}`} />
+                                                {getTemplateStars(template, templateStarStats)}
+                                            </span>
+                                        </div>
+                                        <div className="mt-3 flex items-center gap-3 text-[11px] text-gray-500">
+                                            <span className="inline-flex items-center gap-1"><Layers className="h-3.5 w-3.5" /> {template.preview.nodes.length} nodes</span>
+                                            <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {template.minutes} min</span>
+                                            <span>{template.difficulty}</span>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex min-w-0 flex-1 flex-col">
+                    <div className="border-b border-gray-200 px-6 py-5">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-xl font-semibold text-black">{selectedTemplate.name}</h2>
+                                    <span className="rounded-full bg-[#25D366]/10 px-2 py-1 text-xs font-semibold text-[#128C7E]">{selectedTemplate.category}</span>
+                                </div>
+                                <p className="mt-1 max-w-2xl text-sm text-gray-500">{selectedTemplate.bestFor}</p>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="hidden rounded-lg border border-gray-200 bg-[#f8faf9] px-3 py-2 text-xs text-gray-600 lg:block">
+                                    <div className="font-semibold text-gray-900">{selectedTemplate.preview.nodes.length} nodes</div>
+                                    Ready-to-edit draft
+                                </div>
+                                <button
+                                    onClick={() => onToggleStar(selectedTemplate.id)}
+                                    className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold ${
+                                        templateStarStats[selectedTemplate.id]?.starred
+                                            ? 'border-amber-200 bg-amber-50 text-amber-700'
+                                            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    <Star className={`h-4 w-4 ${templateStarStats[selectedTemplate.id]?.starred ? 'fill-current' : ''}`} />
+                                    Star · {getTemplateStars(selectedTemplate, templateStarStats)}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_360px] bg-white">
+                        <div className="overflow-y-auto bg-white p-6">
+                            <div className="rounded-lg border border-gray-200 bg-white">
+                                <div className="border-b border-gray-100 px-4 py-3">
+                                    <h3 className="text-sm font-semibold text-gray-900">Template Preview</h3>
+                                    <p className="text-xs text-gray-500">This draft will be generated in the editor.</p>
+                                </div>
+                                <div className="h-[430px] overflow-hidden bg-[#f6f7f8]">
+                                    <TemplatePreviewCanvas preview={preview} />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="border-l border-gray-200 bg-[#f8faf9] p-5">
+                            <h3 className="text-sm font-semibold text-gray-900">Fill Details</h3>
+                            <p className="mt-1 text-xs leading-5 text-gray-500">These values replace placeholders inside messages and node settings.</p>
+
+                            <div className="mt-4 space-y-4">
+                                {selectedTemplate.fields.map(field => (
+                                    <label key={field.key} className="block">
+                                        <span className="mb-1.5 block text-xs font-semibold text-gray-700">{field.label}</span>
+                                        <input
+                                            value={templateDraft[field.key] || ''}
+                                            onChange={(event) => onDraftChange(prev => ({ ...prev, [field.key]: event.target.value }))}
+                                            className="fp-input h-10"
+                                        />
+                                    </label>
+                                ))}
+                            </div>
+
+                            <div className="mt-5 rounded-lg border border-gray-200 bg-white p-3 text-xs leading-5 text-gray-600">
+                                <div className="mb-2 flex items-center gap-2 font-semibold text-gray-900">
+                                    <CheckCircle2 className="h-4 w-4 text-[#128C7E]" />
+                                    What happens next
+                                </div>
+                                Created as a draft. You can edit every node, test it, then publish when ready.
+                            </div>
+
+                            <button
+                                onClick={onUseTemplate}
+                                className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#25D366] px-5 text-sm font-semibold text-white hover:bg-[#1fb85a]"
+                            >
+                                <LayoutTemplate className="h-4 w-4" />
+                                Use Template
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function getDefaultTemplateDraft(template) {
+    return Object.fromEntries((template?.fields || []).map(field => [field.key, field.defaultValue || '']));
+}
+
+function getTemplateStars(template, templateStarStats) {
+    const realStats = templateStarStats[template.id];
+    const fakeBase = template.fakeStars || 50;
+    return fakeBase + (realStats?.starred ? 1 : 0);
+}
+
+function TemplatePreviewCanvas({ preview }) {
+    const nodes = preview?.nodes || [];
+    const edges = preview?.edges || [];
+    const nodeWidth = 220;
+    const nodeHeight = 72;
+    const padding = 130;
+
+    if (nodes.length === 0) {
+        return (
+            <div className="flex h-full items-center justify-center text-sm text-gray-500">
+                No preview available
+            </div>
+        );
+    }
+
+    const byId = Object.fromEntries(nodes.map(item => [item.id, item]));
+    const minX = Math.min(...nodes.map(item => item.position.x)) - padding;
+    const minY = Math.min(...nodes.map(item => item.position.y)) - padding;
+    const maxX = Math.max(...nodes.map(item => item.position.x + nodeWidth)) + padding;
+    const maxY = Math.max(...nodes.map(item => item.position.y + nodeHeight)) + padding;
+    const width = Math.max(maxX - minX, 640);
+    const height = Math.max(maxY - minY, 420);
+
+    return (
+        <svg className="h-full w-full" viewBox={`${minX} ${minY} ${width} ${height}`} preserveAspectRatio="xMidYMid meet">
+            <defs>
+                <marker id="template-preview-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+                    <path d="M0,0 L8,4 L0,8 Z" fill="#9aa4b2" />
+                </marker>
+                <filter id="template-preview-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="2" floodColor="#121314" floodOpacity="0.10" />
+                </filter>
+            </defs>
+
+            <rect x={minX} y={minY} width={width} height={height} fill="#f6f7f8" />
+            <g opacity="0.55">
+                {Array.from({ length: Math.ceil(width / 80) + 1 }).map((_, index) => (
+                    <line key={`v-${index}`} x1={minX + index * 80} y1={minY} x2={minX + index * 80} y2={minY + height} stroke="#e8edf3" strokeWidth="1" />
+                ))}
+                {Array.from({ length: Math.ceil(height / 80) + 1 }).map((_, index) => (
+                    <line key={`h-${index}`} x1={minX} y1={minY + index * 80} x2={minX + width} y2={minY + index * 80} stroke="#e8edf3" strokeWidth="1" />
+                ))}
+            </g>
+
+            <g>
+                {edges.map(item => {
+                    const source = byId[item.source];
+                    const target = byId[item.target];
+                    if (!source || !target) return null;
+
+                    const startX = source.position.x + nodeWidth / 2;
+                    const startY = source.position.y + nodeHeight;
+                    const endX = target.position.x + nodeWidth / 2;
+                    const endY = target.position.y;
+                    const midY = startY + Math.max(36, (endY - startY) / 2);
+
+                    return (
+                        <path
+                            key={item.id}
+                            d={`M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`}
+                            fill="none"
+                            stroke="#9aa4b2"
+                            strokeWidth="2"
+                            strokeDasharray="6 6"
+                            markerEnd="url(#template-preview-arrow)"
+                        />
+                    );
+                })}
+            </g>
+
+            <g>
+                {nodes.map(item => {
+                    const x = item.position.x;
+                    const y = item.position.y;
+                    const label = truncateText(getNodeLabel(item), 22);
+                    const summary = truncateText(getNodeSummary(item), 34);
+
+                    return (
+                        <g key={item.id} filter="url(#template-preview-shadow)">
+                            <rect x={x} y={y} width={nodeWidth} height={nodeHeight} rx="8" fill="#ffffff" stroke="#dfe6ee" />
+                            <rect x={x} y={y} width={nodeWidth} height="28" rx="8" fill="#128C7E" />
+                            <path d={`M ${x} ${y + 20} H ${x + nodeWidth} V ${y + 28} H ${x} Z`} fill="#128C7E" />
+                            <text x={x + 12} y={y + 19} fill="#ffffff" fontSize="13" fontWeight="700">{label}</text>
+                            <text x={x + 12} y={y + 52} fill="#4b5563" fontSize="12">{summary}</text>
+                        </g>
+                    );
+                })}
+            </g>
+
+            <g>
+                <rect x={minX + 24} y={minY + 24} width="118" height="30" rx="15" fill="#ffffff" stroke="#d8dee8" />
+                <text x={minX + 42} y={minY + 44} fill="#6b7280" fontSize="12" fontWeight="600">Preview layout</text>
+            </g>
+        </svg>
+    );
+}
+
+function truncateText(value, maxLength) {
+    const text = String(value || '');
+    return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+function getNodeLabel(node) {
+    const labels = {
+        startBotFlow: 'Trigger',
+        textMessage: 'Text',
+        button: 'Buttons',
+        userInput: 'Input',
+        handoff: 'Handoff',
+        end: 'End',
+        ai: 'AI',
+    };
+    return labels[node.type] || node.type;
+}
+
+function getNodeSummary(node) {
+    const config = node.data?.config || {};
+    return config.message || config.headerText || config.question || config.reason || config.keywords || config.title || 'Configured block';
 }

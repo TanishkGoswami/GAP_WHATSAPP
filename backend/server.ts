@@ -395,13 +395,14 @@ async function authMiddleware(req: any, res: any, next: any) {
             if (!member) {
                 return res.status(403).json({ error: 'Forbidden - Agent profile was not found' });
             }
+            if (dbRole !== 'agent') {
+                return res.status(403).json({ error: 'Forbidden - This login page is only for team agents' });
+            }
             if (member.is_active === false) {
                 return res.status(403).json({ error: 'Forbidden - Agent invitation is pending or expired' });
             }
-            // Force agent role if logging into agent portal
             req.role = 'agent';
         } else {
-            // Use actual database role or default to owner if no profile exists
             req.role = dbRole || 'owner';
         }
 
@@ -2736,6 +2737,7 @@ app.get("/api/dashboard-stats", authMiddleware, async (req: any, res) => {
         };
 
         const dailyMap = new Map<string, any>();
+        const hourlyMap = new Map<string, any>();
         messages.forEach((m: any) => {
             const status = String(m.status || '').toLowerCase();
             const senderType = String(m.sender_type || '').toLowerCase();
@@ -2762,6 +2764,21 @@ app.get("/api/dashboard-stats", authMiddleware, async (req: any, res) => {
             if (status === 'failed') row.failed++;
             if (status === 'read') row.read++;
             dailyMap.set(day, row);
+
+            const createdAt = new Date(m.created_at);
+            const hour = `${String(createdAt.getHours()).padStart(2, '0')}:00`;
+            const hourRow = hourlyMap.get(hour) || { hour, total: 0, inbound: 0, outbound: 0, failed: 0, read: 0 };
+            hourRow.total++;
+            if (m.direction === 'inbound') hourRow.inbound++;
+            if (m.direction === 'outbound') hourRow.outbound++;
+            if (status === 'failed') hourRow.failed++;
+            if (status === 'read') hourRow.read++;
+            hourlyMap.set(hour, hourRow);
+        });
+
+        const hourlyTimeline = Array.from({ length: 24 }).map((_, hourIndex) => {
+            const hour = `${String(hourIndex).padStart(2, '0')}:00`;
+            return hourlyMap.get(hour) || { hour, total: 0, inbound: 0, outbound: 0, failed: 0, read: 0 };
         });
 
         const total = messages.length;
@@ -2855,6 +2872,7 @@ app.get("/api/dashboard-stats", authMiddleware, async (req: any, res) => {
                 lastMessageAt: latestMessage?.created_at || null,
             },
             timeline: Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+            hourlyTimeline,
             recentActivity: recentMessages,
         });
     } catch (err: any) {
@@ -2921,34 +2939,68 @@ async function sendTeamInviteEmail(params: {
     inviteLink: string;
     expiresAt: Date;
 }) {
+    const roleLabel = String(params.role || 'agent').charAt(0).toUpperCase() + String(params.role || 'agent').slice(1);
+    const expiresLabel = params.expiresAt.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     await sendEmail(
         params.email,
         `Invitation to join GAP FlowPilot Team`,
         `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 8px;">
-            <h2 style="color: #25D366;">You've been invited!</h2>
-            <p>Hello <strong>${params.name}</strong>,</p>
-            <p>You have been invited to join the <strong>GAP FlowPilot</strong> team as an <strong>${params.role}</strong>.</p>
-            <p>Accept this invitation to activate your account and open your agent workspace.</p>
-            
-            <div style="background-color: #f9f9f9; padding: 15px; border-radius: 6px; margin: 20px 0;">
-                <h3 style="margin-top: 0;">Invitation Details:</h3>
-                <p>
-                    <strong>Invite Link:</strong>
-                    <a href="${params.inviteLink}" style="color: #0b66c3; font-weight: 600; text-decoration: none;">Click to open</a>
-                    <span style="color: #777;">or right-click / long-press to copy</span>
-                </p>
-                <p><strong>Email ID:</strong> ${params.email}</p>
-                <p><strong>Password:</strong> ${params.password}</p>
-                <p><strong>Expires:</strong> ${params.expiresAt.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
-            </div>
+        <div style="margin:0; padding:0; background:#f5f7fa;">
+            <div style="font-family:Arial,Helvetica,sans-serif; max-width:640px; margin:0 auto; padding:32px 20px;">
+                <div style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden;">
+                    <div style="padding:28px 32px 22px 32px; border-bottom:1px solid #eef2f7;">
+                        <div style="display:inline-block; padding:6px 10px; border-radius:999px; background:#e9fbf1; color:#128C7E; font-size:12px; font-weight:700; line-height:1;">
+                            GAP FlowPilot invitation
+                        </div>
+                        <h1 style="margin:18px 0 8px 0; color:#111827; font-size:28px; line-height:1.25; font-weight:500;">
+                            You have been invited to join the team
+                        </h1>
+                        <p style="margin:0; color:#4b5563; font-size:15px; line-height:1.6;">
+                            Hello <strong style="color:#111827;">${params.name}</strong>, your workspace owner invited you as a <strong style="color:#111827;">${roleLabel}</strong>.
+                        </p>
+                    </div>
 
-            <div style="margin: 30px 0;">
-                <a href="${params.inviteLink}" style="background-color: #25D366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Accept Invitation</a>
+                    <div style="padding:28px 32px;">
+                        <p style="margin:0 0 22px 0; color:#374151; font-size:15px; line-height:1.7;">
+                            Accept the invitation to activate your account and open your agent workspace for WhatsApp conversations.
+                        </p>
+
+                        <div style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:10px; padding:18px; margin:0 0 24px 0;">
+                            <p style="margin:0 0 14px 0; color:#111827; font-size:14px; font-weight:700;">Login details</p>
+                            <table role="presentation" style="width:100%; border-collapse:collapse;">
+                                <tr>
+                                    <td style="padding:8px 0; color:#6b7280; font-size:13px; width:96px;">Email</td>
+                                    <td style="padding:8px 0; color:#111827; font-size:14px; font-weight:600;">${params.email}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:8px 0; color:#6b7280; font-size:13px;">Password</td>
+                                    <td style="padding:8px 0; color:#111827; font-size:14px; font-weight:700; letter-spacing:0.3px;">${params.password}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:8px 0; color:#6b7280; font-size:13px;">Expires</td>
+                                    <td style="padding:8px 0; color:#111827; font-size:14px;">${expiresLabel}</td>
+                                </tr>
+                            </table>
+                        </div>
+
+                        <a href="${params.inviteLink}" style="display:block; width:100%; box-sizing:border-box; text-align:center; background:#128C7E; color:#ffffff; padding:14px 20px; text-decoration:none; border-radius:999px; font-size:14px; font-weight:700;">
+                            Accept invitation
+                        </a>
+
+                        <p style="margin:18px 0 0 0; color:#6b7280; font-size:13px; line-height:1.6;">
+                            If the button does not work, open this link:
+                            <br />
+                            <a href="${params.inviteLink}" style="color:#128C7E; word-break:break-all; text-decoration:none;">${params.inviteLink}</a>
+                        </p>
+                    </div>
+
+                    <div style="padding:18px 32px; background:#f8fafc; border-top:1px solid #eef2f7;">
+                        <p style="margin:0; color:#6b7280; font-size:12px; line-height:1.6;">
+                            For security, this invitation expires in ${INVITE_TTL_HOURS} hour${INVITE_TTL_HOURS === 1 ? '' : 's'}. This email was sent from the GAP FlowPilot dashboard.
+                        </p>
+                    </div>
+                </div>
             </div>
-            <p style="color: #666; font-size: 14px;">For security, this invitation expires in ${INVITE_TTL_HOURS} hour${INVITE_TTL_HOURS === 1 ? '' : 's'}.</p>
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            <p style="color: #999; font-size: 12px;">This invitation was sent from the GAP FlowPilot Dashboard.</p>
         </div>
         `
     );
@@ -4339,6 +4391,78 @@ app.delete('/api/flows/:id', authMiddleware, async (req: any, res) => {
         if (error) throw error;
         res.json({success: true});
     } catch(e: any) { res.status(500).json({error: e.message}); }
+});
+
+app.get('/api/flow-template-stars', authMiddleware, async (req: any, res) => {
+    try {
+        const userId = req.user.id;
+        const { data, error } = await supabase
+            .from('w_flow_template_stars')
+            .select('template_id,user_id');
+        if (error) throw error;
+
+        const stats: Record<string, { stars: number; starred: boolean }> = {};
+        for (const row of data || []) {
+            const templateId = String(row.template_id || '');
+            if (!templateId) continue;
+            if (!stats[templateId]) stats[templateId] = { stars: 0, starred: false };
+            stats[templateId].stars += 1;
+            if (row.user_id === userId) stats[templateId].starred = true;
+        }
+
+        res.json(stats);
+    } catch (e: any) {
+        if (String(e?.message || '').includes('w_flow_template_stars')) {
+            return res.status(500).json({ error: 'Template stars table missing. Run supabase_flow_template_stars.sql.' });
+        }
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/api/flow-template-stars/:templateId', authMiddleware, async (req: any, res) => {
+    try {
+        const templateId = String(req.params.templateId || '').trim();
+        if (!templateId) return res.status(400).json({ error: 'templateId is required' });
+
+        const userId = req.user.id;
+        const orgId = req.organization_id;
+
+        const { data: existing, error: lookupError } = await supabase
+            .from('w_flow_template_stars')
+            .select('id')
+            .eq('template_id', templateId)
+            .eq('user_id', userId)
+            .maybeSingle();
+        if (lookupError) throw lookupError;
+
+        let starred = false;
+        if (existing?.id) {
+            const { error } = await supabase
+                .from('w_flow_template_stars')
+                .delete()
+                .eq('id', existing.id);
+            if (error) throw error;
+        } else {
+            const { error } = await supabase
+                .from('w_flow_template_stars')
+                .insert({ template_id: templateId, user_id: userId, organization_id: orgId });
+            if (error) throw error;
+            starred = true;
+        }
+
+        const { count, error: countError } = await supabase
+            .from('w_flow_template_stars')
+            .select('id', { count: 'exact', head: true })
+            .eq('template_id', templateId);
+        if (countError) throw countError;
+
+        res.json({ template_id: templateId, stars: count || 0, starred });
+    } catch (e: any) {
+        if (String(e?.message || '').includes('w_flow_template_stars')) {
+            return res.status(500).json({ error: 'Template stars table missing. Run supabase_flow_template_stars.sql.' });
+        }
+        res.status(500).json({ error: e.message });
+    }
 });
 
 // ====== Bot Agents API ======
