@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import { AuthProvider } from './context/AuthContext'
+import { DialogProvider } from './context/DialogContext'
 import Contacts from './pages/Contacts'
 import WhatsAppConnect from './pages/WhatsAppConnect'
 import FlowBuilder from './pages/FlowBuilder'
@@ -33,30 +34,32 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/agent-login" element={<AgentLogin />} />
-            <Route path="/accept-invite" element={<AcceptInvite />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="/sso" element={<SSOLogin />} />
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Navigate to="/dashboard" replace />} />
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="whatsapp-connect" element={<WhatsAppConnect />} />
-              <Route path="contacts" element={<Contacts />} />
-              <Route path="flow-builder" element={<FlowBuilder />} />
-              <Route path="templates" element={<Templates />} />
-              <Route path="broadcast" element={<Broadcast />} />
-              <Route path="live-chat" element={<LiveChat />} />
-              <Route path="bot-agents" element={<BotAgents />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="help" element={<HelpCenter />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+      <DialogProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/agent-login" element={<AgentLogin />} />
+              <Route path="/accept-invite" element={<AcceptInvite />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/sso" element={<SSOLogin />} />
+              <Route path="/" element={<Layout />}>
+                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="whatsapp-connect" element={<WhatsAppConnect />} />
+                <Route path="contacts" element={<Contacts />} />
+                <Route path="flow-builder" element={<FlowBuilder />} />
+                <Route path="templates" element={<Templates />} />
+                <Route path="broadcast" element={<Broadcast />} />
+                <Route path="live-chat" element={<LiveChat />} />
+                <Route path="bot-agents" element={<BotAgents />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="help" element={<HelpCenter />} />
+              </Route>
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </DialogProvider>
     </QueryClientProvider>
   )
 }

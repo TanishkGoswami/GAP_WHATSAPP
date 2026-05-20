@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
+import { useDialog } from '../context/DialogContext'
 
 const STEPS = [
     { id: 1, name: 'Details', icon: LayoutGrid },
@@ -111,6 +112,7 @@ function validateDynamicUrlButtonValue(button, value) {
 
 export default function Broadcast() {
     const { session, apiCall } = useAuth()
+    const { alertDialog, confirmDialog } = useDialog()
     const token = session?.access_token
 
     const [activeTab, setActiveTab] = useState('new') // 'new' | 'history'
@@ -214,7 +216,12 @@ export default function Broadcast() {
     }, [activeTab, token]);
 
     const deleteCampaign = async (id) => {
-        if (!window.confirm('Are you sure you want to cancel and delete this scheduled campaign?')) return;
+        const confirmed = await confirmDialog('Are you sure you want to cancel and delete this scheduled campaign?', {
+            title: 'Delete scheduled campaign',
+            tone: 'danger',
+            confirmLabel: 'Delete campaign',
+        });
+        if (!confirmed) return;
         try {
             const res = await apiCall(`${API_URL}/api/broadcast/campaigns/${id}`, {
                 method: 'DELETE'
@@ -223,10 +230,10 @@ export default function Broadcast() {
                 fetchCampaignHistory();
             } else {
                 const data = await res.json();
-                alert(data.error || 'Failed to delete');
+                alertDialog(data.error || 'Failed to delete', { title: 'Delete failed', tone: 'danger' });
             }
         } catch (e) {
-            alert('Error: ' + e.message);
+            alertDialog('Error: ' + e.message, { title: 'Delete failed', tone: 'danger' });
         }
     }
 
@@ -240,7 +247,7 @@ export default function Broadcast() {
             const text = evt.target.result;
             const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
             if (lines.length === 0) {
-                alert('CSV is empty');
+                alertDialog('CSV is empty', { title: 'CSV import failed', tone: 'warning' });
                 return;
             }
             
@@ -249,7 +256,7 @@ export default function Broadcast() {
             const nameIdx = headers.findIndex(h => h.includes('name'));
             
             if (phoneIdx === -1) {
-                alert('CSV must contain a column for phone numbers (e.g. "Phone" or "Number")');
+                alertDialog('CSV must contain a column for phone numbers (e.g. "Phone" or "Number")', { title: 'CSV import failed', tone: 'warning' });
                 return;
             }
             
@@ -276,19 +283,19 @@ export default function Broadcast() {
         }));
     };
 
-    const validateHeaderMediaUrl = () => {
+    const validateHeaderMediaUrl = async () => {
         if (!needsHeaderMedia) return true
         const url = headerMediaUrl.trim()
         if (!url) {
-            alert(`This template has a ${selectedHeaderFormat.toLowerCase()} header. Upload media or paste a public URL before sending.`)
+            await alertDialog(`This template has a ${selectedHeaderFormat.toLowerCase()} header. Upload media or paste a public URL before sending.`, { title: 'Header media required', tone: 'warning' })
             return false
         }
         if (!/^https?:\/\/.+\..+/.test(url)) {
-            alert('Header media URL must be a public http/https URL.')
+            await alertDialog('Header media URL must be a public http/https URL.', { title: 'Invalid media URL', tone: 'warning' })
             return false
         }
         if (/^https?:\/\/example\.com\//i.test(url)) {
-            alert('Please replace the example URL with your actual public media URL.')
+            await alertDialog('Please replace the example URL with your actual public media URL.', { title: 'Replace example URL', tone: 'warning' })
             return false
         }
         return true
@@ -337,35 +344,39 @@ export default function Broadcast() {
             if (!res.ok) throw new Error(data.error || 'Failed to upload header media')
             syncHeaderMediaUrl(data.publicUrl || '')
         } catch (err) {
-            alert(err.message)
+            alertDialog(err.message, { title: 'Upload failed', tone: 'danger' })
         } finally {
             setIsHeaderUploading(false)
         }
     }
 
-    const handleNext = () => {
+    const handleNext = async () => {
         if (currentStep === 1) {
-            if (!campaign.name || !campaign.wa_account_id) return alert('Campaign Name and WA Account are required.');
+            if (!campaign.name || !campaign.wa_account_id) return alertDialog('Campaign Name and WA Account are required.', { title: 'Missing campaign details', tone: 'warning' });
+            const selectedAccountForCampaign = waAccounts.find(account => account.id === campaign.wa_account_id);
+            if (selectedAccountForCampaign && !selectedAccountForCampaign.whatsapp_business_account_id) {
+                return alertDialog('QR Session numbers cannot run broadcast campaigns. Select a Meta API account with approved template access.', { title: 'Meta API account required', tone: 'warning' });
+            }
         }
         if (currentStep === 2) {
             if (campaign.audience_tag === 'CSV_UPLOAD' && (!csvData || csvData.length === 0)) {
-                return alert('Please upload a valid CSV file with contacts.');
+                return alertDialog('Please upload a valid CSV file with contacts.', { title: 'Audience required', tone: 'warning' });
             }
-            if (filteredContacts.length === 0) return alert('No contacts selected in audience.');
+            if (filteredContacts.length === 0) return alertDialog('No contacts selected in audience.', { title: 'Audience required', tone: 'warning' });
         }
         if (currentStep === 3) {
-            if (!campaign.template_name) return alert('Please select a template.');
-            if (!validateHeaderMediaUrl()) return;
+            if (!campaign.template_name) return alertDialog('Please select a template.', { title: 'Template required', tone: 'warning' });
+            if (!(await validateHeaderMediaUrl())) return;
             for (const button of dynamicUrlButtons) {
                 const validation = validateDynamicUrlButtonValue(button, campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`])
                 if (!validation.ok) {
-                    return alert(validation.message);
+                    return alertDialog(validation.message, { title: 'Button URL needs attention', tone: 'warning' });
                 }
             }
             for (let variable of variables) {
                 const key = variable.key
                 if (!campaign.variable_mapping[key] && !customTexts[key]) {
-                    return alert(`Please map ${variable.token}.`);
+                    return alertDialog(`Please map ${variable.token}.`, { title: 'Variable mapping required', tone: 'warning' });
                 }
             }
         }
@@ -375,7 +386,7 @@ export default function Broadcast() {
     const handleBack = () => setCurrentStep(p => Math.max(1, p - 1));
 
     const handleLaunch = async () => {
-        if (!validateHeaderMediaUrl()) return;
+        if (!(await validateHeaderMediaUrl())) return;
         setIsSending(true);
         setSendResult(null);
 
@@ -425,10 +436,10 @@ export default function Broadcast() {
             if (res.ok) {
                 setSendResult(data);
             } else {
-                alert(data.error || 'Broadcast failed');
+                alertDialog(data.error || 'Broadcast failed', { title: 'Broadcast failed', tone: 'danger' });
             }
         } catch (e) {
-            alert('Error launching broadcast: ' + e.message);
+            alertDialog('Error launching broadcast: ' + e.message, { title: 'Broadcast failed', tone: 'danger' });
         } finally {
             setIsSending(false);
         }
@@ -677,11 +688,19 @@ export default function Broadcast() {
                                             onChange={e => setCampaign({ ...campaign, wa_account_id: e.target.value })}
                                         >
                                             <option value="">Select an account</option>
-                                            {waAccounts.map(acc => (
-                                                <option key={acc.id} value={acc.id}>{acc.display_phone_number || acc.name}</option>
-                                            ))}
+                                            {waAccounts.map(acc => {
+                                                const isMeta = Boolean(acc.whatsapp_business_account_id);
+                                                return (
+                                                    <option key={acc.id} value={acc.id} disabled={!isMeta}>
+                                                        {acc.display_phone_number || acc.name} {isMeta ? 'Meta API' : 'QR Session - broadcast unavailable'}
+                                                    </option>
+                                                );
+                                            })}
                                         </select>
                                     )}
+                                    <p className="mt-2 text-xs leading-5 text-gray-500">
+                                        Broadcast campaigns require a Meta API account with approved templates. QR Session numbers are for inbox and inbound flow testing only.
+                                    </p>
                                 </div>
 
                                 <div>

@@ -4,6 +4,7 @@ import { format, isToday, isYesterday } from 'date-fns'
 import { io } from "socket.io-client";
 import QRCode from 'react-qr-code'
 import { useAuth } from '../context/AuthContext'
+import { useDialog } from '../context/DialogContext'
 import ContactProfileDrawer from '../components/ContactProfileDrawer'
 import { AudioPlayerProvider } from '../components/AudioPlayerManager'
 import AudioMessageBubble from '../components/AudioMessageBubble'
@@ -96,6 +97,7 @@ function ForwardedIndicator() {
 
 export default function LiveChat() {
     const { user, session, loginType, memberProfile, userRole } = useAuth()
+    const { alertDialog, confirmDialog } = useDialog()
     const isAdmin = userRole === 'admin' || userRole === 'owner'
     const { playNotification } = useNotificationSound()
     
@@ -1283,7 +1285,7 @@ export default function LiveChat() {
         } catch (err) {
             console.error('Reaction failed:', err)
             updateMessageReactions(msg.id, msg.wa_message_id, current)
-            alert(err?.message || 'Failed to update reaction')
+            alertDialog(err?.message || 'Failed to update reaction', { title: 'Reaction failed', tone: 'danger' })
         }
     }
 
@@ -1752,7 +1754,7 @@ export default function LiveChat() {
     const forwardMessage = (msg) => {
         const text = getForwardableText(msg)
         if (!text.trim()) {
-            alert('Only text/caption messages can be forwarded right now.')
+            alertDialog('Only text/caption messages can be forwarded right now.', { title: 'Forward unavailable', tone: 'warning' })
             closeMessageMenu()
             return
         }
@@ -1830,7 +1832,7 @@ export default function LiveChat() {
             if (activeWasTarget) {
                 setMessages(prev => prev.map(m => idsEqual(m.id, optimisticId) ? { ...m, status: 'failed' } : m))
             }
-            alert(err?.message || 'Failed to forward message')
+            alertDialog(err?.message || 'Failed to forward message', { title: 'Forward failed', tone: 'danger' })
         } finally {
             setIsForwarding(false)
         }
@@ -1852,8 +1854,13 @@ export default function LiveChat() {
         closeMessageMenu()
     }
 
-    const deleteMessageLocal = (msg) => {
-        if (!confirm('Delete this message from this view?')) return
+    const deleteMessageLocal = async (msg) => {
+        const confirmed = await confirmDialog('Delete this message from this view?', {
+            title: 'Delete message',
+            tone: 'danger',
+            confirmLabel: 'Delete message',
+        })
+        if (!confirmed) return
         setMessages(prev => prev.filter(item => item.id !== msg.id))
         closeMessageMenu()
     }
@@ -1908,7 +1915,7 @@ export default function LiveChat() {
             if (selectedChat?.id && idsEqual(selectedChat.id, chat.id)) {
                 setSelectedChat(previous.find(item => idsEqual(item.id, chat.id)) || selectedChat)
             }
-            alert(err?.message || 'Failed to update chat')
+            alertDialog(err?.message || 'Failed to update chat', { title: 'Chat update failed', tone: 'danger' })
         }
     }
 
@@ -1918,7 +1925,7 @@ export default function LiveChat() {
             const pinnedCount = chats.filter(item => hasChatLabel(item, 'pinned')).length
             if (pinnedCount >= 4) {
                 setActiveChatMenuId(null)
-                alert('You can pin up to 4 chats.')
+                alertDialog('You can pin up to 4 chats.', { title: 'Pin limit reached', tone: 'warning' })
                 return
             }
         }
@@ -1954,13 +1961,18 @@ export default function LiveChat() {
             }
         } catch (err) {
             console.error('Failed to mark unread', err)
-            alert(err?.message || 'Failed to mark unread')
+            alertDialog(err?.message || 'Failed to mark unread', { title: 'Update failed', tone: 'danger' })
         }
     }
 
     const clearChat = async (chat) => {
         if (!chat?.id || !session?.access_token) return
-        if (!confirm(`Clear all messages in ${chat.name}?`)) return
+        const confirmed = await confirmDialog(`Clear all messages in ${chat.name}?`, {
+            title: 'Clear chat',
+            tone: 'danger',
+            confirmLabel: 'Clear messages',
+        })
+        if (!confirmed) return
         setActiveChatMenuId(null)
         try {
             const res = await fetch(`${API_BASE}/conversations/${chat.id}/clear`, {
@@ -1975,13 +1987,18 @@ export default function LiveChat() {
             }
         } catch (err) {
             console.error('Failed to clear chat', err)
-            alert(err?.message || 'Failed to clear chat')
+            alertDialog(err?.message || 'Failed to clear chat', { title: 'Clear chat failed', tone: 'danger' })
         }
     }
 
     const deleteChat = async (chat) => {
         if (!chat?.id || !session?.access_token) return
-        if (!confirm(`Delete ${chat.name} and all messages from this inbox?`)) return
+        const confirmed = await confirmDialog(`Delete ${chat.name} and all messages from this inbox?`, {
+            title: 'Delete chat',
+            tone: 'danger',
+            confirmLabel: 'Delete chat',
+        })
+        if (!confirmed) return
         setActiveChatMenuId(null)
         try {
             const res = await fetch(`${API_BASE}/conversations/${chat.id}`, {
@@ -1997,7 +2014,7 @@ export default function LiveChat() {
             }
         } catch (err) {
             console.error('Failed to delete chat', err)
-            alert(err?.message || 'Failed to delete chat')
+            alertDialog(err?.message || 'Failed to delete chat', { title: 'Delete chat failed', tone: 'danger' })
         }
     }
 

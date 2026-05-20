@@ -30,6 +30,7 @@ import {
     X,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useDialog } from '../context/DialogContext'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
@@ -104,6 +105,7 @@ const emptyDraft = {
 
 export default function Contacts() {
     const { session, apiCall } = useAuth()
+    const { alertDialog } = useDialog()
     const queryClient = useQueryClient()
     const fileInputRef = useRef(null)
 
@@ -433,7 +435,7 @@ export default function Contacts() {
             queryClient.invalidateQueries({ queryKey: ['contacts'] })
         } catch (err) {
             setImportStatus('')
-            alert(err.message)
+            alertDialog(err.message, { title: 'Import failed', tone: 'danger' })
         }
     }
 

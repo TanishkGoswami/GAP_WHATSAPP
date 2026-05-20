@@ -21,6 +21,7 @@ import {
     X,
 } from '@phosphor-icons/react'
 import { useAuth } from '../context/AuthContext'
+import { useDialog } from '../context/DialogContext'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
@@ -55,6 +56,7 @@ const getDocCharCount = (doc) => Number(doc?.character_count ?? String(doc?.cont
 
 export default function BotAgents() {
     const { session, apiCall } = useAuth()
+    const { alertDialog, confirmDialog } = useDialog()
     const [agents, setAgents] = useState([])
     const [knowledgeDocs, setKnowledgeDocs] = useState([])
     const [isLoading, setIsLoading] = useState(true)
@@ -210,7 +212,7 @@ export default function BotAgents() {
             setDrawerOpen(false)
             await fetchAgents()
         } catch (err) {
-            alert(err.message || 'Failed to save agent')
+            alertDialog(err.message || 'Failed to save agent', { title: 'Could not save agent', tone: 'danger' })
         } finally {
             setIsSaving(false)
         }
@@ -225,13 +227,21 @@ export default function BotAgents() {
     }
 
     const deleteAgent = async (agent) => {
-        if (!confirm(`Delete ${agent.name}?`)) return
+        const confirmed = await confirmDialog(`Delete ${agent.name}? This cannot be undone.`, {
+            title: 'Delete agent',
+            tone: 'danger',
+            confirmLabel: 'Delete agent',
+        })
+        if (!confirmed) return
         const res = await apiCall(`${API_BASE}/agents/${agent.id}`, { method: 'DELETE' })
         if (res.ok) setAgents(prev => prev.filter(item => item.id !== agent.id))
     }
 
     const saveApiKey = async () => {
-        if (!apiKey.trim()) return alert('Please enter an API key')
+        if (!apiKey.trim()) {
+            await alertDialog('Please enter an API key.', { title: 'API key required', tone: 'warning' })
+            return
+        }
         setIsSaving(true)
         try {
             const res = await apiCall(`${API_BASE}/settings/openai`, {
@@ -265,7 +275,7 @@ export default function BotAgents() {
             }
             await fetchKnowledgeBase()
         } catch (err) {
-            alert(err.message || 'Failed to upload knowledge')
+            alertDialog(err.message || 'Failed to upload knowledge', { title: 'Upload failed', tone: 'danger' })
         } finally {
             setUploadingKb(false)
             if (fileInputRef.current) fileInputRef.current.value = ''

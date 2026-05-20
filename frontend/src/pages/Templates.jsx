@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone, AlertCircle, RefreshCw, UploadCloud, Type, MessageSquareText, MousePointerClick, ChevronDown, Loader2 } from 'lucide-react'
 import Modal from '../components/Modal'
 import { useAuth } from '../context/AuthContext'
+import { useDialog } from '../context/DialogContext'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -37,6 +38,7 @@ const DEMO_TEMPLATES = [
 
 export default function Templates() {
     const { session, apiCall } = useAuth();
+    const { alertDialog, confirmDialog } = useDialog();
     const [iscreateOpen, setIsCreateOpen] = useState(false)
     const [selectedTemplate, setSelectedTemplate] = useState(null)
     const [activeTab, setActiveTab] = useState('ALL') // ALL, MARKETING, UTILITY
@@ -81,10 +83,15 @@ export default function Templates() {
 
     const handleDelete = async (name, isDemo) => {
         if(isDemo) {
-            alert("This is a demo template for reference and cannot be deleted.");
+            alertDialog("This is a demo template for reference and cannot be deleted.", { title: 'Demo template', tone: 'info' });
             return;
         }
-        if(!confirm(`Are you sure you want to delete template "${name}"?`)) return;
+        const confirmed = await confirmDialog(`Are you sure you want to delete template "${name}"?`, {
+            title: 'Delete template',
+            tone: 'danger',
+            confirmLabel: 'Delete template',
+        });
+        if(!confirmed) return;
         try {
             const res = await apiCall(`${API_URL}/api/whatsapp/templates/${name}`, {
                 method: 'DELETE'
@@ -93,7 +100,7 @@ export default function Templates() {
                 fetchData();
             } else {
                 const data = await res.json();
-                alert(data.error || 'Failed to delete template');
+                alertDialog(data.error || 'Failed to delete template', { title: 'Delete failed', tone: 'danger' });
             }
         } catch (error) {
             console.error(error);

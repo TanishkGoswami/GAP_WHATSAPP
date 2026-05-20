@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react';
-import { Trash2, Smartphone, CheckCircle2, AlertCircle, Loader2, X, Copy, ExternalLink, Link as LinkIcon } from 'lucide-react';
+import {
+    Trash2, CheckCircle2, AlertCircle, Loader2, X, ShieldCheck, KeyRound,
+    QrCode, Building2, FileCheck2, PhoneCall, LockKeyhole, Info, ArrowRight
+} from 'lucide-react';
 import WhatsAppLogin from '../components/WhatsAppLogin';
 import { useAuth } from '../context/AuthContext';
+import { useDialog } from '../context/DialogContext';
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 export default function WhatsAppConnect() {
     const { user, session } = useAuth();
+    const { alertDialog, confirmDialog } = useDialog();
     const [accounts, setAccounts] = useState([]);
     const [loadingAccounts, setLoadingAccounts] = useState(true);
 
@@ -23,6 +28,7 @@ export default function WhatsAppConnect() {
     const [manualError, setManualError] = useState(null);
     const [diagnostics, setDiagnostics] = useState({});
     const [diagnosticsLoadingId, setDiagnosticsLoadingId] = useState(null);
+    const isSecureForMetaLogin = window.location.protocol === 'https:';
 
     useEffect(() => {
         if (session?.access_token) fetchAccounts();
@@ -68,14 +74,21 @@ export default function WhatsAppConnect() {
     };
 
     const handleDeleteAccount = async (id) => {
-        if (!confirm('Are you sure you want to disconnect this account?')) return;
+        const confirmed = await confirmDialog('Are you sure you want to disconnect this account?', {
+            title: 'Disconnect account',
+            tone: 'danger',
+            confirmLabel: 'Disconnect',
+        });
+        if (!confirmed) return;
         try {
             const res = await fetch(`${API_URL}/api/whatsapp/accounts/${id}`, {
                 method: 'DELETE',
                 headers: { ...getAuthHeader() }
             });
             if (res.ok) setAccounts(prev => prev.filter(a => a.id !== id));
-        } catch { alert('Failed to delete account'); }
+        } catch {
+            alertDialog('Failed to delete account', { title: 'Disconnect failed', tone: 'danger' });
+        }
     };
 
     const runAccountDiagnostics = async (id) => {
@@ -96,7 +109,15 @@ export default function WhatsAppConnect() {
 
     // ===== RECOMMENDED: FB Embedded Signup =====
     const handleEmbeddedSignup = () => {
-        if (!window.FB) { alert('Facebook SDK is loading. Try again in a moment.'); return; }
+        if (!isSecureForMetaLogin) {
+            setEmbedStatus('error');
+            setEmbedError('Meta login requires HTTPS. Open this page from your HTTPS ngrok/public URL before connecting with Meta.');
+            return;
+        }
+        if (!window.FB) {
+            alertDialog('Facebook SDK is loading. Try again in a moment.', { title: 'Meta login not ready', tone: 'warning' });
+            return;
+        }
         setEmbedStatus('loading');
         setEmbedError(null);
 
@@ -197,12 +218,81 @@ export default function WhatsAppConnect() {
         }
     };
 
+    const verificationSteps = [
+        { icon: Building2, title: 'Business Manager', text: 'Meta Business portfolio chahiye. Legal business name, website, address aur admin access ready rakhein.' },
+        { icon: FileCheck2, title: 'Business Verification', text: 'Meta ko business documents submit karne pad sakte hain. Verification ke bina scale aur display-name approval limited ho sakta hai.' },
+        { icon: PhoneCall, title: 'Dedicated Number', text: 'Best practice: ek fresh phone number use karein. Jo number personal WhatsApp app me active hai, usko Cloud API me directly use nahi kar sakte.' },
+        { icon: LockKeyhole, title: 'Permissions & Webhook', text: 'whatsapp_business_messaging, whatsapp_business_management, access token, phone number ID aur webhook setup required hote hain.' },
+    ];
+
     return (
-        <div className="max-w-6xl mx-auto pb-20 space-y-8">
+        <div className="max-w-7xl mx-auto pb-20 space-y-8">
             {/* Page Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-gray-900">Connect WhatsApp</h1>
-                <p className="text-sm text-gray-500 mt-1">Link your WhatsApp Business account to start sending and receiving messages</p>
+            <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="max-w-2xl">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            WhatsApp connection setup
+                        </div>
+                        <h1 className="mt-4 text-2xl font-bold text-gray-950">Connect WhatsApp the right way</h1>
+                        <p className="mt-2 text-sm leading-6 text-gray-600">
+                            WhatsApp automation ke liye do practical routes hain: official Meta Cloud API for full production access, ya QR/session based connection for limited testing and simple flow demos. Neeche dono ka clear difference diya hai.
+                        </p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 lg:max-w-md">
+                        <div className="flex items-start gap-2">
+                            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                            <p>
+                                Production clients ke liye official Meta route recommend hai. QR/session method sirf testing, internal demos, ya temporary flow validation ke liye rakhein.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+                {verificationSteps.map(step => {
+                    const Icon = step.icon;
+                    return (
+                        <div key={step.title} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-green-50 text-green-700">
+                                <Icon className="h-5 w-5" />
+                            </div>
+                            <h3 className="text-sm font-bold text-gray-950">{step.title}</h3>
+                            <p className="mt-1 text-xs leading-5 text-gray-600">{step.text}</p>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-green-200 bg-green-50/70 p-5">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-600 text-white">
+                            <ShieldCheck className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-bold uppercase tracking-wide text-green-900">Official / compliant setup</h2>
+                            <p className="mt-1 text-sm leading-6 text-green-900">
+                                Full WhatsApp Business access: templates, campaigns, webhooks, reliable delivery, phone-number management, and Meta-compliant automation. Yeh paid/client production ke liye correct route hai.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div className="rounded-2xl border border-gray-200 bg-white p-5">
+                    <div className="flex items-start gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-900 text-white">
+                            <QrCode className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-bold uppercase tracking-wide text-gray-900">QR/session based limited setup</h2>
+                            <p className="mt-1 text-sm leading-6 text-gray-600">
+                                Personal/device session jaisa behavior: quick flow testing ho sakta hai, lekin templates, official campaigns, stable webhooks, compliance guarantees aur scale available nahi hote.
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* Connected Accounts */}
@@ -236,9 +326,15 @@ export default function WhatsAppConnect() {
                                         {acc.status}
                                     </span>
                                     <span className="text-[10px] font-semibold text-gray-400 uppercase">
-                                        {acc.whatsapp_business_account_id ? 'Meta API' : 'Baileys'}
+                                        {acc.whatsapp_business_account_id ? 'Meta API' : 'QR Session'}
                                     </span>
                                 </div>
+                                {!acc.whatsapp_business_account_id && (
+                                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                                        <p className="font-bold">QR connected number</p>
+                                        <p className="mt-1">Flows will reply from this number when it receives a matching trigger, while the device session remains connected.</p>
+                                    </div>
+                                )}
                                 {acc.whatsapp_business_account_id && (
                                     <div className="mt-3">
                                         <button
@@ -276,14 +372,18 @@ export default function WhatsAppConnect() {
                 </div>
             )}
 
-            {/* Two-Column Onboarding Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Connection Methods */}
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
 
                 {/* ===== LEFT: RECOMMENDED — Embedded Signup ===== */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-6 pb-4 border-b border-gray-100">
-                        <h2 className="text-lg font-bold text-gray-900 text-center">Connect WhatsApp Business</h2>
-                        <p className="text-xs text-gray-400 text-center mt-1">Recommended — One Click Business Integration</p>
+                    <div className="border-b border-green-100 bg-green-50/70 p-6">
+                        <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-green-600 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            Recommended
+                        </div>
+                        <h2 className="text-lg font-bold text-gray-950">Official Meta Cloud API</h2>
+                        <p className="mt-1 text-xs leading-5 text-gray-600">Best for real businesses, customer support, templates, campaigns and reliable production automation.</p>
                     </div>
 
                     <div className="p-6 flex flex-col gap-5 flex-1">
@@ -317,6 +417,17 @@ export default function WhatsAppConnect() {
                         )}
 
                         {/* Main CTA Button */}
+                        {!isSecureForMetaLogin && (
+                            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+                                <div className="flex items-start gap-2">
+                                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                                    <div>
+                                        <p className="font-semibold">Meta login needs HTTPS</p>
+                                        <p className="mt-1 text-xs leading-5">Aap abhi HTTP page par ho. Meta FB.login HTTP se block karta hai. Ngrok HTTPS URL ya localhost use karo.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         <button
                             onClick={handleEmbeddedSignup}
                             disabled={embedStatus === 'loading' || embedStatus === 'saving'}
@@ -334,33 +445,76 @@ export default function WhatsAppConnect() {
                                     <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current">
                                         <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z M12 0C5.373 0 0 5.373 0 12c0 2.136.561 4.14 1.539 5.875L0 24l6.29-1.517A11.95 11.95 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.96 0-3.788-.535-5.35-1.463l-.38-.228-3.933.949.983-3.788-.25-.394A9.944 9.944 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/>
                                     </svg>
-                                    Connect WhatsApp <span className="text-[10px] ml-1 bg-white/20 px-1.5 py-0.5 rounded uppercase tracking-wider font-semibold">Under Development</span>
+                                    Connect with Meta
                                 </>
                             )}
                         </button>
 
-                        {/* Instructions */}
-                        <ul className="space-y-2.5">
-                            {[
-                                { dot: 'bg-amber-400', text: <>The seamless integration will open <span className="text-blue-600 font-medium">in a pop-up</span>. Make sure your browser is not blocking pop-ups.</> },
-                                { dot: 'bg-amber-400', text: <>You will be asked to provide a phone number for WhatsApp Business integration. We strongly recommend using a <span className="font-medium">new phone number</span>.</> },
-                                { dot: 'bg-amber-400', text: 'However, if you already have a WhatsApp account associated with that number, back up your WhatsApp data and then delete that account.' },
-                            ].map((item, i) => (
-                                <li key={i} className="flex items-start gap-2.5 text-sm text-gray-600">
-                                    <span className={`w-2 h-2 rounded-full ${item.dot} mt-1.5 shrink-0`}></span>
-                                    <span>{item.text}</span>
-                                </li>
-                            ))}
-                        </ul>
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                            <h3 className="text-xs font-bold uppercase tracking-wide text-gray-700">Before you start</h3>
+                            <ul className="mt-3 space-y-2.5">
+                                {[
+                                    'Browser pop-up allow rakhein, signup Meta window me open hota hai.',
+                                    'Meta Business admin access aur business details ready rakhein.',
+                                    'Fresh/dedicated number best hai. Existing WhatsApp number migrate karne se pehle backup aur risk samajh lein.',
+                                    'Display name aur business verification Meta approval ke according hoga.',
+                                ].map((text, i) => (
+                                    <li key={i} className="flex items-start gap-2.5 text-sm text-gray-700">
+                                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+                                        <span>{text}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="rounded-lg border border-green-100 bg-green-50 p-3 text-green-800">
+                                <p className="font-bold">Can do</p>
+                                <p className="mt-1 leading-5">Templates, campaigns, webhooks, multi-agent support, flow automation.</p>
+                            </div>
+                            <div className="rounded-lg border border-red-100 bg-red-50 p-3 text-red-800">
+                                <p className="font-bold">Cannot skip</p>
+                                <p className="mt-1 leading-5">Meta policies, business verification, opt-in and template approval.</p>
+                            </div>
+                        </div>
+
+                        <div className="rounded-xl border border-gray-200 bg-white p-4">
+                            <h3 className="text-xs font-bold uppercase tracking-wide text-gray-700">Recommended setup plan</h3>
+                            <div className="mt-4 space-y-3">
+                                {[
+                                    ['1', 'Prepare business details', 'Business legal name, website, address, GST/company document if Meta asks.'],
+                                    ['2', 'Connect with Meta', 'Login with Meta admin, select/create WABA, add a dedicated phone number.'],
+                                    ['3', 'Verify send access', 'After connection, use Check Send Access and fix missing permissions if any.'],
+                                    ['4', 'Create templates and flows', 'Use Templates for outbound messages and Flow Builder for inbound trigger automation.'],
+                                ].map(([step, title, text]) => (
+                                    <div key={step} className="flex gap-3">
+                                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-600 text-xs font-bold text-white">{step}</div>
+                                        <div>
+                                            <p className="text-sm font-semibold text-gray-900">{title}</p>
+                                            <p className="mt-0.5 text-xs leading-5 text-gray-500">{text}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs leading-5 text-blue-900">
+                            <p className="font-bold">After setup</p>
+                            <p className="mt-1">Settings me business profile sync/update karein, Broadcasts me approved templates use karein, aur Flow Builder me triggers publish karein.</p>
+                        </div>
 
                     </div>
                 </div>
 
                 {/* ===== RIGHT: ALTERNATIVE — Manual Credentials ===== */}
                 <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-6 pb-4 border-b border-gray-100">
-                        <h2 className="text-lg font-bold text-gray-900 text-center">Connect WhatsApp Business</h2>
-                        <p className="text-xs text-gray-400 text-center mt-1">Alternative — Connect your WhatsApp account</p>
+                    <div className="border-b border-blue-100 bg-blue-50/70 p-6">
+                        <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-600 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Advanced
+                        </div>
+                        <h2 className="text-lg font-bold text-gray-950">Manual Meta Token Setup</h2>
+                        <p className="mt-1 text-xs leading-5 text-gray-600">Use this when the business already has WABA ID, phone number ID and a valid access token.</p>
                     </div>
 
                     <div className="p-6 flex flex-col gap-5 flex-1">
@@ -372,11 +526,20 @@ export default function WhatsAppConnect() {
                                 </svg>
                             </div>
                             <div>
-                                <p className="font-bold text-gray-900 text-sm">WhatsApp</p>
+                                <p className="font-bold text-gray-900 text-sm">Meta API Credentials</p>
                                 <p className="text-xs text-gray-400 flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
-                                    Alternative account connection
+                                    Official API, manually configured
                                 </p>
+                            </div>
+                        </div>
+
+                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
+                            <p className="font-semibold">Use this only if you know these values:</p>
+                            <div className="mt-3 grid grid-cols-1 gap-2 text-xs">
+                                <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5" /> WhatsApp Business Account ID</div>
+                                <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5" /> Permanent or long-lived access token</div>
+                                <div className="flex items-center gap-2"><ArrowRight className="h-3.5 w-3.5" /> Phone number already added in Meta</div>
                             </div>
                         </div>
 
@@ -441,7 +604,7 @@ export default function WhatsAppConnect() {
                                     </select>
                                     <button type="button" onClick={() => { setManualPhoneNumbers([]); setManualSelectedPhoneId(''); }}
                                         className="text-xs text-gray-400 hover:text-gray-600 mt-1">
-                                        ← Change credentials
+                                        Change credentials
                                     </button>
                                 </div>
                             )}
@@ -455,9 +618,80 @@ export default function WhatsAppConnect() {
                                 } shadow-md shadow-green-100`}>
                                 {manualStatus === 'validating' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Validating...</> :
                                  manualStatus === 'saving' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Connecting...</> :
-                                 manualPhoneNumbers.length > 0 ? '🔗 Link to Platform' : '⟶ Connect'}
+                                 manualPhoneNumbers.length > 0 ? 'Link to Platform' : 'Validate Access'}
                             </button>
                         </form>
+
+                        <div className="rounded-xl border border-gray-200 bg-white p-4">
+                            <h3 className="text-xs font-bold uppercase tracking-wide text-gray-700">Manual setup checklist</h3>
+                            <div className="mt-4 space-y-3">
+                                {[
+                                    ['1', 'Create or select Meta app', 'App must have WhatsApp product and required permissions enabled.'],
+                                    ['2', 'Generate access token', 'Use a system user/permanent token for production, not a short test token.'],
+                                    ['3', 'Paste WABA ID and token', 'Validate Access will fetch available phone numbers from that WABA.'],
+                                    ['4', 'Select phone number', 'Choose the verified phone number and save it to this platform.'],
+                                    ['5', 'Run diagnostics', 'Connected Accounts card me Check Send Access click karke token + phone mapping verify karein.'],
+                                ].map(([step, title, text]) => (
+                                    <div key={step} className="flex gap-3">
+                                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">{step}</div>
+                                        <div>
+                                            <p className="text-sm font-semibold text-gray-900">{title}</p>
+                                            <p className="mt-0.5 text-xs leading-5 text-gray-500">{text}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
+                            <p className="font-bold">Common mistakes</p>
+                            <p className="mt-1">Wrong WABA ID, expired token, token without messaging permission, or phone number belonging to another WABA will stop sending.</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ===== QR / SESSION BASED LIMITED CONNECT ===== */}
+                <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+                    <div className="border-b border-gray-100 bg-gray-50 p-6">
+                        <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-gray-900 px-3 py-1 text-xs font-bold uppercase tracking-wide text-white">
+                            <QrCode className="h-3.5 w-3.5" />
+                            Limited testing
+                        </div>
+                        <h2 className="text-lg font-bold text-gray-950">QR Session Connection</h2>
+                        <p className="mt-1 text-xs leading-5 text-gray-600">Quickly connect a WhatsApp device session to test chats and flows. Not recommended for client production.</p>
+                    </div>
+
+                    <div className="flex flex-1 flex-col gap-5 p-6">
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                            <p className="font-bold">What this is good for</p>
+                            <ul className="mt-2 space-y-1.5 text-xs leading-5">
+                                <li>Flow builder testing with your own account.</li>
+                                <li>Internal demos before Meta verification is complete.</li>
+                                <li>Small manual-style chat use where official templates are not needed.</li>
+                            </ul>
+                        </div>
+
+                        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
+                            <p className="font-bold">Important limitations</p>
+                            <ul className="mt-2 space-y-1.5 text-xs leading-5">
+                                <li>No official template/campaign access.</li>
+                                <li>Session can disconnect when phone/network changes.</li>
+                                <li>Higher operational risk and not a compliance-grade integration.</li>
+                                <li>Use only with accounts you own and have permission to connect.</li>
+                            </ul>
+                        </div>
+
+                        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700">
+                            <p className="font-bold text-gray-950">How flows work with QR access</p>
+                            <ul className="mt-2 space-y-1.5 text-xs leading-5">
+                                <li>Flow triggers apply to this connected QR number when a customer messages this number.</li>
+                                <li>It can send text replies, buttons/lists where supported, media links/files, AI replies, and handoff-style flow steps.</li>
+                                <li>It cannot create approved Meta templates, run broadcast campaigns through Cloud API, edit Meta business profile, or guarantee production-grade delivery.</li>
+                                <li>If multiple numbers are connected, active flows are currently shared across the organization, not saved per-number.</li>
+                            </ul>
+                        </div>
+
+                        <WhatsAppLogin onAccountConnected={fetchAccounts} />
                     </div>
                 </div>
             </div>

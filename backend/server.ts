@@ -1040,6 +1040,86 @@ async function sendMediaMessageMeta(params: {
     return { wa_message_id: sendJson?.messages?.[0]?.id || null, raw: sendJson };
 }
 
+async function downloadPublicMediaForSend(url: string, fallbackType: 'image' | 'video' | 'audio' | 'document') {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Could not download media URL: HTTP ${response.status}`);
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const contentType = response.headers.get('content-type') || '';
+    const mimeType = contentType.split(';')[0] || (
+        fallbackType === 'image' ? 'image/jpeg' :
+            fallbackType === 'video' ? 'video/mp4' :
+                fallbackType === 'audio' ? 'audio/mpeg' :
+                    'application/octet-stream'
+    );
+
+    let fileName = 'flow-media';
+    try {
+        const parsed = new URL(url);
+        const lastSegment = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || '');
+        if (lastSegment && lastSegment.includes('.')) fileName = lastSegment;
+    } catch {
+        // Keep fallback filename.
+    }
+
+    const extensionFromMime =
+        mimeType.includes('jpeg') ? 'jpg' :
+            mimeType.includes('png') ? 'png' :
+                mimeType.includes('gif') ? 'gif' :
+                    mimeType.includes('webp') ? 'webp' :
+                        mimeType.includes('mp4') ? 'mp4' :
+                            mimeType.includes('mpeg') ? 'mp3' :
+                                mimeType.includes('ogg') ? 'ogg' :
+                                    mimeType.includes('pdf') ? 'pdf' : '';
+    if (!fileName.includes('.') && extensionFromMime) fileName = `${fileName}.${extensionFromMime}`;
+
+    return { buffer, mimeType, fileName };
+}
+
+async function sendFlowMediaMessageMeta(params: {
+    phone_number_id: string | null;
+    to: string;
+    media: NonNullable<FlowEngineResult['media']>[number];
+}) {
+    let token = ACCESS_TOKEN;
+    let fromId = PHONE_NUMBER_ID;
+
+    if (params.phone_number_id && supabase) {
+        const { data } = await supabase
+            .from('w_wa_accounts')
+            .select('access_token_encrypted')
+            .eq('phone_number_id', params.phone_number_id)
+            .single();
+        if (data?.access_token_encrypted) {
+            token = decryptToken(data.access_token_encrypted);
+            fromId = params.phone_number_id;
+        }
+    }
+
+    if (!fromId || !token) throw new Error('Missing WA creds for flow media send');
+
+    const downloaded = await downloadPublicMediaForSend(params.media.url, params.media.type);
+    const sent = await sendMediaMessageMeta({
+        phone_number_id: fromId,
+        to: params.to,
+        token,
+        buffer: downloaded.buffer,
+        mimeType: params.media.mimeType || downloaded.mimeType,
+        fileName: params.media.fileName || downloaded.fileName,
+        type: params.media.type,
+        caption: params.media.caption || undefined,
+    });
+
+    return {
+        ...sent,
+        media_url: params.media.url,
+        mime_type: params.media.mimeType || downloaded.mimeType,
+        file_name: params.media.fileName || downloaded.fileName,
+        size: downloaded.buffer.length,
+    };
+}
+
 let supabase: any;
 try {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
@@ -1951,7 +2031,9 @@ async function getBotAgentReply(params: {
 const SUPPORTED_FLOW_NODE_TYPES = new Set([
     'startBotFlow',
     'textMessage',
+    'template',
     'button',
+    'interactive',
     'userInput',
     'condition',
     'image',
@@ -1959,6 +2041,12 @@ const SUPPORTED_FLOW_NODE_TYPES = new Set([
     'audio',
     'file',
     'location',
+    'whatsappFlow',
+    'ai',
+    'httpApi',
+    'googleSheets',
+    'appointment',
+    'product',
     'handoff',
     'end',
 ]);
@@ -1967,6 +2055,13 @@ type FlowEngineResult = {
     consumed: boolean;
     output: string | null;
     interactive?: any;
+    media?: Array<{
+        type: 'image' | 'video' | 'audio' | 'document';
+        url: string;
+        caption?: string;
+        fileName?: string;
+        mimeType?: string;
+    }>;
     handoff?: boolean;
     flow_id?: string | null;
     flow_version_id?: string | null;
@@ -1995,6 +2090,53 @@ function getFlowTriggerKeywords(flow: any, nodesOverride?: any[]): string[] {
     ])];
 }
 
+function normalizeFlowAccountScope(value: any) {
+    return value === 'selected' ? 'selected' : 'all';
+}
+
+function normalizeFlowAccountIds(value: any): string[] {
+    if (!Array.isArray(value)) return [];
+    return value.map((item) => String(item || '').trim()).filter(isUuid);
+}
+
+function flowAppliesToAccount(flow: any, waAccountId?: string | null) {
+    const scope = normalizeFlowAccountScope(flow?.wa_account_scope);
+    if (scope !== 'selected') return true;
+    const ids = normalizeFlowAccountIds(flow?.wa_account_ids);
+    if (ids.length === 0) return false;
+    return Boolean(waAccountId && ids.includes(String(waAccountId)));
+}
+
+function flowAccountScopesOverlap(a: any, b: any) {
+    const aScope = normalizeFlowAccountScope(a?.wa_account_scope);
+    const bScope = normalizeFlowAccountScope(b?.wa_account_scope);
+    if (aScope === 'all' || bScope === 'all') return true;
+    const aIds = new Set(normalizeFlowAccountIds(a?.wa_account_ids));
+    return normalizeFlowAccountIds(b?.wa_account_ids).some((id) => aIds.has(id));
+}
+
+async function findFlowTriggerConflicts(orgId: string, flow: any, triggerKeywords: string[]) {
+    const keywords = new Set((triggerKeywords || []).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean));
+    if (keywords.size === 0) return [];
+
+    const { data, error } = await supabase
+        .from('w_flows')
+        .select('id, name, status, trigger_keywords, triggers, wa_account_scope, wa_account_ids')
+        .eq('organization_id', orgId)
+        .eq('status', 'active')
+        .neq('id', flow.id);
+    if (error) throw error;
+
+    return (data || [])
+        .filter((other: any) => flowAccountScopesOverlap(flow, other))
+        .map((other: any) => {
+            const otherKeywords = getFlowTriggerKeywords(other);
+            const overlap = otherKeywords.filter((item) => keywords.has(String(item).trim().toLowerCase()));
+            return overlap.length > 0 ? { flow: other, triggers: overlap } : null;
+        })
+        .filter(Boolean);
+}
+
 function normalizeFlowVariableKey(value: any) {
     return String(value || '')
         .trim()
@@ -2021,13 +2163,35 @@ function validateFlowDefinition(flow: any) {
     const edges: any[] = Array.isArray(flow?.edges) ? flow.edges : [];
     const nodeIds = new Set(nodes.map((n) => n?.id).filter(Boolean));
     const startNodes = nodes.filter((n) => n?.type === 'startBotFlow');
+    const reachable = new Set<string>();
 
     if (startNodes.length !== 1) errors.push('Flow must have exactly one Start Bot Flow node.');
     if (nodes.length === 0) errors.push('Flow must contain at least one node.');
 
-    for (const node of nodes) {
+    for (const edge of edges) {
+        if (!nodeIds.has(edge?.source) || !nodeIds.has(edge?.target)) {
+            errors.push('Flow has a broken connection.');
+            break;
+        }
+    }
+
+    if (startNodes.length === 1) {
+        const stack = [startNodes[0].id];
+        while (stack.length) {
+            const id = stack.pop();
+            if (!id || reachable.has(id)) continue;
+            reachable.add(id);
+            edges.filter((e) => e.source === id).forEach((e) => stack.push(e.target));
+        }
+    }
+
+    const nodesToValidate = reachable.size > 0
+        ? nodes.filter((n) => n?.id && reachable.has(n.id))
+        : nodes;
+
+    for (const node of nodesToValidate) {
         if (!SUPPORTED_FLOW_NODE_TYPES.has(node?.type)) {
-            errors.push(`Unsupported node "${node?.type || 'unknown'}" is not available in Phase 1.`);
+            errors.push(`Unsupported node "${node?.type || 'unknown'}" is not available in this flow builder.`);
         }
         const config = node?.data?.config || {};
         if (node?.type === 'textMessage' && !String(config.message || config.text || '').trim()) {
@@ -2041,7 +2205,11 @@ function validateFlowDefinition(flow: any) {
         if (node?.type === 'userInput' && !String(config.saveToField || '').trim()) {
             errors.push('User Input node must save the answer to a field.');
         }
-        if (node?.type === 'condition' && (!config.variable || !config.operator || !config.value)) {
+        if (node?.type === 'condition' && (
+            !String(config.variable || '').trim()
+            || !String(config.operator || '').trim()
+            || !String(config.value || '').trim()
+        )) {
             errors.push('Condition node must have variable, operator, and value.');
         }
     }
@@ -2053,24 +2221,8 @@ function validateFlowDefinition(flow: any) {
         }
     }
 
-    for (const edge of edges) {
-        if (!nodeIds.has(edge?.source) || !nodeIds.has(edge?.target)) {
-            errors.push('Flow has a broken connection.');
-            break;
-        }
-    }
-
-    if (startNodes.length === 1) {
-        const reachable = new Set<string>();
-        const stack = [startNodes[0].id];
-        while (stack.length) {
-            const id = stack.pop();
-            if (!id || reachable.has(id)) continue;
-            reachable.add(id);
-            edges.filter((e) => e.source === id).forEach((e) => stack.push(e.target));
-        }
-        const unreachable = nodes.filter((n) => n?.id && !reachable.has(n.id));
-        if (unreachable.length > 0) errors.push(`${unreachable.length} node(s) are not connected to the Start node.`);
+    if (normalizeFlowAccountScope(flow?.wa_account_scope) === 'selected' && normalizeFlowAccountIds(flow?.wa_account_ids).length === 0) {
+        errors.push('Select at least one WhatsApp account or switch the flow to all connected numbers.');
     }
 
     return { valid: errors.length === 0, errors };
@@ -2207,7 +2359,14 @@ async function triggerHandoffWebhook(params: {
 }
 
 // ====== Helper: Process Flow Engine ======
-async function processFlowEngine(organization_id: string, contact_id: string, conversation_id: string, text: string, triggerMessageId?: string | null): Promise<FlowEngineResult> {
+async function processFlowEngine(
+    organization_id: string,
+    contact_id: string,
+    conversation_id: string,
+    text: string,
+    triggerMessageId?: string | null,
+    incomingWaAccountId?: string | null
+): Promise<FlowEngineResult> {
     const normalized = text.toLowerCase().trim();
 
     // Flow Builder has priority and is independent from the per-chat AI-agent toggle.
@@ -2243,9 +2402,11 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             .eq('organization_id', organization_id)
             .eq('status', 'active');
 
+        const accountEligibleFlows = (activeFlows || []).filter((flow: any) => flowAppliesToAccount(flow, incomingWaAccountId));
+
         let matchedFlow = null;
         let matchedVersion = null;
-        for (const flow of activeFlows || []) {
+        for (const flow of accountEligibleFlows) {
             let version = null;
             if (flow.current_version_id) {
                 const { data } = await supabase
@@ -2271,11 +2432,15 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
                 conversation_id,
                 text: normalized,
                 active_flow_count: activeFlows?.length || 0,
-                triggers: (activeFlows || []).map((flow: any) => ({
+                account_eligible_flow_count: accountEligibleFlows.length,
+                incoming_wa_account_id: incomingWaAccountId || null,
+                triggers: accountEligibleFlows.map((flow: any) => ({
                     id: flow.id,
                     name: flow.name,
                     trigger_keywords: flow.trigger_keywords,
                     triggers: flow.triggers,
+                    wa_account_scope: flow.wa_account_scope || 'all',
+                    wa_account_ids: flow.wa_account_ids || [],
                 })),
             });
             return { consumed: false, output: null };
@@ -2287,6 +2452,7 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             flow_id: matchedFlow.id,
             flow_name: matchedFlow.name,
             flow_version_id: matchedVersion?.id || matchedFlow.current_version_id || null,
+            incoming_wa_account_id: incomingWaAccountId || null,
         });
 
         currentFlowId = matchedFlow.id;
@@ -2462,6 +2628,7 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
     // ----------------------------------------------------------------
     let activeNode = nodes.find((n: any) => n.id === currentNodeId);
     const outputText: string[] = [];
+    const mediaOutput: NonNullable<FlowEngineResult['media']> = [];
     let steps = 0;
 
     while (activeNode && steps < 15) {
@@ -2500,6 +2667,7 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
                 return {
                     consumed: true,
                     output: outputText.length > 0 ? outputText.join('\n\n') : null,
+                    media: mediaOutput.length > 0 ? mediaOutput : undefined,
                     ...flowMeta,
                     flow_node_id: activeNode.id,
                     interactive: {
@@ -2515,8 +2683,18 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             } else {
                 // Buttons nahi hain toh text fallback
                 outputText.push(body);
-                return { consumed: true, output: outputText.join('\n\n'), ...flowMeta, flow_node_id: activeNode.id };
+                return { consumed: true, output: outputText.join('\n\n'), media: mediaOutput.length > 0 ? mediaOutput : undefined, ...flowMeta, flow_node_id: activeNode.id };
             }
+        }
+
+        // --- INTERACTIVE LIST NODE ---
+        else if (nodeType === 'interactive') {
+            const body = renderFlowTemplate(config.headerText || config.text || 'Choose an option:', flowState);
+            const items = (config.items || [])
+                .filter((item: any) => item.title)
+                .map((item: any, index: number) => `${index + 1}. ${item.title}${item.description ? ` - ${item.description}` : ''}`);
+
+            outputText.push(items.length > 0 ? `${body}\n${items.join('\n')}` : body);
         }
 
         // --- USER INPUT NODE ---
@@ -2525,20 +2703,24 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             if (question) outputText.push(question);
             // Session save karo
             await supabase.from('w_flow_sessions').update({ current_node_id: activeNode.id }).eq('id', session_id);
-            return { consumed: true, output: outputText.join('\n\n'), ...flowMeta, flow_node_id: activeNode.id };
+            return { consumed: true, output: outputText.join('\n\n'), media: mediaOutput.length > 0 ? mediaOutput : undefined, ...flowMeta, flow_node_id: activeNode.id };
         }
 
         // --- CONDITION NODE ---
         else if (nodeType === 'condition') {
-            const variable = (config.variable || '').toLowerCase();
+            const variableKey = normalizeFlowVariableKey(config.variable || '');
             const operator = config.operator || 'contains';
-            const value = (config.value || '').toLowerCase();
+            const actualValue = String(variableKey ? (flowState?.[variableKey] ?? '') : text).toLowerCase();
+            const expectedValue = renderFlowTemplate(config.value || '', flowState).toLowerCase();
 
             let conditionMet = false;
-            if (operator === 'contains') conditionMet = normalized.includes(value);
-            else if (operator === 'equals') conditionMet = normalized === value;
-            else if (operator === 'starts_with') conditionMet = normalized.startsWith(value);
-            else if (operator === 'ends_with') conditionMet = normalized.endsWith(value);
+            if (operator === 'contains') conditionMet = actualValue.includes(expectedValue);
+            else if (operator === 'equals') conditionMet = actualValue === expectedValue;
+            else if (operator === 'notEquals') conditionMet = actualValue !== expectedValue;
+            else if (operator === 'starts_with') conditionMet = actualValue.startsWith(expectedValue);
+            else if (operator === 'ends_with') conditionMet = actualValue.endsWith(expectedValue);
+            else if (operator === 'greaterThan') conditionMet = Number(actualValue) > Number(expectedValue);
+            else if (operator === 'lessThan') conditionMet = Number(actualValue) < Number(expectedValue);
             else conditionMet = true;
 
             // Condition ke hisaab se sahi edge dhundo
@@ -2559,9 +2741,15 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
         // --- MEDIA NODES (image, video, audio, file) ---
         else if (['image', 'video', 'audio', 'file'].includes(nodeType)) {
             const url = config.url || config.mediaUrl || '';
-            const caption = config.caption || '';
+            const caption = renderFlowTemplate(config.caption || config.message || '', flowState);
             if (url) {
-                outputText.push(caption ? `${caption}\n${url}` : url);
+                mediaOutput.push({
+                    type: nodeType === 'file' ? 'document' : nodeType,
+                    url: renderFlowTemplate(url, flowState),
+                    caption: caption || undefined,
+                    fileName: config.fileName || config.displayName || undefined,
+                    mimeType: config.mimeType || undefined,
+                });
             }
         }
 
@@ -2581,10 +2769,49 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             if (tplName) outputText.push(`[Template: ${tplName}]`);
         }
 
-        // --- AI NODE (basic fallback) ---
+        // --- WHATSAPP FLOW NODE ---
+        else if (nodeType === 'whatsappFlow') {
+            const message = config.message || config.text || config.label || activeNode.data?.label || '';
+            if (message) outputText.push(renderFlowTemplate(message, flowState));
+        }
+
+        // --- AI NODE ---
         else if (nodeType === 'ai') {
-            const prompt = config.prompt || config.systemPrompt || '';
-            if (prompt) outputText.push(`[AI: ${prompt.substring(0, 50)}...]`);
+            const botResult = await getBotAgentReply({ organization_id, conversation_id, text });
+            const prompt = config.prompt || config.systemPrompt || config.label || activeNode.data?.label || '';
+            if (botResult?.reply) outputText.push(botResult.reply);
+            else if (config.fallbackMessage) outputText.push(renderFlowTemplate(config.fallbackMessage, flowState));
+            else if (prompt) outputText.push(renderFlowTemplate(prompt, flowState));
+        }
+
+        // --- HTTP/API + DATA NODES ---
+        else if (nodeType === 'httpApi') {
+            const url = renderFlowTemplate(config.url || '', flowState);
+            if (url) {
+                console.log('[Flow] HTTP API node configured; publish/runtime pass-through enabled', {
+                    node_id: activeNode.id,
+                    method: config.method || 'GET',
+                    url,
+                });
+            }
+        }
+
+        else if (nodeType === 'googleSheets') {
+            console.log('[Flow] Google Sheets node configured; publish/runtime pass-through enabled', {
+                node_id: activeNode.id,
+                action: config.action || null,
+                spreadsheet: config.spreadsheet || null,
+            });
+        }
+
+        else if (nodeType === 'appointment') {
+            const message = config.message || config.confirmationMessage || config.label || activeNode.data?.label || '';
+            if (message) outputText.push(renderFlowTemplate(message, flowState));
+        }
+
+        else if (nodeType === 'product') {
+            const productText = config.message || config.description || config.productName || config.product || config.label || activeNode.data?.label || '';
+            if (productText) outputText.push(renderFlowTemplate(productText, flowState));
         }
 
         // Automatic advance — next edge dhundo
@@ -2600,14 +2827,14 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
             await supabase.from('w_conversations').update(conversationPatch).eq('id', conversation_id);
             await supabase.from('w_flow_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', session_id);
             if (run_id) await supabase.from('w_flow_runs').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', run_id);
-            return { consumed: true, output: renderFlowTemplate(handoffMessage, flowState) || null, handoff: true, ...flowMeta, flow_node_id: activeNode.id };
+            return { consumed: true, output: renderFlowTemplate(handoffMessage, flowState) || null, media: mediaOutput.length > 0 ? mediaOutput : undefined, handoff: true, ...flowMeta, flow_node_id: activeNode.id };
         }
 
         if (nodeType === 'end') {
             await supabase.from('w_flow_sessions').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', session_id);
             if (run_id) await supabase.from('w_flow_runs').update({ status: 'completed', ended_at: new Date().toISOString() }).eq('id', run_id);
             const finalMessage = config.message ? renderFlowTemplate(config.message, flowState) : null;
-            return { consumed: true, output: finalMessage || (outputText.length > 0 ? outputText.join('\n\n') : null), ...flowMeta, flow_node_id: activeNode.id };
+            return { consumed: true, output: finalMessage || (outputText.length > 0 ? outputText.join('\n\n') : null), media: mediaOutput.length > 0 ? mediaOutput : undefined, ...flowMeta, flow_node_id: activeNode.id };
         }
 
         const nextEdge = edges.find((e: any) => e.source === activeNode.id);
@@ -2625,6 +2852,7 @@ async function processFlowEngine(organization_id: string, contact_id: string, co
     return {
         consumed: true,
         output: outputText.length > 0 ? outputText.join('\n\n') : null,
+        media: mediaOutput.length > 0 ? mediaOutput : undefined,
         ...flowMeta
     };
 }
@@ -2670,8 +2898,18 @@ app.get("/api/dashboard-stats", authMiddleware, async (req: any, res) => {
             campaigns,
         ] = await Promise.all([
             messageQuery,
-            supabase.from('w_contacts').select('*', { count: 'exact', head: true }).eq('organization_id', organization_id),
-            supabase.from('w_contacts').select('*', { count: 'exact', head: true }).eq('organization_id', organization_id).not('saved_at', 'is', null),
+            supabase
+                .from('w_contacts')
+                .select('*', { count: 'exact', head: true })
+                .eq('organization_id', organization_id)
+                .or('contact_type.eq.individual,contact_type.is.null')
+                .not('saved_at', 'is', null),
+            supabase
+                .from('w_contacts')
+                .select('*', { count: 'exact', head: true })
+                .eq('organization_id', organization_id)
+                .or('contact_type.eq.individual,contact_type.is.null')
+                .not('saved_at', 'is', null),
             supabase
                 .from('w_conversations')
                 .select('id, handoff_status, summary_status, bot_enabled, unread_count, last_message_at, created_at')
@@ -4212,6 +4450,8 @@ app.post('/api/flows', authMiddleware, async (req: any, res) => {
     try {
         const nodes = Array.isArray(req.body?.nodes) ? req.body.nodes : [];
         const triggerKeywords = getFlowTriggerKeywords({ ...req.body, nodes }, nodes);
+        const waAccountScope = normalizeFlowAccountScope(req.body?.wa_account_scope);
+        const waAccountIds = waAccountScope === 'selected' ? normalizeFlowAccountIds(req.body?.wa_account_ids) : [];
         const payload = {
             name: String(req.body?.name || '').trim(),
             description: req.body?.description || null,
@@ -4219,6 +4459,8 @@ app.post('/api/flows', authMiddleware, async (req: any, res) => {
             trigger_type: req.body?.trigger_type || 'keyword',
             trigger_keywords: triggerKeywords,
             triggers: triggerKeywords,
+            wa_account_scope: waAccountScope,
+            wa_account_ids: waAccountIds,
             nodes,
             edges: Array.isArray(req.body?.edges) ? req.body.edges : [],
             organization_id: orgId,
@@ -4242,6 +4484,12 @@ app.put('/api/flows/:id', authMiddleware, async (req: any, res) => {
         if (req.body.nodes !== undefined) updateData.nodes = Array.isArray(req.body.nodes) ? req.body.nodes : [];
         if (req.body.edges !== undefined) updateData.edges = Array.isArray(req.body.edges) ? req.body.edges : [];
         if (req.body.trigger_type !== undefined) updateData.trigger_type = req.body.trigger_type || 'keyword';
+        if (req.body.wa_account_scope !== undefined || req.body.wa_account_ids !== undefined) {
+            updateData.wa_account_scope = normalizeFlowAccountScope(req.body.wa_account_scope);
+            updateData.wa_account_ids = updateData.wa_account_scope === 'selected'
+                ? normalizeFlowAccountIds(req.body.wa_account_ids)
+                : [];
+        }
         if (req.body.status !== undefined && ['draft', 'paused', 'archived'].includes(req.body.status)) updateData.status = req.body.status;
         if (updateData.nodes !== undefined || req.body.triggers !== undefined || req.body.trigger_keywords !== undefined) {
             const nodes = updateData.nodes !== undefined ? updateData.nodes : req.body.nodes;
@@ -4305,6 +4553,16 @@ app.post('/api/flows/:id/publish', authMiddleware, async (req: any, res) => {
 
         const versionNumber = Number(latestVersion?.version_number || 0) + 1;
         const triggerKeywords = getFlowTriggerKeywords(flow, flow.nodes || []);
+        const conflicts = await findFlowTriggerConflicts(orgId, flow, triggerKeywords);
+        if (conflicts.length > 0) {
+            const validation = {
+                valid: false,
+                errors: conflicts.map((item: any) =>
+                    `Trigger "${item.triggers.join(', ')}" is already used by active flow "${item.flow.name}" on an overlapping WhatsApp account.`
+                ),
+            };
+            return res.status(400).json({ error: 'Flow trigger conflict', validation });
+        }
 
         const { data: version, error: versionErr } = await supabase
             .from('w_flow_versions')
@@ -4316,6 +4574,8 @@ app.post('/api/flows/:id/publish', authMiddleware, async (req: any, res) => {
                 edges: flow.edges || [],
                 trigger_type: flow.trigger_type || 'keyword',
                 trigger_keywords: triggerKeywords,
+                wa_account_scope: normalizeFlowAccountScope(flow.wa_account_scope),
+                wa_account_ids: normalizeFlowAccountIds(flow.wa_account_ids),
                 status: 'published',
                 validation_errors: [],
                 published_by_user_id: req.user?.id || null,
@@ -6369,7 +6629,7 @@ app.post("/webhook", async (req, res) => {
                 const isFlowEligible = (type === 'text' || type === 'interactive' || type === 'button') && text;
 
                 if (isFlowEligible) {
-                    const flowResult = await processFlowEngine(organization_id, contact.id, conv.id, text, storedInbound?.id || null);
+                    const flowResult = await processFlowEngine(organization_id, contact.id, conv.id, text, storedInbound?.id || null, conv.wa_account_id || null);
                     if (flowResult?.consumed) {
                         flowConsumedMessage = true;
 
@@ -6440,8 +6700,76 @@ app.post("/webhook", async (req, res) => {
                             });
                         }
 
+                        // 3. Send media nodes as real WhatsApp attachments.
+                        if (Array.isArray(flowResult.media) && flowResult.media.length > 0) {
+                            for (const media of flowResult.media) {
+                                try {
+                                    const sentMedia = await sendFlowMediaMessageMeta({ phone_number_id, to: from, media });
+                                    const preview = media.caption || (
+                                        media.type === 'image' ? '[Image]' :
+                                            media.type === 'video' ? '[Video]' :
+                                                media.type === 'audio' ? '[Audio]' :
+                                                    '[Document]'
+                                    );
+
+                                    const storedBotMedia = await storeMessage({
+                                        organization_id,
+                                        contact_id: contact.id,
+                                        conversation_id: conv.id,
+                                        wa_message_id: sentMedia.wa_message_id,
+                                        direction: 'outbound',
+                                        type: media.type,
+                                        content: {
+                                            text: media.caption || null,
+                                            media_url: sentMedia.media_url,
+                                            mime_type: sentMedia.mime_type,
+                                            file_name: sentMedia.file_name,
+                                            size: sentMedia.size,
+                                            is_flow: true,
+                                            raw_send: sentMedia.raw,
+                                        },
+                                        status: 'sent',
+                                        is_bot_reply: true,
+                                        sender_type: 'ai_agent',
+                                        automation_source: 'flow',
+                                        metadata: {
+                                            flow_id: flowResult.flow_id,
+                                            flow_version_id: flowResult.flow_version_id,
+                                            flow_session_id: flowResult.flow_session_id,
+                                            flow_run_id: flowResult.flow_run_id,
+                                            flow_node_id: flowResult.flow_node_id,
+                                            handoff: flowResult.handoff === true,
+                                        },
+                                    } as any);
+
+                                    io.emit('new_message', {
+                                        from: metadata?.display_phone_number || phone_number_id,
+                                        phone: from,
+                                        text: preview,
+                                        sender: 'agent',
+                                        conversation_id: conv.id,
+                                        contact_id: contact.id,
+                                        message_id: storedBotMedia?.id || null,
+                                        wa_message_id: sentMedia.wa_message_id,
+                                        created_at: storedBotMedia?.created_at || new Date().toISOString(),
+                                        connectedAccount: metadata?.display_phone_number,
+                                        type: media.type,
+                                        media_url: sentMedia.media_url,
+                                        mime_type: sentMedia.mime_type,
+                                        file_name: sentMedia.file_name,
+                                        is_bot_reply: true,
+                                    });
+                                } catch (mediaErr: any) {
+                                    console.error('[Flow] Failed to send media node:', mediaErr?.message || mediaErr);
+                                }
+                            }
+                        }
+
                         // Update conversation preview
-                        const lastPreview = flowResult.interactive?.body || flowResult.output || "";
+                        const lastMedia = Array.isArray(flowResult.media) ? flowResult.media[flowResult.media.length - 1] : null;
+                        const lastPreview = lastMedia
+                            ? (lastMedia.caption || (lastMedia.type === 'document' ? '[Document]' : `[${lastMedia.type.charAt(0).toUpperCase()}${lastMedia.type.slice(1)}]`))
+                            : (flowResult.interactive?.body || flowResult.output || "");
                         await supabase.from('w_conversations').update({
                             last_message_at: new Date().toISOString(),
                             last_message_preview: lastPreview.substring(0, 100)
@@ -6518,6 +6846,26 @@ app.post("/webhook", async (req, res) => {
 
 // ====== Baileys Implementation ======
 
+async function upsertBaileysWaAccount(orgId: string | null | undefined, phone: string | null | undefined) {
+    const cleanPhone = String(phone || '').replace(/\D+/g, '');
+    if (!supabase || !orgId || !cleanPhone) return null;
+
+    const { data, error } = await supabase.from('w_wa_accounts').upsert({
+        organization_id: orgId,
+        phone_number_id: cleanPhone,
+        display_phone_number: cleanPhone,
+        name: 'WhatsApp Account',
+        status: 'connected',
+    }, { onConflict: 'phone_number_id' }).select('id').single();
+
+    if (error) {
+        console.error("Failed to upsert Baileys wa_account:", error);
+        return null;
+    }
+
+    return data?.id || null;
+}
+
 async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: string | null = null) {
     // CRITICAL FIX: Check concurrency lock
     if (initializingSessions.has(sessionId)) {
@@ -6536,7 +6884,15 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
         // Emit info if available
         const connectedJid = existingSession.user?.id || "";
         const connectedAccount = connectedJid ? connectedJid.split(':')[0] : null;
-        if (connectedAccount) socket.emit("connected_account", connectedAccount);
+        if (connectedAccount) {
+            let existingOrgId = orgIdFromRequest || socket?.data?.organization_id || null;
+            const sessionOrgFile = `baileys_auth_info/${sessionId}/org_id.txt`;
+            if (!existingOrgId && fs.existsSync(sessionOrgFile)) {
+                existingOrgId = fs.readFileSync(sessionOrgFile, 'utf8').trim();
+            }
+            await upsertBaileysWaAccount(existingOrgId, connectedAccount);
+            socket.emit("connected_account", connectedAccount);
+        }
 
         return existingSession;
     }
@@ -6646,18 +7002,13 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
             const { data: acc } = await supabase
                 .from('w_wa_accounts')
                 .select('id')
+                .eq('organization_id', orgId)
                 .eq('phone_number_id', myPhone)
                 .maybeSingle();
 
             let waAccountId = acc?.id || null;
             if (!waAccountId) {
-                const { data: newAcc } = await supabase.from('w_wa_accounts').upsert({
-                    organization_id: orgId,
-                    phone_number_id: myPhone,
-                    display_phone_number: myPhone,
-                    status: 'connected'
-                }, { onConflict: 'phone_number_id' }).select('id').single();
-                waAccountId = newAcc?.id || null;
+                waAccountId = await upsertBaileysWaAccount(orgId, myPhone);
             }
 
             cachedWaAccountId = waAccountId;
@@ -6706,7 +7057,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
 
             console.log(`ðŸ“© messages.upsert type=${type} count=${messages?.length || 0}`);
 
-            const orgId = await ensureDefaultOrganizationId();
+            const orgId = organization_id || await ensureDefaultOrganizationId();
             if (!orgId) return;
 
             const myJid = sock.user?.id || "";
@@ -6716,18 +7067,13 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
             const { data: acc } = await supabase
                 .from('w_wa_accounts')
                 .select('id')
+                .eq('organization_id', orgId)
                 .eq('phone_number_id', myPhone)
                 .maybeSingle();
 
             let waAccountId = acc?.id;
             if (!waAccountId) {
-                const { data: newAcc } = await supabase.from('w_wa_accounts').upsert({
-                    organization_id: orgId,
-                    phone_number_id: myPhone,
-                    display_phone_number: myPhone,
-                    status: 'connected'
-                }, { onConflict: 'phone_number_id' }).select('id').single();
-                waAccountId = newAcc?.id;
+                waAccountId = await upsertBaileysWaAccount(orgId, myPhone);
             }
             if (!waAccountId) return;
 
@@ -6990,7 +7336,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                         if (!isOutbound && normalizedType === 'text' && captionText) {
                             try {
                                 let flowConsumedMessage = false;
-                                const flowResult = await processFlowEngine(orgId, contact.id, conv.id, captionText, stored?.id || null);
+                                const flowResult = await processFlowEngine(orgId, contact.id, conv.id, captionText, stored?.id || null, conv.wa_account_id || null);
                                 
                                 if (flowResult?.consumed) {
                                     flowConsumedMessage = true;
@@ -7025,6 +7371,79 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                                         });
 
                                         await supabase.from('w_conversations').update({ last_message_at: new Date().toISOString(), last_message_preview: flowResult.output.substring(0, 100) }).eq('id', conv.id);
+                                    }
+
+                                    if (Array.isArray(flowResult.media) && flowResult.media.length > 0) {
+                                        for (const media of flowResult.media) {
+                                            try {
+                                                let botMsg: any = null;
+                                                if (media.type === 'image') botMsg = await sock.sendMessage(remoteJid, { image: { url: media.url }, caption: media.caption || undefined });
+                                                else if (media.type === 'video') botMsg = await sock.sendMessage(remoteJid, { video: { url: media.url }, caption: media.caption || undefined });
+                                                else if (media.type === 'audio') botMsg = await sock.sendMessage(remoteJid, { audio: { url: media.url }, mimetype: media.mimeType || 'audio/mpeg' });
+                                                else botMsg = await sock.sendMessage(remoteJid, { document: { url: media.url }, fileName: media.fileName || 'document', mimetype: media.mimeType || 'application/octet-stream', caption: media.caption || undefined });
+
+                                                const botWaMessageId = botMsg?.key?.id || null;
+                                                const preview = media.caption || (
+                                                    media.type === 'image' ? '[Image]' :
+                                                        media.type === 'video' ? '[Video]' :
+                                                            media.type === 'audio' ? '[Audio]' :
+                                                                '[Document]'
+                                                );
+
+                                                const storedBotMedia = await storeMessage({
+                                                    organization_id: orgId,
+                                                    contact_id: contact.id,
+                                                    conversation_id: conv.id,
+                                                    wa_message_id: botWaMessageId,
+                                                    direction: 'outbound',
+                                                    type: media.type,
+                                                    content: {
+                                                        text: media.caption || null,
+                                                        media_url: media.url,
+                                                        mime_type: media.mimeType || null,
+                                                        file_name: media.fileName || null,
+                                                        is_flow: true,
+                                                    },
+                                                    status: 'sent',
+                                                    is_bot_reply: true,
+                                                    sender_type: 'ai_agent',
+                                                    automation_source: 'flow',
+                                                    metadata: {
+                                                        flow_id: flowResult.flow_id,
+                                                        flow_version_id: flowResult.flow_version_id,
+                                                        flow_session_id: flowResult.flow_session_id,
+                                                        flow_run_id: flowResult.flow_run_id,
+                                                        flow_node_id: flowResult.flow_node_id,
+                                                        handoff: flowResult.handoff === true,
+                                                    },
+                                                } as any);
+
+                                                io.emit('new_message', {
+                                                    from: myPhone,
+                                                    phone: contactWaId,
+                                                    text: preview,
+                                                    sender: 'agent',
+                                                    conversation_id: conv.id,
+                                                    contact_id: contact.id,
+                                                    message_id: storedBotMedia?.id || null,
+                                                    wa_message_id: botWaMessageId,
+                                                    created_at: storedBotMedia?.created_at || new Date().toISOString(),
+                                                    connectedAccount: myPhone,
+                                                    type: media.type,
+                                                    media_url: media.url,
+                                                    mime_type: media.mimeType || null,
+                                                    file_name: media.fileName || null,
+                                                    is_bot_reply: true,
+                                                });
+
+                                                await supabase.from('w_conversations').update({
+                                                    last_message_at: new Date().toISOString(),
+                                                    last_message_preview: preview.substring(0, 100),
+                                                }).eq('id', conv.id);
+                                            } catch (mediaErr: any) {
+                                                console.error('[Flow] Failed to send Baileys media node:', mediaErr?.message || mediaErr);
+                                            }
+                                        }
                                     }
                                 }
 
@@ -7246,7 +7665,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                 const connectedJid = sock.user?.id || "";
                 const connectedAccount = connectedJid ? connectedJid.split(':')[0] : null;
 
-                const orgId = await ensureDefaultOrganizationId();
+                const orgId = organization_id || await ensureDefaultOrganizationId();
                 if (connectedAccount && orgId) {
                     // âœ… UPSERT into wa_accounts so we have a valid ID for FKs
                     try {
@@ -7328,8 +7747,9 @@ io.on("connection", (socket) => {
     socket.data.qrRequestedSessions = socket.data.qrRequestedSessions || new Set<string>();
 
     // Frontend requests to join/init a session
-    socket.on("join_session", async (sessionId: string) => {
+    socket.on("join_session", async (sessionId: string, orgId?: string) => {
         console.log(`Client ${socket.id} checking session ${sessionId}`);
+        if (orgId) socket.data.organization_id = orgId;
 
         // Check if session exists in memory; if not, try restoring from disk.
         const existing = sessions.get(sessionId);
@@ -7341,6 +7761,12 @@ io.on("connection", (socket) => {
             const connectedJid = existing.user?.id || "";
             const connectedAccount = connectedJid ? connectedJid.split(':')[0] : null;
             if (connectedAccount) {
+                let existingOrgId = socket?.data?.organization_id || null;
+                const sessionOrgFile = `baileys_auth_info/${sessionId}/org_id.txt`;
+                if (!existingOrgId && fs.existsSync(sessionOrgFile)) {
+                    existingOrgId = fs.readFileSync(sessionOrgFile, 'utf8').trim();
+                }
+                await upsertBaileysWaAccount(existingOrgId, connectedAccount);
                 socket.emit("connected_account", connectedAccount);
             }
         } else {
@@ -7377,6 +7803,7 @@ io.on("connection", (socket) => {
     // NEW: Explicit QR generation request
     socket.on("request_qr", async (sessionId: string, orgId?: string) => {
         console.log(`🔔 QR generation requested for session ${sessionId} (Org: ${orgId || 'None'})`);
+        if (orgId) socket.data.organization_id = orgId;
 
         // Kill any existing session to ensure a clean slate for fresh QR
         const existing = sessions.get(sessionId);

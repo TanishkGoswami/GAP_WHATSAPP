@@ -10,6 +10,8 @@ alter table public.w_flows
   add column if not exists trigger_type text not null default 'keyword',
   add column if not exists trigger_keywords text[] not null default '{}'::text[],
   add column if not exists triggers jsonb not null default '[]'::jsonb,
+  add column if not exists wa_account_scope text not null default 'all',
+  add column if not exists wa_account_ids uuid[] not null default '{}'::uuid[],
   add column if not exists nodes jsonb not null default '[]'::jsonb,
   add column if not exists edges jsonb not null default '[]'::jsonb,
   add column if not exists current_version_id uuid,
@@ -79,6 +81,13 @@ begin
       check (trigger_type in ('keyword', 'all_messages', 'manual', 'api'))
       not valid;
   end if;
+
+  if not exists (select 1 from pg_constraint where conname = 'w_flows_wa_account_scope_check') then
+    alter table public.w_flows
+      add constraint w_flows_wa_account_scope_check
+      check (wa_account_scope in ('all', 'selected'))
+      not valid;
+  end if;
 end $$;
 
 create table if not exists public.w_flow_versions (
@@ -90,6 +99,8 @@ create table if not exists public.w_flow_versions (
   edges jsonb not null default '[]'::jsonb,
   trigger_type text not null default 'keyword',
   trigger_keywords text[] not null default '{}'::text[],
+  wa_account_scope text not null default 'all',
+  wa_account_ids uuid[] not null default '{}'::uuid[],
   status text not null default 'published',
   validation_errors jsonb not null default '[]'::jsonb,
   published_by_user_id uuid,
@@ -183,6 +194,9 @@ end $$;
 
 create index if not exists idx_w_flows_org_status
   on public.w_flows(organization_id, status, updated_at desc);
+
+create index if not exists idx_w_flows_wa_account_ids
+  on public.w_flows using gin(wa_account_ids);
 
 create index if not exists idx_w_flow_versions_flow_created
   on public.w_flow_versions(flow_id, version_number desc);

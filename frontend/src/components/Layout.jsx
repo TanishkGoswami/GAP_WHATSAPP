@@ -142,7 +142,7 @@ export default function Layout() {
                 </header>
 
                 {/* Main Content */}
-                <main className={`flex-1 ${(isLiveChat || isFlowBuilder) ? 'overflow-hidden p-0' : 'overflow-y-auto p-6'}`}>
+                <main className={`flex-1 ${isLiveChat ? 'overflow-hidden p-0' : isFlowBuilder ? 'overflow-y-auto p-0' : 'overflow-y-auto p-6'}`}>
                     <Outlet />
                 </main>
 

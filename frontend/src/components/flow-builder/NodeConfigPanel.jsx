@@ -90,6 +90,16 @@ function renderConfigForm(nodeType, config, updateConfig) {
             return <LocationConfig config={config} updateConfig={updateConfig} />;
         case 'httpApi':
             return <HTTPAPIConfig config={config} updateConfig={updateConfig} />;
+        case 'ai':
+            return <AIConfig config={config} updateConfig={updateConfig} />;
+        case 'googleSheets':
+            return <GoogleSheetsConfig config={config} updateConfig={updateConfig} />;
+        case 'whatsappFlow':
+            return <WhatsAppFlowConfig config={config} updateConfig={updateConfig} />;
+        case 'appointment':
+            return <AppointmentConfig config={config} updateConfig={updateConfig} />;
+        case 'product':
+            return <ProductConfig config={config} updateConfig={updateConfig} />;
         case 'template':
             return <TemplateConfig config={config} updateConfig={updateConfig} />;
         case 'interactive':
@@ -707,6 +717,19 @@ function HTTPAPIConfig({ config, updateConfig }) {
         <div className="space-y-4">
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Label
+                </label>
+                <input
+                    type="text"
+                    value={config.label || ''}
+                    onChange={(e) => updateConfig('label', e.target.value)}
+                    placeholder="Check order status"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                     HTTP Method
                 </label>
                 <select
@@ -748,6 +771,255 @@ function HTTPAPIConfig({ config, updateConfig }) {
                     />
                 </div>
             )}
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Headers (JSON)
+                </label>
+                <textarea
+                    value={config.headers || ''}
+                    onChange={(e) => updateConfig('headers', e.target.value)}
+                    placeholder='{"Authorization": "Bearer {{api_token}}"}'
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                    rows={3}
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Save Response To
+                </label>
+                <input
+                    type="text"
+                    value={config.saveResponseTo || ''}
+                    onChange={(e) => updateConfig('saveResponseTo', e.target.value.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase())}
+                    placeholder="api_response"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">Use later as <span className="font-mono">{'{{api_response}}'}</span>.</p>
+            </div>
+        </div>
+    );
+}
+
+function AIConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Label</label>
+                <input
+                    type="text"
+                    value={config.label || ''}
+                    onChange={(e) => updateConfig('label', e.target.value)}
+                    placeholder="AI knowledge reply"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Instruction / Prompt</label>
+                <textarea
+                    value={config.prompt || ''}
+                    onChange={(e) => updateConfig('prompt', e.target.value)}
+                    placeholder="Answer using the business knowledge base. Keep the reply short and helpful."
+                    rows={5}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Fallback Message</label>
+                <textarea
+                    value={config.fallbackMessage || ''}
+                    onChange={(e) => updateConfig('fallbackMessage', e.target.value)}
+                    placeholder="I could not find that in our knowledge base. I am connecting you to the team."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                    type="checkbox"
+                    checked={config.handoffOnFallback === true}
+                    onChange={(e) => updateConfig('handoffOnFallback', e.target.checked)}
+                />
+                Request human handoff when AI has no answer
+            </label>
+        </div>
+    );
+}
+
+function GoogleSheetsConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Label</label>
+                <input
+                    type="text"
+                    value={config.label || ''}
+                    onChange={(e) => updateConfig('label', e.target.value)}
+                    placeholder="Save lead to sheet"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Action</label>
+                <select
+                    value={config.action || 'append_row'}
+                    onChange={(e) => updateConfig('action', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                >
+                    <option value="append_row">Append row</option>
+                    <option value="update_row">Update row</option>
+                    <option value="find_row">Find row</option>
+                </select>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Spreadsheet ID or URL</label>
+                <input
+                    type="text"
+                    value={config.spreadsheet || ''}
+                    onChange={(e) => updateConfig('spreadsheet', e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sheet / Tab Name</label>
+                <input
+                    type="text"
+                    value={config.sheetName || ''}
+                    onChange={(e) => updateConfig('sheetName', e.target.value)}
+                    placeholder="Leads"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Column Mapping (JSON)</label>
+                <textarea
+                    value={config.columnMapping || ''}
+                    onChange={(e) => updateConfig('columnMapping', e.target.value)}
+                    placeholder='{"Name": "{{name}}", "Phone": "{{phone}}", "Message": "{{customer_question}}"}'
+                    rows={5}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 font-mono text-sm"
+                />
+            </div>
+        </div>
+    );
+}
+
+function WhatsAppFlowConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Flow ID</label>
+                <input
+                    type="text"
+                    value={config.flowId || ''}
+                    onChange={(e) => updateConfig('flowId', e.target.value)}
+                    placeholder="Meta WhatsApp Flow ID"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Button Text</label>
+                <input
+                    type="text"
+                    value={config.buttonText || ''}
+                    onChange={(e) => updateConfig('buttonText', e.target.value)}
+                    placeholder="Open form"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+                <textarea
+                    value={config.message || ''}
+                    onChange={(e) => updateConfig('message', e.target.value)}
+                    placeholder="Please fill this form to continue."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                />
+            </div>
+        </div>
+    );
+}
+
+function AppointmentConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Appointment Type</label>
+                <input
+                    type="text"
+                    value={config.type || ''}
+                    onChange={(e) => updateConfig('type', e.target.value)}
+                    placeholder="Demo call"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Available Slots</label>
+                <textarea
+                    value={config.slots || ''}
+                    onChange={(e) => updateConfig('slots', e.target.value)}
+                    placeholder="Mon-Fri, 10 AM - 6 PM"
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Confirmation Message</label>
+                <textarea
+                    value={config.confirmationMessage || ''}
+                    onChange={(e) => updateConfig('confirmationMessage', e.target.value)}
+                    placeholder="Thanks {{name}}. Our team will confirm your appointment shortly."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+            </div>
+        </div>
+    );
+}
+
+function ProductConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
+                <input
+                    type="text"
+                    value={config.productName || ''}
+                    onChange={(e) => updateConfig('productName', e.target.value)}
+                    placeholder="Premium plan"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Price</label>
+                <input
+                    type="text"
+                    value={config.price || ''}
+                    onChange={(e) => updateConfig('price', e.target.value)}
+                    placeholder="4999"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Reply Message</label>
+                <textarea
+                    value={config.message || ''}
+                    onChange={(e) => updateConfig('message', e.target.value)}
+                    placeholder="I recommend {{product}} for your requirement."
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+            </div>
         </div>
     );
 }

@@ -1,17 +1,21 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap, Activity, X, LayoutTemplate, Star, Search, Sparkles, Clock, Layers, CheckCircle2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap, Activity, X, LayoutTemplate, Star, Search, Sparkles, Clock, Layers, CheckCircle2, Smartphone, ShieldCheck, QrCode, Info } from 'lucide-react';
 import axios from 'axios';
 import FlowEditor from '../components/flow-builder/FlowEditor';
 import { useAuth } from '../context/AuthContext';
+import { useDialog } from '../context/DialogContext';
 import { FLOW_TEMPLATE_CATEGORIES, FLOW_TEMPLATES, buildFlowFromTemplate } from '../components/flow-builder/flowTemplates';
 
 export default function FlowBuilder() {
     const { session } = useAuth();
+    const { alertDialog, confirmDialog } = useDialog();
     const [flows, setFlows] = useState([]);
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [editingFlow, setEditingFlow] = useState(null);
     const [newFlowName, setNewFlowName] = useState('');
     const [newFlowDescription, setNewFlowDescription] = useState('');
+    const [newFlowAccountScope, setNewFlowAccountScope] = useState('all');
+    const [newFlowAccountIds, setNewFlowAccountIds] = useState([]);
     const [loading, setLoading] = useState(true);
     const [runsModalFlow, setRunsModalFlow] = useState(null);
     const [flowRuns, setFlowRuns] = useState([]);
@@ -22,6 +26,8 @@ export default function FlowBuilder() {
     const [selectedTemplate, setSelectedTemplate] = useState(FLOW_TEMPLATES[0]);
     const [templateDraft, setTemplateDraft] = useState(() => getDefaultTemplateDraft(FLOW_TEMPLATES[0]));
     const [templateStarStats, setTemplateStarStats] = useState({});
+    const [waAccounts, setWaAccounts] = useState([]);
+    const [selectedWaAccount, setSelectedWaAccount] = useState(() => localStorage.getItem('selected_wa_account_id') || 'All');
 
     const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -78,7 +84,7 @@ export default function FlowBuilder() {
         } catch (error) {
             console.error('Failed to update template star:', error);
             setTemplateStarStats(previous);
-            alert(error?.response?.data?.error || 'Could not update template star');
+            alertDialog(error?.response?.data?.error || 'Could not update template star', { title: 'Template update failed', tone: 'danger' });
         }
     };
 
@@ -86,8 +92,17 @@ export default function FlowBuilder() {
         if (session?.access_token) {
             fetchFlows();
             fetchTemplateStars();
+            fetchWaAccounts();
         }
     }, [session]);
+
+    useEffect(() => {
+        const handleAccountChange = (event) => {
+            setSelectedWaAccount(event?.detail?.accountId || localStorage.getItem('selected_wa_account_id') || 'All');
+        };
+        window.addEventListener('selected-wa-account-change', handleAccountChange);
+        return () => window.removeEventListener('selected-wa-account-change', handleAccountChange);
+    }, []);
 
     const fetchFlows = async () => {
         try {
@@ -111,6 +126,8 @@ export default function FlowBuilder() {
             description: newFlowDescription,
             status: 'draft',
             triggers: [],
+            wa_account_scope: newFlowAccountScope,
+            wa_account_ids: newFlowAccountScope === 'selected' ? newFlowAccountIds : [],
             nodes: [],
             edges: [],
         };
@@ -123,23 +140,30 @@ export default function FlowBuilder() {
             setShowCreateModal(false);
             setNewFlowName('');
             setNewFlowDescription('');
+            setNewFlowAccountScope('all');
+            setNewFlowAccountIds([]);
             setEditingFlow(res.data);
         } catch (error) {
             console.error('Failed to create flow', error);
-            alert('Error creating flow');
+            alertDialog('Error creating flow', { title: 'Create flow failed', tone: 'danger' });
         }
     };
 
     const handleDeleteFlow = async (id) => {
-        if (confirm('Are you sure you want to delete this flow?')) {
-            try {
-                await axios.delete(`${API_URL}/api/flows/${id}`, {
-                    headers: { 'Authorization': `Bearer ${session?.access_token}` }
-                });
-                setFlows(flows.filter(f => f.id !== id));
-            } catch (error) {
-                console.error('Failed to delete flow', error);
-            }
+        const confirmed = await confirmDialog('Are you sure you want to delete this flow? This cannot be undone.', {
+            title: 'Delete flow',
+            tone: 'danger',
+            confirmLabel: 'Delete flow',
+        });
+        if (!confirmed) return;
+
+        try {
+            await axios.delete(`${API_URL}/api/flows/${id}`, {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            });
+            setFlows(flows.filter(f => f.id !== id));
+        } catch (error) {
+            console.error('Failed to delete flow', error);
         }
     };
 
@@ -149,6 +173,8 @@ export default function FlowBuilder() {
             description: flow.description,
             status: 'draft',
             triggers: flow.triggers,
+            wa_account_scope: flow.wa_account_scope || 'all',
+            wa_account_ids: Array.isArray(flow.wa_account_ids) ? flow.wa_account_ids : [],
             nodes: flow.nodes,
             edges: flow.edges,
         };
@@ -177,9 +203,28 @@ export default function FlowBuilder() {
             }
         } catch (error) {
             const details = error?.response?.data?.validation?.errors || [error?.response?.data?.error || 'Failed to update status'];
-            alert(details.join('\n'));
+            alertDialog(details.join('\n'), { title: 'Could not update flow', tone: 'danger' });
         }
     };
+
+    const fetchWaAccounts = async () => {
+        try {
+            const res = await axios.get(`${API_URL}/api/whatsapp/accounts`, {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            });
+            setWaAccounts(Array.isArray(res.data) ? res.data : []);
+        } catch (error) {
+            console.error('Failed to fetch WhatsApp accounts:', error);
+            setWaAccounts([]);
+        }
+    };
+
+    const getAccountSwitchKey = (account) => account?.display_phone_number || account?.phone_number_id || account?.id || 'All';
+    const selectedAccount = selectedWaAccount === 'All'
+        ? null
+        : waAccounts.find(account => String(getAccountSwitchKey(account)) === String(selectedWaAccount));
+    const metaAccounts = waAccounts.filter(account => account.whatsapp_business_account_id);
+    const qrAccounts = waAccounts.filter(account => !account.whatsapp_business_account_id);
 
     const handleCreateFromTemplate = async () => {
         if (!selectedTemplate) return;
@@ -194,7 +239,7 @@ export default function FlowBuilder() {
             setEditingFlow(res.data);
         } catch (error) {
             console.error('Failed to create flow from template', error);
-            alert('Error creating template flow');
+            alertDialog('Error creating template flow', { title: 'Template flow failed', tone: 'danger' });
         }
     };
 
@@ -215,7 +260,7 @@ export default function FlowBuilder() {
     };
 
     if (editingFlow) {
-        return <FlowEditor flow={editingFlow} onClose={() => { setEditingFlow(null); fetchFlows(); }} />;
+        return <FlowEditor flow={editingFlow} waAccounts={waAccounts} onClose={() => { setEditingFlow(null); fetchFlows(); }} />;
     }
 
     return (
@@ -243,6 +288,58 @@ export default function FlowBuilder() {
                         <Plus className="h-4 w-4" />
                         Create Flow
                     </button>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]">
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                    <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
+                            <Info className="h-4 w-4" />
+                        </div>
+                        <div>
+                            <h2 className="text-sm font-bold text-blue-950">Which number will this flow run on?</h2>
+                            <p className="mt-1 text-sm leading-6 text-blue-900">
+                                Har flow ko all connected numbers ya selected WhatsApp numbers par run kar sakte hain. Customer jis number par message bhejta hai, reply usi receiving number se jayega.
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                                <span className="rounded-full bg-white px-3 py-1 font-semibold text-blue-800 ring-1 ring-blue-200">
+                                    Current switch: {selectedAccount ? (selectedAccount.display_phone_number || selectedAccount.phone_number_id || selectedAccount.name) : 'All connected accounts'}
+                                </span>
+                                <span className="rounded-full bg-white px-3 py-1 text-blue-700 ring-1 ring-blue-200">
+                                    {waAccounts.length} connected number(s)
+                                </span>
+                                <span className="rounded-full bg-white px-3 py-1 text-blue-700 ring-1 ring-blue-200">
+                                    Duplicate trigger protection active
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                        <h2 className="text-sm font-bold text-gray-950">Connected access types</h2>
+                        <Smartphone className="h-4 w-4 text-gray-400" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-lg border border-green-100 bg-green-50 p-3">
+                            <div className="flex items-center gap-2 text-xs font-bold text-green-800">
+                                <ShieldCheck className="h-3.5 w-3.5" />
+                                Meta API
+                            </div>
+                            <p className="mt-1 text-2xl font-bold text-green-900">{metaAccounts.length}</p>
+                            <p className="text-[11px] leading-4 text-green-800">Templates, broadcasts, profile sync, stable webhooks.</p>
+                        </div>
+                        <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
+                            <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
+                                <QrCode className="h-3.5 w-3.5" />
+                                QR Session
+                            </div>
+                            <p className="mt-1 text-2xl font-bold text-amber-900">{qrAccounts.length}</p>
+                            <p className="text-[11px] leading-4 text-amber-800">Chats and flow replies only while session stays connected.</p>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -290,8 +387,8 @@ export default function FlowBuilder() {
             {/* Flows List */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {flows.map(flow => (
-                    <div key={flow.id} className="bg-white rounded-xl border border-gray-200 hover:shadow-lg transition-shadow">
-                        <div className="p-6">
+                    <div key={flow.id} className="flex flex-col bg-white rounded-xl border border-gray-200 hover:shadow-lg transition-shadow">
+                        <div className="flex-1 p-6">
                             <div className="flex items-start justify-between mb-4">
                                 <div className="flex-1">
                                     <h3 className="font-semibold text-gray-900 mb-1">{flow.name}</h3>
@@ -352,10 +449,20 @@ export default function FlowBuilder() {
                                         </div>
                                     </div>
                                 )}
+                                <div className="pt-2 border-t border-gray-100">
+                                    <div className="text-xs text-gray-500 mb-1">Runs on:</div>
+                                    <div className="flex flex-wrap gap-1">
+                                        {getFlowAccountBadges(flow, waAccounts).map((badge) => (
+                                            <span key={badge.key} className={`px-2 py-0.5 text-xs rounded ${badge.className}`}>
+                                                {badge.label}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
-                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex gap-2">
+                        <div className="mt-auto px-6 py-4 bg-gray-50 border-t border-gray-100 flex gap-2">
                             <button
                                 onClick={() => setEditingFlow(flow)}
                                 className="flex-1 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2"
@@ -485,6 +592,14 @@ export default function FlowBuilder() {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                                 />
                             </div>
+
+                            <FlowAccountSelector
+                                accounts={waAccounts}
+                                scope={newFlowAccountScope}
+                                selectedIds={newFlowAccountIds}
+                                onScopeChange={setNewFlowAccountScope}
+                                onSelectedIdsChange={setNewFlowAccountIds}
+                            />
                         </div>
 
                         <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
@@ -493,6 +608,8 @@ export default function FlowBuilder() {
                                     setShowCreateModal(false);
                                     setNewFlowName('');
                                     setNewFlowDescription('');
+                                    setNewFlowAccountScope('all');
+                                    setNewFlowAccountIds([]);
                                 }}
                                 className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
                             >
@@ -500,7 +617,7 @@ export default function FlowBuilder() {
                             </button>
                             <button
                                 onClick={handleCreateFlow}
-                                disabled={!newFlowName.trim()}
+                                disabled={!newFlowName.trim() || (newFlowAccountScope === 'selected' && newFlowAccountIds.length === 0)}
                                 className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                             >
                                 <Plus className="h-4 w-4" />
@@ -512,6 +629,97 @@ export default function FlowBuilder() {
             )}
         </div>
     );
+}
+
+function FlowAccountSelector({ accounts, scope, selectedIds, onScopeChange, onSelectedIdsChange }) {
+    const selectedSet = new Set(selectedIds || []);
+
+    const toggleAccount = (id) => {
+        onSelectedIdsChange(
+            selectedSet.has(id)
+                ? selectedIds.filter((item) => item !== id)
+                : [...selectedIds, id]
+        );
+    };
+
+    return (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <label className="block text-sm font-semibold text-gray-800">Run this flow on</label>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                    type="button"
+                    onClick={() => onScopeChange('all')}
+                    className={`rounded-lg border px-3 py-2 text-left text-sm font-semibold ${scope === 'all' ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                >
+                    All numbers
+                    <span className="mt-1 block text-xs font-normal text-gray-500">Any connected number can trigger it.</span>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onScopeChange('selected')}
+                    className={`rounded-lg border px-3 py-2 text-left text-sm font-semibold ${scope === 'selected' ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                >
+                    Selected numbers
+                    <span className="mt-1 block text-xs font-normal text-gray-500">Only chosen accounts can trigger it.</span>
+                </button>
+            </div>
+
+            {scope === 'selected' && (
+                <div className="mt-3 space-y-2">
+                    {accounts.length === 0 ? (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                            Connect a WhatsApp account first, or switch to all numbers.
+                        </div>
+                    ) : accounts.map((account) => {
+                        const isMeta = Boolean(account.whatsapp_business_account_id);
+                        return (
+                            <label key={account.id} className="flex cursor-pointer items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 hover:bg-gray-50">
+                                <span className="min-w-0">
+                                    <span className="block truncate text-sm font-semibold text-gray-900">{getAccountLabel(account)}</span>
+                                    <span className={`mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${isMeta ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                                        {isMeta ? <ShieldCheck className="h-3 w-3" /> : <QrCode className="h-3 w-3" />}
+                                        {isMeta ? 'Meta API' : 'QR Session'}
+                                    </span>
+                                </span>
+                                <input
+                                    type="checkbox"
+                                    checked={selectedSet.has(account.id)}
+                                    onChange={() => toggleAccount(account.id)}
+                                    className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                            </label>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function getAccountLabel(account) {
+    return account?.display_phone_number || account?.phone_number_id || account?.name || 'WhatsApp account';
+}
+
+function getFlowAccountBadges(flow, accounts) {
+    const scope = flow?.wa_account_scope || 'all';
+    if (scope !== 'selected') {
+        return [{ key: 'all', label: 'All connected numbers', className: 'bg-blue-50 text-blue-700' }];
+    }
+
+    const ids = Array.isArray(flow?.wa_account_ids) ? flow.wa_account_ids : [];
+    if (ids.length === 0) {
+        return [{ key: 'none', label: 'No number selected', className: 'bg-red-50 text-red-700' }];
+    }
+
+    return ids.map((id) => {
+        const account = accounts.find((item) => item.id === id);
+        const isMeta = Boolean(account?.whatsapp_business_account_id);
+        return {
+            key: id,
+            label: account ? `${getAccountLabel(account)} ${isMeta ? 'Meta' : 'QR'}` : `Account ${id.slice(0, 6)}`,
+            className: isMeta ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700',
+        };
+    });
 }
 
 function TemplateGalleryModal({

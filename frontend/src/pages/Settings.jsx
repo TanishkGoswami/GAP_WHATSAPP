@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useDialog } from '../context/DialogContext'
 import { useNotificationSound } from '../hooks/useNotificationSound'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
 export default function Settings() {
     const { session, userRole, loginType } = useAuth()
+    const { alertDialog, confirmDialog } = useDialog()
     const {
         isEnabled: notificationSoundEnabled,
         setIsEnabled: setNotificationSoundEnabled,
@@ -124,7 +126,12 @@ export default function Settings() {
 
     const handleDelete = async (id) => {
         if (!session?.access_token) return
-        if (!confirm('Delete this knowledge document? AI replies will stop using it.')) return
+        const confirmed = await confirmDialog('Delete this knowledge document? AI replies will stop using it.', {
+            title: 'Delete knowledge document',
+            tone: 'danger',
+            confirmLabel: 'Delete document',
+        })
+        if (!confirmed) return
         setKnowledgeError('')
         setKnowledgeSuccess('')
         try {
@@ -169,6 +176,26 @@ export default function Settings() {
         setProfileError('')
         setProfileSuccess('')
         try {
+            const existingAccount = accounts.find(acc => acc.id === accountId) || {}
+            if (existingAccount.id && !existingAccount.whatsapp_business_account_id) {
+                setBusinessProfile(prev => ({
+                    ...prev,
+                    local_name: existingAccount.name || 'WhatsApp Business',
+                    about: '',
+                    description: '',
+                    email: '',
+                    address: '',
+                    websites: '',
+                    vertical: '',
+                    profile_picture_url: ''
+                }))
+                setLastProfileSyncAt(null)
+                setProfileImageFile(null)
+                setProfileImagePreview('')
+                setProfileError('This is a QR/session connected account. Meta business profile sync, profile photo update, templates and official Cloud API settings are available only for Meta API accounts.')
+                return
+            }
+
             const res = await fetch(`${BACKEND_BASE}/api/whatsapp/accounts/${accountId}/business-profile`, {
                 headers: authHeaders
             })
@@ -302,7 +329,7 @@ export default function Settings() {
                 fetchMembers()
             } else {
                 const err = await res.json()
-                alert(err.error || "Invite failed")
+                alertDialog(err.error || "Invite failed", { title: 'Invite failed', tone: 'danger' })
             }
         } catch (e) {
             console.error("Invite failed", e)
@@ -342,7 +369,7 @@ export default function Settings() {
             if (!res.ok) throw new Error(data?.error || 'Failed to resend invitation')
             fetchMembers()
         } catch (e) {
-            alert(e.message || 'Failed to resend invitation')
+            alertDialog(e.message || 'Failed to resend invitation', { title: 'Invite failed', tone: 'danger' })
         } finally {
             setResendingMemberId(null)
         }
@@ -365,7 +392,12 @@ export default function Settings() {
     }
 
     const removeMember = async (memberId) => {
-        if (!confirm('Are you sure you want to remove this member?')) return
+        const confirmed = await confirmDialog('Are you sure you want to remove this member?', {
+            title: 'Remove team member',
+            tone: 'danger',
+            confirmLabel: 'Remove member',
+        })
+        if (!confirmed) return
         try {
             const res = await fetch(`${BACKEND_BASE}/api/team/members/${memberId}`, {
                 method: 'DELETE',

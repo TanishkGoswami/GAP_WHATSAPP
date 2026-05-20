@@ -15,6 +15,7 @@ import 'reactflow/dist/style.css';
 import { Save, ArrowLeft, Play, Zap, Handshake, Square } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
+import { useDialog } from '../../context/DialogContext';
 
 // Import all node components
 import StartBotFlowNode from './StartBotFlowNode';
@@ -125,8 +126,9 @@ const edgeTypes = {
     deletable: DeletableEdge,
 };
 
-function FlowEditorContent({ flow, onClose }) {
+function FlowEditorContent({ flow, waAccounts = [], onClose }) {
     const { session } = useAuth();
+    const { alertDialog } = useDialog();
     const reactFlowWrapper = useRef(null);
     const [nodes, setNodes, onNodesChange] = useNodesState(flow?.nodes || []);
     const [edges, setEdges, onEdgesChange] = useEdgesState(flow?.edges || []);
@@ -134,6 +136,8 @@ function FlowEditorContent({ flow, onClose }) {
     const [selectedNode, setSelectedNode] = useState(null);
     const [selectedEdgeId, setSelectedEdgeId] = useState(null);
     const [configPanelOpen, setConfigPanelOpen] = useState(false);
+    const [accountScope, setAccountScope] = useState(flow?.wa_account_scope || 'all');
+    const [accountIds, setAccountIds] = useState(Array.isArray(flow?.wa_account_ids) ? flow.wa_account_ids : []);
 
     const getId = () => `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -248,21 +252,30 @@ function FlowEditorContent({ flow, onClose }) {
     const handleSave = async () => {
         try {
             const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            await axios.put(`${API_URL}/api/flows/${flow.id}`, { nodes, edges }, {
+            await axios.put(`${API_URL}/api/flows/${flow.id}`, {
+                nodes,
+                edges,
+                wa_account_scope: accountScope,
+                wa_account_ids: accountScope === 'selected' ? accountIds : [],
+            }, {
                 headers: { Authorization: `Bearer ${session?.access_token}` }
             });
-            // alert('Flow saved successfully! ✅');
-            alert('Draft saved. Click Publish to make this flow live on WhatsApp.');
+            await alertDialog('Draft saved. Click Publish to make this flow live on WhatsApp.', { title: 'Draft saved', tone: 'success' });
         } catch (error) {
             console.error('Error saving flow:', error);
-            alert('Failed to save flow ❌');
+            alertDialog('Failed to save flow.', { title: 'Save failed', tone: 'danger' });
         }
     };
 
     const handlePublish = async () => {
         try {
             const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
-            await axios.put(`${API_URL}/api/flows/${flow.id}`, { nodes, edges }, {
+            await axios.put(`${API_URL}/api/flows/${flow.id}`, {
+                nodes,
+                edges,
+                wa_account_scope: accountScope,
+                wa_account_ids: accountScope === 'selected' ? accountIds : [],
+            }, {
                 headers: { Authorization: `Bearer ${session?.access_token}` }
             });
             await axios.post(`${API_URL}/api/flows/${flow.id}/publish`, {}, {
@@ -271,13 +284,13 @@ function FlowEditorContent({ flow, onClose }) {
             onClose();
         } catch (error) {
             const details = error?.response?.data?.validation?.errors || [error?.response?.data?.error || 'Failed to publish flow'];
-            alert(details.join('\n'));
+            alertDialog(details.join('\n'), { title: 'Publish failed', tone: 'danger' });
         }
     };
 
-    const handleTest = () => {
+    const handleTest = async () => {
         console.log('Testing flow:', { nodes, edges });
-        alert('Flow test started! Check console for details.');
+        await alertDialog('Flow test started. Check console for details.', { title: 'Test started', tone: 'info' });
     };
 
     return (
@@ -298,6 +311,13 @@ function FlowEditorContent({ flow, onClose }) {
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
+                    <AccountTargetControl
+                        accounts={waAccounts}
+                        scope={accountScope}
+                        selectedIds={accountIds}
+                        onScopeChange={setAccountScope}
+                        onSelectedIdsChange={setAccountIds}
+                    />
                     <div className="text-xs text-gray-600 px-3 py-2 bg-[#f5f7fa] rounded-full">
                         <span className="font-semibold">{nodes.length}</span> nodes · <span className="font-semibold">{edges.length}</span> connections
                     </div>
@@ -415,10 +435,62 @@ function FlowEditorContent({ flow, onClose }) {
     );
 }
 
-export default function FlowEditor({ flow, onClose }) {
+function AccountTargetControl({ accounts, scope, selectedIds, onScopeChange, onSelectedIdsChange }) {
+    const selectedSet = new Set(selectedIds || []);
+    const toggleAccount = (id) => {
+        onSelectedIdsChange(
+            selectedSet.has(id)
+                ? selectedIds.filter((item) => item !== id)
+                : [...selectedIds, id]
+        );
+    };
+
+    return (
+        <div className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5">
+            <select
+                value={scope}
+                onChange={(event) => onScopeChange(event.target.value)}
+                className="h-8 rounded-full border-0 bg-[#f5f7fa] px-3 text-xs font-semibold text-gray-700 focus:ring-2 focus:ring-blue-500"
+                title="Choose where this flow can run"
+            >
+                <option value="all">Runs on all numbers</option>
+                <option value="selected">Runs on selected numbers</option>
+            </select>
+            {scope === 'selected' && (
+                <div className="flex max-w-[320px] items-center gap-1 overflow-x-auto">
+                    {accounts.length === 0 ? (
+                        <span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">No accounts</span>
+                    ) : accounts.map((account) => (
+                        <label
+                            key={account.id}
+                            className={`flex shrink-0 cursor-pointer items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold ${
+                                selectedSet.has(account.id) ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'bg-gray-50 text-gray-500'
+                            }`}
+                        >
+                            <input
+                                type="checkbox"
+                                className="h-3 w-3 rounded border-gray-300 text-blue-600"
+                                checked={selectedSet.has(account.id)}
+                                onChange={() => toggleAccount(account.id)}
+                            />
+                            {getEditorAccountLabel(account)}
+                        </label>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function getEditorAccountLabel(account) {
+    const label = account?.display_phone_number || account?.phone_number_id || account?.name || 'Account';
+    return `${label} ${account?.whatsapp_business_account_id ? 'Meta' : 'QR'}`;
+}
+
+export default function FlowEditor({ flow, waAccounts, onClose }) {
     return (
         <ReactFlowProvider>
-            <FlowEditorContent flow={flow} onClose={onClose} />
+            <FlowEditorContent flow={flow} waAccounts={waAccounts} onClose={onClose} />
         </ReactFlowProvider>
     );
 }
