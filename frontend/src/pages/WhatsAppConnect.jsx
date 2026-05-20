@@ -108,6 +108,34 @@ export default function WhatsAppConnect() {
     };
 
     // ===== RECOMMENDED: FB Embedded Signup =====
+    const handleEmbeddedSignupResponse = async (response) => {
+        if (response.authResponse?.code) {
+            setEmbedStatus('saving');
+            try {
+                const res = await fetch(`${API_URL}/api/wa/connect/callback`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+                    body: JSON.stringify({
+                        code: response.authResponse.code,
+                        organization_id: user?.user_metadata?.organization_id
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Connection failed');
+                const firstAcc = data.accounts?.[0];
+                setEmbedConnectedAccount(firstAcc || null);
+                setEmbedStatus('saved');
+                fetchAccounts();
+                setTimeout(() => { setEmbedStatus('idle'); setEmbedConnectedAccount(null); }, 5000);
+            } catch (err) {
+                setEmbedError(err.message);
+                setEmbedStatus('error');
+            }
+        } else {
+            setEmbedStatus('idle');
+        }
+    };
+
     const handleEmbeddedSignup = () => {
         if (!isSecureForMetaLogin) {
             setEmbedStatus('error');
@@ -121,32 +149,8 @@ export default function WhatsAppConnect() {
         setEmbedStatus('loading');
         setEmbedError(null);
 
-        window.FB.login(async (response) => {
-            if (response.authResponse?.code) {
-                setEmbedStatus('saving');
-                try {
-                    const res = await fetch(`${API_URL}/api/wa/connect/callback`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-                        body: JSON.stringify({
-                            code: response.authResponse.code,
-                            organization_id: user?.user_metadata?.organization_id
-                        })
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.error || 'Connection failed');
-                    const firstAcc = data.accounts?.[0];
-                    setEmbedConnectedAccount(firstAcc || null);
-                    setEmbedStatus('saved');
-                    fetchAccounts();
-                    setTimeout(() => { setEmbedStatus('idle'); setEmbedConnectedAccount(null); }, 5000);
-                } catch (err) {
-                    setEmbedError(err.message);
-                    setEmbedStatus('error');
-                }
-            } else {
-                setEmbedStatus('idle');
-            }
+        window.FB.login((response) => {
+            handleEmbeddedSignupResponse(response);
         }, {
             config_id: import.meta.env.VITE_META_CONFIG_ID,
             response_type: 'code',
