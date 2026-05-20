@@ -1,9 +1,20 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react'
 import { supabase } from '../supabaseClient'
 
 const AuthContext = createContext({})
 
 export const useAuth = () => useContext(AuthContext)
+
+// Map raw plan IDs → display names
+function resolvePlanName(plan) {
+    if (!plan) return 'Free'
+    const p = plan.toLowerCase()
+    if (p.includes('all_in_one') || p.includes('ultimate') || p.includes('enterprise')) return 'GAP Ultimate Ecosystem'
+    if (p.includes('whatsapp_premium') || p.includes('premium')) return 'WhatsApp Premium'
+    if (p.includes('whatsapp_pro') || p.includes('whatsapp')) return 'WhatsApp Pro'
+    if (p === 'free' || p === '') return 'Free'
+    return plan // keep as-is for known names like "GAP Ultimate Ecosystem"
+}
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(null)
@@ -14,6 +25,38 @@ export function AuthProvider({ children }) {
     const [isProfileLoading, setIsProfileLoading] = useState(false)
     const fetchedForProfileKey = useRef(null) // tracks which user + portal we last fetched profile for
     const [loginType, setLoginType] = useState(localStorage.getItem('auth_login_type') || 'owner')
+
+    const fetchUserProfile = useCallback(async (sessionUser) => {
+        try {
+            // WhatsApp shares the same Supabase as the hub — query app_user_subscriptions directly
+            const { data: sub } = await supabase
+                .from('app_user_subscriptions')
+                .select('plan_id, plan_label, expires_at')
+                .eq('user_id', sessionUser.id)
+                .maybeSingle()
+
+            const isSubActive = sub?.expires_at ? new Date(sub.expires_at) > new Date() : false
+            let resolvedPlan = isSubActive
+                ? (sub?.plan_label || sub?.plan_id || 'Free')
+                : 'Free'
+            const resolvedStatus = isSubActive ? 'active' : (sub ? 'expired' : 'free')
+
+            resolvedPlan = resolvePlanName(resolvedPlan)
+
+            setUser(prev => prev ? { ...prev, plan: resolvedPlan, subscription_status: resolvedStatus } : null)
+        } catch (err) {
+            console.error('[AUTH] fetchUserProfile error:', err)
+        }
+    }, [])
+
+    const refreshProfile = useCallback(async () => {
+        const { data: { session: currentSession } } = await supabase.auth.getSession()
+        if (currentSession?.user) {
+            await supabase.auth.refreshSession()
+            const { data: { session: fresh } } = await supabase.auth.getSession()
+            if (fresh?.user) await fetchUserProfile(fresh.user)
+        }
+    }, [fetchUserProfile])
 
     const fetchMemberProfile = async (token, userId) => {
         // Avoid re-fetching on TOKEN_REFRESHED (tab focus) — only fetch when user actually changes
@@ -55,7 +98,12 @@ export function AuthProvider({ children }) {
         // Initial session load — sets loading=false exactly once
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session ?? null)
-            setUser(session?.user ?? null)
+            if (session?.user) {
+                setUser({ ...session.user, plan: session.user.user_metadata?.plan || 'Free', subscription_status: session.user.user_metadata?.subscription_status || 'active' })
+                fetchUserProfile(session.user)
+            } else {
+                setUser(null)
+            }
             setLoading(false)
         })
 
@@ -65,11 +113,13 @@ export function AuthProvider({ children }) {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             console.log('Auth state change:', event, session?.user?.email);
             setSession(session ?? null)
-            setUser(session?.user ?? null)
-
-            // Handle token refresh
-            if (event === 'TOKEN_REFRESHED' && session) {
-                console.log('Token refreshed successfully');
+            if (session?.user) {
+                setUser({ ...session.user, plan: session.user.user_metadata?.plan || 'Free', subscription_status: session.user.user_metadata?.subscription_status || 'active' })
+                if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
+                    fetchUserProfile(session.user)
+                }
+            } else {
+                setUser(null)
             }
 
             // Handle sign out on token expiry
@@ -83,7 +133,7 @@ export function AuthProvider({ children }) {
         })
 
         return () => subscription.unsubscribe()
-    }, [])
+    }, [fetchUserProfile])
 
     useEffect(() => {
         if (session?.access_token && session?.user?.id) {
@@ -136,7 +186,7 @@ export function AuthProvider({ children }) {
             localStorage.setItem('auth_login_type', type)
             return supabase.auth.signInWithPassword(data)
         },
-        signInWithGoogle: () => supabase.auth.signInWithOAuth({ 
+        signInWithGoogle: () => supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
                 redirectTo: `${window.location.origin}/dashboard`
@@ -149,6 +199,7 @@ export function AuthProvider({ children }) {
             localStorage.removeItem('auth_login_type')
             return supabase.auth.signOut()
         },
+        refreshProfile,
         // Utility function for API calls with automatic token refresh
         apiCall: async (url, options = {}) => {
             const makeRequest = async (retryCount = 0, tokenOverride = null) => {
