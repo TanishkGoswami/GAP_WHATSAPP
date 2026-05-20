@@ -18,6 +18,8 @@ import Settings from './pages/Settings'
 import SSOLogin from './pages/SSOLogin'
 import AcceptInvite from './pages/AcceptInvite'
 import HelpCenter from './pages/HelpCenter'
+import BillingPage from './pages/BillingPage'
+import PaymentSuccessPage from './pages/PaymentSuccessPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {

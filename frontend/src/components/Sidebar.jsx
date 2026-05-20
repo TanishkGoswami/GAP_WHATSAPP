@@ -242,13 +242,18 @@ export default function Sidebar({ onRequestLogout }) {
                                 'flex h-9 w-full items-center rounded-lg text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100',
                                 isCollapsed ? 'justify-center' : 'gap-2 px-2'
                             )}
-                            title="Account"
+                            title={displayName}
                         >
                             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-gray-50 text-xs font-semibold text-gray-700 ring-1 ring-gray-200">
                                 {initials[0]}
                             </span>
                             <span className={labelTransition(isExpanded, 'flex min-w-0 flex-1 items-center gap-2')}>
-                                <span className="truncate">Account</span>
+                                <span className="flex flex-col min-w-0 flex-1">
+                                    <span className="truncate text-sm font-medium text-gray-700 leading-tight">{displayName}</span>
+                                    <span className={clsx('truncate text-[10px] leading-tight', user?.plan && user.plan !== 'Free' ? 'text-emerald-600 font-medium' : 'text-gray-400')}>
+                                        {user?.plan || 'Free'}
+                                    </span>
+                                </span>
                                 <ChevronsUpDown className="ml-auto h-3.5 w-3.5 shrink-0 text-gray-400" />
                             </span>
                         </button>
@@ -262,6 +267,9 @@ export default function Sidebar({ onRequestLogout }) {
                                     <div className="min-w-0">
                                         <div className="truncate text-sm font-semibold text-gray-950">{displayName}</div>
                                         <div className="truncate text-xs text-gray-500">{userEmail}</div>
+                                        <div className={clsx('truncate text-[10px] font-medium mt-0.5', user?.plan && user.plan !== 'Free' ? 'text-emerald-600' : 'text-gray-400')}>
+                                            {user?.plan || 'Free'}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="my-1 h-px bg-gray-100" />
