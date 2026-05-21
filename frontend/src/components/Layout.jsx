@@ -2,8 +2,10 @@ import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import Sidebar from './Sidebar'
 import Modal from './Modal'
-import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield, ExternalLink } from 'lucide-react'
+import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield, ExternalLink, Menu, Moon, SunMedium } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+
+const NIGHT_LIGHT_KEY = 'gap_night_light_enabled'
 
 export default function Layout() {
     const { user, userRole, loading, isProfileLoading, memberProfile, signOut, updateMyProfile } = useAuth()
@@ -15,6 +17,8 @@ export default function Layout() {
     const [isSavingProfile, setIsSavingProfile] = useState(false)
     const [profileError, setProfileError] = useState('')
     const [profileDraft, setProfileDraft] = useState({ name: '', avatar_color: '#4f46e5' })
+    const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
+    const [isNightLight, setIsNightLight] = useState(() => localStorage.getItem(NIGHT_LIGHT_KEY) === 'true')
 
     const isOwner = userRole === 'owner'
     const isLiveChat = location.pathname === '/live-chat'
@@ -36,6 +40,16 @@ export default function Layout() {
         })
         setProfileError('')
     }, [isProfileOpen, displayName, avatarColor])
+
+    useEffect(() => {
+        setIsMobileNavOpen(false)
+    }, [location.pathname])
+
+    useEffect(() => {
+        document.documentElement.classList.toggle('fp-night-light', isNightLight)
+        localStorage.setItem(NIGHT_LIGHT_KEY, String(isNightLight))
+        localStorage.removeItem('gap_appearance_mode')
+    }, [isNightLight])
 
     if (loading) return null // wait only for the initial auth check, never block on profile re-fetch
     if (!user) return <Navigate to="/login" replace />
@@ -100,26 +114,70 @@ export default function Layout() {
     }
 
     return (
-        <div className="fixed inset-0 flex bg-[#f5f7fa]">
-            <Sidebar onRequestLogout={handleLogoutClick} />
+        <div className="fixed inset-0 flex min-w-0 bg-[#f5f7fa]">
+            <Sidebar
+                onRequestLogout={handleLogoutClick}
+                isMobileOpen={isMobileNavOpen}
+                onMobileClose={() => setIsMobileNavOpen(false)}
+            />
 
-            <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
                 {/* Topbar */}
-                <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-6">
-                    <div className="flex items-center gap-4">
-                        {/* Breadcrumbs or Title could go here */}
-                        {/* For now, just a placeholder or empty */}
+                <header className="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-3 sm:h-16 sm:px-6">
+                    <div className="flex min-w-0 items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setIsMobileNavOpen(true)}
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 md:hidden"
+                            aria-label="Open navigation"
+                        >
+                            <Menu className="h-5 w-5" />
+                        </button>
+                        <div className="flex min-w-0 items-center gap-2 md:hidden">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-gray-200">
+                                <img src="/logo.png" alt="GetAiPilot" className="h-5 w-5 object-contain" />
+                            </span>
+                            <span className="truncate text-sm font-semibold text-gray-900">GetAiPilot</span>
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+                        <div className="relative">
+                            <button
+                                type="button"
+                                onClick={() => setIsNightLight(prev => !prev)}
+                                className={`relative inline-flex h-9 w-[86px] items-center rounded-full border p-1 transition-all duration-300 ease-out ${
+                                    isNightLight
+                                        ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                }`}
+                                aria-label={isNightLight ? 'Switch to normal light' : 'Switch to night light'}
+                                aria-pressed={isNightLight}
+                            >
+                                <span className="sr-only">{isNightLight ? 'Night Light is on' : 'Light mode is on'}</span>
+                                <span
+                                    className={`absolute left-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/5 transition-transform duration-300 ease-out ${
+                                        isNightLight ? 'translate-x-[49px] text-amber-700' : 'translate-x-0 text-[#0064b7]'
+                                    }`}
+                                >
+                                    {isNightLight ? <Moon className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
+                                </span>
+                                <span className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors duration-200 ${isNightLight ? 'text-amber-700/40' : 'text-transparent'}`}>
+                                    <SunMedium className="h-3.5 w-3.5" />
+                                </span>
+                                <span className={`ml-auto flex h-7 w-7 items-center justify-center rounded-full transition-colors duration-200 ${isNightLight ? 'text-transparent' : 'text-gray-400'}`}>
+                                    <Moon className="h-3.5 w-3.5" />
+                                </span>
+                            </button>
+                        </div>
                         <button className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500">
                             <Bell className="h-5 w-5" />
                         </button>
-                        <div className="relative flex items-center gap-3">
+                        <div className="relative flex min-w-0 items-center gap-2 sm:gap-3">
                             <button
                                 type="button"
                                 onClick={() => setIsProfileOpen(true)}
-                                className="flex items-center gap-2 rounded-full bg-[#f5f7fa] p-1 pr-3 transition-colors hover:bg-gray-100"
+                                className="flex min-w-0 items-center gap-2 rounded-full bg-[#f5f7fa] p-1 pr-2 transition-colors hover:bg-gray-100 sm:pr-3"
                                 title="Edit profile"
                             >
                                 <div
@@ -128,11 +186,11 @@ export default function Layout() {
                                 >
                                     {isProfileLoading ? <User className="h-4 w-4" /> : avatarInitials.toUpperCase()}
                                 </div>
-                                <span className="text-sm font-medium text-gray-700 max-w-[120px] truncate capitalize">{displayName}</span>
+                                <span className="hidden max-w-[120px] truncate text-sm font-medium capitalize text-gray-700 sm:inline">{displayName}</span>
                             </button>
                             <button
                                 onClick={handleLogoutClick}
-                                className="flex items-center gap-2 rounded-full bg-red-50 text-red-600 px-3 py-1.5 text-sm font-medium hover:bg-red-100 transition-colors"
+                                className="hidden items-center gap-2 rounded-full bg-red-50 px-3 py-1.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 sm:flex"
                             >
                                 <LogOut className="h-4 w-4 shrink-0" />
                                 <span className="hidden sm:inline">Logout</span>
@@ -142,7 +200,7 @@ export default function Layout() {
                 </header>
 
                 {/* Main Content */}
-                <main className={`flex-1 ${isLiveChat ? 'overflow-hidden p-0' : isFlowBuilder ? 'overflow-y-auto p-0' : 'overflow-y-auto p-6'}`}>
+                <main className={`min-w-0 flex-1 ${isLiveChat ? 'overflow-hidden p-0' : isFlowBuilder ? 'overflow-y-auto p-0' : 'overflow-y-auto p-3 sm:p-5 lg:p-6'}`}>
                     <Outlet />
                 </main>
 

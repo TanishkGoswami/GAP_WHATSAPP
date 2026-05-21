@@ -15,6 +15,7 @@ import {
     Smartphone,
     UserCircle,
     Users,
+    X,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
@@ -33,10 +34,10 @@ const navigation = [
 
 const SELECTED_WA_ACCOUNT_KEY = 'selected_wa_account_id'
 const API_BASE = `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api`
-const EXPANDED_WIDTH = 'w-[240px]'
+const EXPANDED_WIDTH = 'w-[224px]'
 const COLLAPSED_WIDTH = 'w-12'
 
-export default function Sidebar({ onRequestLogout }) {
+export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobileClose }) {
     const location = useLocation()
     const navigate = useNavigate()
     const { userRole, memberProfile, user, signOut, apiCall } = useAuth()
@@ -87,6 +88,7 @@ export default function Sidebar({ onRequestLogout }) {
     const isActive = (href) => location.pathname.startsWith(href)
 
     const handleSignOut = async () => {
+        onMobileClose?.()
         if (onRequestLogout) {
             onRequestLogout()
             return
@@ -100,6 +102,11 @@ export default function Sidebar({ onRequestLogout }) {
         setIsAccountMenuOpen(false)
     }
 
+    const handleMobileNavigate = () => {
+        onMobileClose?.()
+        closeMenus()
+    }
+
     const selectWaAccount = (accountId) => {
         const next = accountId || 'All'
         setSelectedWaAccount(next)
@@ -109,7 +116,8 @@ export default function Sidebar({ onRequestLogout }) {
     }
 
     return (
-        <div className={clsx('relative h-full shrink-0 transition-[width] duration-200 ease-out', isLiveChat ? COLLAPSED_WIDTH : EXPANDED_WIDTH)}>
+        <>
+        <div className={clsx('relative hidden h-full shrink-0 transition-[width] duration-200 ease-out md:block', isLiveChat ? COLLAPSED_WIDTH : EXPANDED_WIDTH)}>
             <aside
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => {
@@ -288,15 +296,116 @@ export default function Sidebar({ onRequestLogout }) {
                 </div>
             </aside>
         </div>
+
+        {isMobileOpen ? (
+            <div className="fixed inset-0 z-[100] md:hidden">
+                <button
+                    type="button"
+                    className="absolute inset-0 bg-gray-950/40 backdrop-blur-[2px]"
+                    aria-label="Close navigation"
+                    onClick={onMobileClose}
+                />
+                <aside className="absolute inset-y-0 left-0 flex w-[min(78vw,288px)] max-w-full flex-col border-r border-gray-200 bg-white shadow-2xl">
+                    <div className="flex h-14 shrink-0 items-center justify-between border-b border-gray-100 px-3">
+                        <button
+                            type="button"
+                            onClick={() => setIsOrgMenuOpen(prev => !prev)}
+                            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                            title={selectedAccountLabel}
+                        >
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-gray-200">
+                                <img src="/logo.png" alt="GAP FlowPilot" className="h-5 w-5 object-contain" />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate">{selectedAccountLabel}</span>
+                                <span className="block truncate text-[11px] font-medium text-emerald-600">GAP Ultimate Ecosystem</span>
+                            </span>
+                            <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-400" />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onMobileClose}
+                            className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100"
+                            aria-label="Close navigation"
+                        >
+                            <X className="h-5 w-5" />
+                        </button>
+                    </div>
+
+                    {isOrgMenuOpen ? (
+                        <div className="border-b border-gray-100 bg-gray-50 p-2">
+                            <button
+                                type="button"
+                                onClick={() => selectWaAccount('All')}
+                                className={clsx('flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm', selectedWaAccount === 'All' ? 'bg-white font-semibold text-black' : 'text-gray-700')}
+                            >
+                                <Blocks className="h-4 w-4 text-gray-500" />
+                                All WhatsApp accounts
+                            </button>
+                            {waAccounts.map(account => (
+                                <button
+                                    key={account.id}
+                                    type="button"
+                                    onClick={() => selectWaAccount(getAccountSwitchKey(account))}
+                                    className={clsx('mt-1 flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left text-sm', String(selectedWaAccount) === String(getAccountSwitchKey(account)) ? 'bg-white font-semibold text-black' : 'text-gray-700')}
+                                >
+                                    <Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
+                                    <span className="min-w-0">
+                                        <span className="block truncate">{account.name || account.display_phone_number || 'WhatsApp account'}</span>
+                                        <span className="block truncate text-xs font-normal text-gray-500">{account.display_phone_number || account.phone_number_id || ''}</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    ) : null}
+
+                    <nav className="flex-1 overflow-y-auto px-3 py-4">
+                        <div className="space-y-1">
+                            {filteredNavigation.map(item => (
+                                <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={false} onNavigate={handleMobileNavigate} />
+                            ))}
+                        </div>
+                        {isOwner ? (
+                            <div className="mt-4 border-t border-gray-100 pt-4">
+                                <NavItem item={{ name: 'Settings', href: '/settings', icon: Settings }} active={isActive('/settings')} collapsed={false} onNavigate={handleMobileNavigate} />
+                                <NavItem item={{ name: 'Help Center', href: '/help', icon: HelpCircle }} active={isActive('/help')} collapsed={false} onNavigate={handleMobileNavigate} />
+                            </div>
+                        ) : null}
+                    </nav>
+
+                    <div className="border-t border-gray-100 p-3">
+                        <div className="mb-2 flex min-w-0 items-center gap-3 rounded-lg bg-gray-50 px-3 py-2">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-xs font-semibold text-gray-700 ring-1 ring-gray-200">
+                                {initials}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-semibold text-gray-800">{displayName}</span>
+                                <span className="block truncate text-xs text-gray-500">{userEmail || user?.plan || 'Free'}</span>
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleSignOut}
+                            className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-red-50 text-sm font-semibold text-red-600 hover:bg-red-100"
+                        >
+                            <LogOut className="h-4 w-4" />
+                            Sign out
+                        </button>
+                    </div>
+                </aside>
+            </div>
+        ) : null}
+        </>
     )
 }
 
-function NavItem({ item, active, collapsed }) {
+function NavItem({ item, active, collapsed, onNavigate }) {
     const Icon = item.icon
     const isExpanded = !collapsed
     return (
         <Link
             to={item.href}
+            onClick={onNavigate}
             title={collapsed ? item.name : undefined}
             className={clsx(
                 'group flex h-9 items-center rounded-md text-[14px] font-medium transition-colors',

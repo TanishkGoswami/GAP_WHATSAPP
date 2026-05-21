@@ -264,16 +264,16 @@ export default function FlowBuilder() {
     }
 
     return (
-        <div className="space-y-6 p-6">
+        <div className="space-y-5 p-3 sm:p-5 lg:p-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Flow Builder</h1>
                     <p className="text-sm text-gray-500 mt-1">
                         Create automated message flows for your WhatsApp automation
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center sm:gap-3">
                     <button
                         onClick={() => setShowTemplatesModal(true)}
                         className="fp-button-secondary"
@@ -741,17 +741,17 @@ function TemplateGalleryModal({
     const preview = selectedTemplate?.preview || { nodes: [], edges: [] };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="flex h-[88vh] w-full max-w-7xl overflow-hidden rounded-lg border border-gray-200 bg-white">
-                <div className="flex w-[420px] flex-col border-r border-gray-200 bg-white">
-                    <div className="border-b border-gray-200 bg-white p-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-0 sm:p-4">
+            <div className="flex h-full w-full max-w-7xl flex-col overflow-hidden rounded-none border border-gray-200 bg-white sm:h-[88vh] sm:rounded-lg lg:flex-row">
+                <div className="flex h-[46vh] w-full flex-col border-b border-gray-200 bg-white lg:h-auto lg:w-[420px] lg:border-b-0 lg:border-r">
+                    <div className="border-b border-gray-200 bg-white p-4 sm:p-5">
                         <div className="flex items-start justify-between gap-4">
                             <div>
                                 <div className="flex items-center gap-2 text-sm font-semibold text-[#128C7E]">
                                     <Sparkles className="h-4 w-4" />
                                     Flow Templates
                                 </div>
-                                <h2 className="mt-1 text-2xl font-light text-black">Start from a proven flow</h2>
+                                <h2 className="mt-1 text-xl font-light text-black sm:text-2xl">Start from a proven flow</h2>
                                 <p className="mt-1 text-sm leading-5 text-gray-500">Choose a workflow, fill details, and generate a ready-to-edit draft.</p>
                             </div>
                             <button onClick={onClose} className="rounded-full p-2 text-gray-500 hover:bg-gray-100 hover:text-black">
@@ -824,9 +824,9 @@ function TemplateGalleryModal({
                     </div>
                 </div>
 
-                <div className="flex min-w-0 flex-1 flex-col">
-                    <div className="border-b border-gray-200 px-6 py-5">
-                        <div className="flex items-start justify-between gap-4">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    <div className="border-b border-gray-200 px-4 py-4 sm:px-6 sm:py-5">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                             <div>
                                 <div className="flex items-center gap-2">
                                     <h2 className="text-xl font-semibold text-black">{selectedTemplate.name}</h2>
@@ -834,7 +834,7 @@ function TemplateGalleryModal({
                                 </div>
                                 <p className="mt-1 max-w-2xl text-sm text-gray-500">{selectedTemplate.bestFor}</p>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex flex-wrap items-center gap-3">
                                 <div className="hidden rounded-lg border border-gray-200 bg-[#f8faf9] px-3 py-2 text-xs text-gray-600 lg:block">
                                     <div className="font-semibold text-gray-900">{selectedTemplate.preview.nodes.length} nodes</div>
                                     Ready-to-edit draft
@@ -854,20 +854,20 @@ function TemplateGalleryModal({
                         </div>
                     </div>
 
-                    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_360px] bg-white">
-                        <div className="overflow-y-auto bg-white p-6">
+                    <div className="grid min-h-0 flex-1 grid-cols-1 bg-white xl:grid-cols-[minmax(0,1fr)_360px]">
+                        <div className="overflow-y-auto bg-white p-4 sm:p-6">
                             <div className="rounded-lg border border-gray-200 bg-white">
                                 <div className="border-b border-gray-100 px-4 py-3">
                                     <h3 className="text-sm font-semibold text-gray-900">Template Preview</h3>
                                     <p className="text-xs text-gray-500">This draft will be generated in the editor.</p>
                                 </div>
-                                <div className="h-[430px] overflow-hidden bg-[#f6f7f8]">
+                                <div className="h-[300px] overflow-hidden bg-[#f6f7f8] sm:h-[430px]">
                                     <TemplatePreviewCanvas preview={preview} />
                                 </div>
                             </div>
                         </div>
 
-                        <div className="border-l border-gray-200 bg-[#f8faf9] p-5">
+                        <div className="border-t border-gray-200 bg-[#f8faf9] p-4 sm:p-5 xl:border-l xl:border-t-0">
                             <h3 className="text-sm font-semibold text-gray-900">Fill Details</h3>
                             <p className="mt-1 text-xs leading-5 text-gray-500">These values replace placeholders inside messages and node settings.</p>
 

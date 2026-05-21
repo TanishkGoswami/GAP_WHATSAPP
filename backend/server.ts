@@ -5394,7 +5394,7 @@ app.post('/api/messages/:messageId/reaction', authMiddleware, async (req: any, r
 app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: any, res) => {
     const { conversationId } = req.params;
     const orgId = req.organization_id;
-    const { text, session_id, reply_to_message_id, forward_from_message_id } = req.body as { text?: string; session_id?: string; reply_to_message_id?: string; forward_from_message_id?: string };
+    const { text, session_id, reply_to_message_id, forward_from_message_id, client_message_id } = req.body as { text?: string; session_id?: string; reply_to_message_id?: string; forward_from_message_id?: string; client_message_id?: string };
 
     if (!text || !text.trim()) return res.status(400).json({ error: 'Text required' });
 
@@ -5496,7 +5496,7 @@ app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: 
             wa_message_id,
             direction: 'outbound',
             type: 'text',
-            content: { text, quoted: quotedMessage, forwarded: !!forward_from_message_id },
+            content: { text, quoted: quotedMessage, forwarded: !!forward_from_message_id, client_message_id: client_message_id || null },
             status: 'sent',
             sender_type: 'human_agent',
             sender_user_id: (req as any).user?.id || null,
@@ -5519,9 +5519,10 @@ app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: 
             contact_id: conv.contact.id,
             message_id: stored?.id || null,
             wa_message_id,
+            client_message_id: client_message_id || null,
             created_at: stored?.created_at || new Date().toISOString(),
             status: 'sent',
-            content: { text, quoted: quotedMessage, forwarded: !!forward_from_message_id }
+            content: { text, quoted: quotedMessage, forwarded: !!forward_from_message_id, client_message_id: client_message_id || null }
         });
 
         res.json({
@@ -5535,7 +5536,7 @@ app.post('/api/conversations/:conversationId/send', authMiddleware, async (req: 
                 contact_id: conv.contact.id,
                 direction: 'outbound',
                 type: 'text',
-                content: { text, quoted: quotedMessage, forwarded: !!forward_from_message_id },
+                content: { text, quoted: quotedMessage, forwarded: !!forward_from_message_id, client_message_id: client_message_id || null },
                 status: 'sent',
             }
         });

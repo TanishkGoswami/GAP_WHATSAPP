@@ -412,11 +412,11 @@ export default function Settings() {
     const isAdmin = userRole === 'admin' || userRole === 'owner'
 
     return (
-        <div className="mx-auto flex w-full max-w-[1440px] gap-8 px-6">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 px-0 sm:px-2 lg:flex-row lg:gap-8 lg:px-6">
             {/* Sidebar */}
-            <div className="w-60 flex-shrink-0">
-                <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
-                <nav className="space-y-1">
+            <div className="w-full flex-shrink-0 lg:w-60">
+                <h1 className="mb-4 text-2xl font-bold text-gray-900 lg:mb-6">Settings</h1>
+                <nav className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
                     {['General', 'Notifications', 'Knowledge Base', 'Integrations', 'Team Members', 'Developer API'].map((tab) => {
                         const id = tab.toLowerCase().replace(' ', '_')
                         if (id === 'team_members' && !isAdmin) return null
@@ -424,7 +424,7 @@ export default function Settings() {
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(id)}
-                                className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === id
+                                className={`flex shrink-0 items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors lg:w-full lg:shrink ${activeTab === id
                                     ? 'bg-indigo-50 text-indigo-700'
                                     : 'text-gray-700 hover:bg-gray-50'
                                     }`}
@@ -443,10 +443,10 @@ export default function Settings() {
             </div>
 
             {/* Content */}
-            <div className="min-w-0 flex-1 bg-white rounded-xl border border-gray-200 shadow-sm min-h-[600px] overflow-hidden">
+            <div className="min-h-[600px] min-w-0 flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                 {activeTab === 'general' && (
                     <div className="bg-gray-50/60">
-                        <div className="flex items-start justify-between gap-4 border-b border-gray-200 bg-white px-8 py-6">
+                        <div className="flex flex-col gap-4 border-b border-gray-200 bg-white px-4 py-5 sm:px-8 sm:py-6 lg:flex-row lg:items-start lg:justify-between">
                             <div>
                                 <h2 className="text-xl font-semibold text-gray-900">General</h2>
                                 <p className="mt-1 text-sm text-gray-500">Manage WhatsApp Business profiles across all connected numbers.</p>
@@ -462,14 +462,14 @@ export default function Settings() {
                         </div>
 
                         {profileError && (
-                            <div className="mx-8 mt-6 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                            <div className="mx-4 mt-5 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:mx-8 sm:mt-6">
                                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                                 <span>{profileError}</span>
                             </div>
                         )}
 
                         {profileSuccess && (
-                            <div className="mx-8 mt-6 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+                            <div className="mx-4 mt-5 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 sm:mx-8 sm:mt-6">
                                 <Check className="h-4 w-4" />
                                 <span>{profileSuccess}</span>
                             </div>

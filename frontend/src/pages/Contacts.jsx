@@ -467,7 +467,7 @@ export default function Contacts() {
                         <h1 className="text-2xl font-bold text-gray-950">Contacts</h1>
                         <p className="mt-1 text-sm text-gray-500">Manage customer profiles, account ownership, tags, and flexible business data.</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -478,7 +478,7 @@ export default function Contacts() {
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
                         >
                             <Upload className="h-4 w-4" />
                             Import CSV
@@ -486,7 +486,7 @@ export default function Contacts() {
                         <button
                             type="button"
                             onClick={openNewContact}
-                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-100 hover:bg-indigo-700"
+                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-100 hover:bg-indigo-700"
                         >
                             <Plus className="h-4 w-4" />
                             Add Contact
@@ -525,7 +525,7 @@ export default function Contacts() {
                 ) : null}
 
                 <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <div className="flex flex-col gap-3 xl:flex-row">
+                    <div className="grid grid-cols-1 gap-3 xl:flex xl:flex-row">
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                             <input
@@ -620,7 +620,7 @@ export default function Contacts() {
                             </tbody>
                         </table>
                     </div>
-                    <div className="flex items-center justify-between border-t border-gray-200 px-5 py-3 text-sm text-gray-500">
+                    <div className="flex flex-col gap-1 border-t border-gray-200 px-4 py-3 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                         <span>Showing <strong className="text-gray-800">{filteredContacts.length}</strong> of <strong className="text-gray-800">{contacts.length}</strong> contacts</span>
                         <span>{allFieldKeys.length} custom field types</span>
                     </div>

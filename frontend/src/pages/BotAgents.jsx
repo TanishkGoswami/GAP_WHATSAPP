@@ -298,17 +298,17 @@ export default function BotAgents() {
                         <h1 className="text-2xl font-bold text-gray-950">Bot Agents</h1>
                         <p className="mt-1 text-sm text-gray-500">Train WhatsApp agents with saved knowledge, trigger rules, and automatic replies for new chats.</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        <button onClick={refreshAll} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">
+                    <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+                        <button onClick={refreshAll} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50">
                             <Database size={18} weight="duotone" />
                             Sync
                         </button>
-                        <button onClick={() => setShowApiSettings(true)} className={`inline-flex items-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold shadow-sm ${apiKeyConfigured ? 'border-green-200 bg-green-50 text-green-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                        <button onClick={() => setShowApiSettings(true)} className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold shadow-sm ${apiKeyConfigured ? 'border-green-200 bg-green-50 text-green-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
                             <Key size={18} weight="duotone" />
                             API Settings
                             {apiKeyConfigured ? <Check size={16} weight="bold" /> : null}
                         </button>
-                        <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700">
+                        <button onClick={openCreate} className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700">
                             <Plus size={18} weight="bold" />
                             Create Agent
                         </button>
@@ -468,18 +468,18 @@ function AgentDrawer({ draft, setDraft, docs, models, selectedDocs, selectedChar
         <div className="fixed inset-0 z-50 overflow-hidden">
             <div className="absolute inset-0 bg-gray-950/30 backdrop-blur-sm" onClick={onClose} />
             <div className="absolute inset-y-0 right-0 flex w-full max-w-4xl flex-col bg-white shadow-2xl">
-                <div className="border-b border-gray-200 bg-white px-6 py-5">
+                <div className="border-b border-gray-200 bg-white px-4 py-4 sm:px-6 sm:py-5">
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <div className="text-xs font-bold uppercase tracking-wide text-green-700">{draft.id ? 'Configure agent' : 'Create bot agent'}</div>
-                            <h2 className="mt-1 text-2xl font-bold text-gray-950">{draft.id ? draft.name : 'Train a new WhatsApp bot'}</h2>
+                            <h2 className="mt-1 text-xl font-bold text-gray-950 sm:text-2xl">{draft.id ? draft.name : 'Train a new WhatsApp bot'}</h2>
                             <p className="mt-1 text-sm text-gray-500">Attach saved knowledge, choose trigger rules, and control automatic replies.</p>
                         </div>
                         <button onClick={onClose} className="rounded-full p-2 text-gray-500 hover:bg-gray-100">
                             <X size={20} weight="bold" />
                         </button>
                     </div>
-                    <div className="mt-5 grid grid-cols-3 gap-2">
+                    <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
                         <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
                             <div className="text-[10px] font-bold uppercase text-gray-400">Status</div>
                             <div className="mt-1 text-sm font-bold text-gray-900">{draft.isActive ? 'Active' : 'Paused'}</div>
@@ -495,7 +495,7 @@ function AgentDrawer({ draft, setDraft, docs, models, selectedDocs, selectedChar
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto bg-gray-50 p-5">
+                <div className="flex-1 overflow-y-auto bg-gray-50 p-3 sm:p-5">
                     <div className="space-y-4">
                         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                             <SectionTitle title="Profile" subtitle="Name, model and personality shown through bot replies." />
@@ -511,7 +511,7 @@ function AgentDrawer({ draft, setDraft, docs, models, selectedDocs, selectedChar
                         </section>
 
                         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                            <div className="mb-4 flex items-center justify-between">
+                            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <SectionTitle title="Automation policy" subtitle="Choose exactly when this bot replies without a human opening the chat." />
                                 <Toggle checked={draft.isActive} onChange={value => setDraft({ ...draft, isActive: value })} label={draft.isActive ? 'Active' : 'Inactive'} />
                             </div>
@@ -525,7 +525,7 @@ function AgentDrawer({ draft, setDraft, docs, models, selectedDocs, selectedChar
                         </section>
 
                         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                            <div className="mb-4 flex items-center justify-between">
+                            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                 <SectionTitle title="Knowledge Base training" subtitle="Select indexed documents. Saving trains this agent with selected content." />
                                 <div className="rounded-lg bg-green-50 px-3 py-2 text-right">
                                     <div className="text-xs font-medium text-green-700">Selected</div>
@@ -563,9 +563,9 @@ function AgentDrawer({ draft, setDraft, docs, models, selectedDocs, selectedChar
                     </div>
                 </div>
 
-                <div className="flex justify-end gap-3 border-t border-gray-200 bg-white px-6 py-4">
+                <div className="flex flex-col-reverse gap-3 border-t border-gray-200 bg-white px-4 py-4 sm:flex-row sm:justify-end sm:px-6">
                     <button onClick={onClose} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
-                    <button onClick={onSave} disabled={!draft.name.trim() || isSaving} className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50">
+                    <button onClick={onSave} disabled={!draft.name.trim() || isSaving} className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50">
                         {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain size={18} weight="duotone" />}
                         {isSaving ? 'Training...' : 'Save and train'}
                     </button>
@@ -645,7 +645,7 @@ function Toggle({ checked, onChange, label }) {
 
 function PolicyToggle({ title, description, checked, onChange }) {
     return (
-        <div className={`flex items-center justify-between gap-4 px-4 py-3 transition ${checked ? 'bg-green-50/70' : 'bg-white'}`}>
+        <div className={`flex flex-col gap-3 px-4 py-3 transition sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${checked ? 'bg-green-50/70' : 'bg-white'}`}>
             <div className="min-w-0">
                 <div className="font-bold text-gray-950">{title}</div>
                 <p className="mt-1 text-sm text-gray-500">{description}</p>

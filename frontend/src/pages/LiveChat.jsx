@@ -16,15 +16,17 @@ const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 // Connect to backend
 const socket = io(BACKEND_BASE, {
     autoConnect: false,
-    transports: ['polling', 'websocket'],
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000,
+    transports: ['websocket', 'polling'],
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
     reconnectionDelayMax: 5000,
-    timeout: 20000,
+    timeout: 10000,
 });
 const API_BASE = `${BACKEND_BASE}/api`;
 const AGENT_SETTINGS_ITEM_TYPE = '__agent_settings';
 const MUTED_UNTIL_LABEL_PREFIX = 'muted_until:';
+const ACTIVE_CHAT_SYNC_MS = 2500;
+const CHAT_LIST_SYNC_MS = 6000;
 
 const WHATSAPP_EMOJI_ASSET_BASE = 'https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/apple/64';
 const QUICK_REACTIONS = [
@@ -116,10 +118,18 @@ export default function LiveChat() {
     const [messageText, setMessageText] = useState('')
     const [isInternalNote, setIsInternalNote] = useState(false)
     const [messages, setMessages] = useState([])
+    const messagesRef = useRef([])
     const messagesEndRef = useRef(null)
     const messagesListRef = useRef(null)
     const messageInputRef = useRef(null)
     const profilePhotoFetchRef = useRef(new Set())
+    const sessionRef = useRef(session)
+    const userRef = useRef(user)
+    const authHeadersRef = useRef(authHeaders)
+    const fetchChatsInFlightRef = useRef(false)
+    const fetchMessagesInFlightRef = useRef(new Set())
+    const lastActiveSyncRef = useRef(0)
+    const lastChatListSyncRef = useRef(0)
 
     const [hasMoreMessages, setHasMoreMessages] = useState(true)
     const [isLoadingOlder, setIsLoadingOlder] = useState(false)
@@ -193,8 +203,18 @@ export default function LiveChat() {
     }, [chats])
 
     useEffect(() => {
+        messagesRef.current = messages
+    }, [messages])
+
+    useEffect(() => {
         selectedChatRef.current = selectedChat
     }, [selectedChat])
+
+    useEffect(() => {
+        sessionRef.current = session
+        userRef.current = user
+        authHeadersRef.current = authHeaders
+    }, [session, user, authHeaders])
 
     // Close floating menus when clicking outside
     useEffect(() => {
@@ -472,6 +492,85 @@ export default function LiveChat() {
         }
     }
 
+    const getMessageKey = (msg) => {
+        if (!msg) return ''
+        return String(
+            msg.clientMessageId ||
+            msg.client_message_id ||
+            msg.content?.client_message_id ||
+            msg.metadata?.client_message_id ||
+            msg.wa_message_id ||
+            msg.id ||
+            ''
+        )
+    }
+
+    const mergeMessages = (current, incoming, { replace = false } = {}) => {
+        const list = Array.isArray(incoming) ? incoming.filter(Boolean) : [incoming].filter(Boolean)
+        if (replace) {
+            const next = []
+            const seen = new Set()
+            for (const msg of list) {
+                const key = getMessageKey(msg)
+                if (key && seen.has(key)) continue
+                if (key) seen.add(key)
+                next.push(msg)
+            }
+            return next.sort((a, b) => (a.createdAt?.getTime?.() || 0) - (b.createdAt?.getTime?.() || 0))
+        }
+
+        const merged = [...current]
+        for (const msg of list) {
+            const key = getMessageKey(msg)
+            const idx = merged.findIndex(item => {
+                const itemKey = getMessageKey(item)
+                if (key && itemKey && itemKey === key) return true
+                const sameClientId = msg.clientMessageId && item.clientMessageId && msg.clientMessageId === item.clientMessageId
+                if (sameClientId) return true
+                const bothOutboundText = item.sender === 'agent' && msg.sender === 'agent' && item.text && item.text === msg.text
+                const timeDelta = Math.abs((item.createdAt?.getTime?.() || 0) - (msg.createdAt?.getTime?.() || 0))
+                return bothOutboundText && item.optimistic && timeDelta < 15000
+            })
+            if (idx >= 0) merged[idx] = { ...merged[idx], ...msg, optimistic: false }
+            else merged.push(msg)
+        }
+
+        merged.sort((a, b) => (a.createdAt?.getTime?.() || 0) - (b.createdAt?.getTime?.() || 0))
+        return merged
+    }
+
+    const normalizeSocketMessage = (msg) => {
+        const createdAt = msg?.created_at ? new Date(msg.created_at) : new Date()
+        return {
+            id: msg.message_id || msg.id || msg.wa_message_id || `socket-${createdAt.getTime()}`,
+            wa_message_id: msg.wa_message_id || null,
+            clientMessageId: msg.client_message_id || msg.content?.client_message_id || msg.metadata?.client_message_id || null,
+            createdAt,
+            text: msg.text || msg.content?.text || msg.content?.caption || '',
+            sender: msg.sender || 'user',
+            time: format(createdAt, 'h:mm a'),
+            type: msg.type === 'note' ? 'note' : (msg.type || 'text'),
+            messageType: msg.type || 'text',
+            mediaUrl: msg.media_url || msg.content?.media_url || null,
+            mimeType: msg.mime_type || msg.content?.mime_type || null,
+            fileName: msg.file_name || msg.content?.file_name || null,
+            durationSeconds: Number.isFinite(Number(msg.duration_seconds || msg.content?.duration_seconds)) ? Number(msg.duration_seconds || msg.content?.duration_seconds) : null,
+            from: msg.from,
+            account: msg.connectedAccount,
+            status: msg.status,
+            senderType: msg.sender_type || msg.senderType || null,
+            automationSource: msg.automation_source || msg.automationSource || null,
+            isBotReply: msg.is_bot_reply === true || msg.isBotReply === true,
+            botAgentId: msg.bot_agent_id || msg.botAgentId || null,
+            metadata: msg.metadata || msg.content?.metadata || {},
+            reactions: Array.isArray(msg.reactions) ? msg.reactions : [],
+            content: msg.content || {},
+            quoted: msg.quoted || msg.content?.quoted || null,
+            forwarded: !!(msg.forwarded || msg.content?.forwarded),
+            optimistic: false,
+        }
+    }
+
     const insertEmoji = (emoji) => {
         setMessageText((prev) => `${prev || ''}${emoji}`)
         setIsEmojiOpen(false)
@@ -539,6 +638,8 @@ export default function LiveChat() {
 
     const fetchChats = async () => {
         if (!session?.access_token) return;
+        if (fetchChatsInFlightRef.current) return;
+        fetchChatsInFlightRef.current = true;
         try {
             // Pass current WA Account filter if selected
             let url = `${API_BASE}/conversations`;
@@ -586,6 +687,9 @@ export default function LiveChat() {
             }
         } catch (e) {
             console.error("Failed to fetch chats", e);
+        } finally {
+            fetchChatsInFlightRef.current = false;
+            lastChatListSyncRef.current = Date.now();
         }
     };
 
@@ -710,6 +814,9 @@ export default function LiveChat() {
 
     const fetchMessages = async (chat, opts = {}) => {
         if (!chat || !session?.access_token) return
+        const requestKey = `${chat.id}:${opts.mode || 'replace'}:${opts.before || 'latest'}`
+        if (fetchMessagesInFlightRef.current.has(requestKey)) return
+        fetchMessagesInFlightRef.current.add(requestKey)
         try {
             const limit = opts.limit || 50
             const before = opts.before || null
@@ -733,17 +840,7 @@ export default function LiveChat() {
                 const el = messagesListRef.current
                 const prevScrollHeight = el ? el.scrollHeight : 0
 
-                setMessages(prev => {
-                    const merged = [...formatted, ...prev]
-                    merged.sort((a, b) => (a.createdAt?.getTime?.() || 0) - (b.createdAt?.getTime?.() || 0))
-                    const seen = new Set()
-                    return merged.filter(m => {
-                        const key = m.id
-                        if (seen.has(key)) return false
-                        seen.add(key)
-                        return true
-                    })
-                })
+                setMessages(prev => mergeMessages(prev, formatted))
 
                 requestAnimationFrame(() => {
                     if (!el) return
@@ -752,15 +849,20 @@ export default function LiveChat() {
                     el.scrollTop = el.scrollTop + delta
                 })
             } else {
-                setMessages(formatted)
-                setNewMessagesPending(0)
-                setShowJumpToLatest(false)
-                requestAnimationFrame(() => scrollToBottom('auto'))
+                setMessages(prev => mergeMessages(prev, formatted, { replace: !opts.silent }))
+                if (!opts.silent) {
+                    setNewMessagesPending(0)
+                    setShowJumpToLatest(false)
+                    requestAnimationFrame(() => scrollToBottom('auto'))
+                }
             }
 
             setHasMoreMessages(formatted.length >= limit)
         } catch (e) {
             console.error('Failed to fetch messages', e)
+        } finally {
+            fetchMessagesInFlightRef.current.delete(requestKey)
+            if (!opts.mode || opts.mode === 'replace') lastActiveSyncRef.current = Date.now()
         }
     }
 
@@ -865,10 +967,17 @@ export default function LiveChat() {
                 console.log('[socket] joining org room:', memberProfile.organization_id)
                 socket.emit('join_org', memberProfile.organization_id)
             }
+            fetchChats()
+            const active = selectedChatRef.current
+            if (active) fetchMessages(active, { limit: 50 })
         }
 
         const handleConnectError = (err) => {
             console.error('[socket] connect_error', err?.message || err)
+        }
+
+        const handleDisconnect = (reason) => {
+            console.warn('[socket] disconnected', reason)
         }
 
         // Join org room immediately if connected and profile just loaded
@@ -975,44 +1084,7 @@ export default function LiveChat() {
                     (msg.contact_id && idsEqual(activeChat.contactId, msg.contact_id));
 
                 if (isMatch) {
-                    const newMessage = {
-                        id: msg.message_id || msg.id || Date.now(),
-                        wa_message_id: msg.wa_message_id || null,
-                        createdAt,
-                        text: msg.text || '',
-                        sender: msg.sender || 'user',
-                        time: format(createdAt, 'h:mm a'),
-                        type: msg.type === 'note' ? 'note' : (msg.type || 'text'),
-                        messageType: msg.type || 'text',
-                        mediaUrl: msg.media_url || null,
-                        mimeType: msg.mime_type || null,
-                        fileName: msg.file_name || null,
-                        durationSeconds: Number.isFinite(Number(msg.duration_seconds)) ? Number(msg.duration_seconds) : null,
-                        from: msg.from,
-                        account: msg.connectedAccount,
-                        status: msg.status,
-                        senderType: msg.sender_type || msg.senderType || null,
-                        automationSource: msg.automation_source || msg.automationSource || null,
-                        isBotReply: msg.is_bot_reply === true || msg.isBotReply === true,
-                        botAgentId: msg.bot_agent_id || msg.botAgentId || null,
-                        metadata: msg.metadata || msg.content?.metadata || {},
-                        reactions: Array.isArray(msg.reactions) ? msg.reactions : [],
-                        content: msg.content || {},
-                        quoted: msg.quoted || msg.content?.quoted || null,
-                        forwarded: !!(msg.forwarded || msg.content?.forwarded),
-                    };
-
-                    setMessages(prev => {
-                        const merged = [...prev, newMessage]
-                        merged.sort((a, b) => (a.createdAt?.getTime?.() || 0) - (b.createdAt?.getTime?.() || 0))
-                        const seen = new Set()
-                        return merged.filter(m => {
-                            const key = m.id
-                            if (seen.has(key)) return false
-                            seen.add(key)
-                            return true
-                        })
-                    });
+                    setMessages(prev => mergeMessages(prev, normalizeSocketMessage(msg)));
 
                     const nearBottom = isNearBottom()
 
@@ -1099,6 +1171,7 @@ export default function LiveChat() {
 
         socket.on('connect', handleConnect)
         socket.on('connect_error', handleConnectError)
+        socket.on('disconnect', handleDisconnect)
 
         socket.on('new_message', handleNewMessage);
         socket.on('contact_updated', handleContactUpdated)
@@ -1177,6 +1250,7 @@ export default function LiveChat() {
         return () => {
             socket.off('connect', handleConnect)
             socket.off('connect_error', handleConnectError)
+            socket.off('disconnect', handleDisconnect)
             socket.off('new_message', handleNewMessage);
             socket.off('contact_updated', handleContactUpdated)
             socket.off('conversation_assigned', handleConversationAssigned)
@@ -1189,6 +1263,46 @@ export default function LiveChat() {
             socket.disconnect();
         };
     }, [memberProfile?.organization_id, playNotification]);
+
+    useEffect(() => {
+        if (!session?.access_token) return
+
+        const reconcile = ({ force = false } = {}) => {
+            const now = Date.now()
+            const visible = typeof document === 'undefined' || !document.hidden
+            const active = selectedChatRef.current
+
+            if (force || (visible && now - lastChatListSyncRef.current > CHAT_LIST_SYNC_MS)) {
+                fetchChats()
+            }
+
+            if (active && (force || (visible && now - lastActiveSyncRef.current > ACTIVE_CHAT_SYNC_MS))) {
+                fetchMessages(active, { limit: 50, silent: true })
+            }
+        }
+
+        const interval = window.setInterval(() => reconcile(), 1000)
+        const handleVisibility = () => {
+            if (!document.hidden) reconcile({ force: true })
+        }
+        const handleFocus = () => reconcile({ force: true })
+        const handleOnline = () => {
+            if (!socket.connected) socket.connect()
+            reconcile({ force: true })
+        }
+
+        document.addEventListener('visibilitychange', handleVisibility)
+        window.addEventListener('focus', handleFocus)
+        window.addEventListener('online', handleOnline)
+        reconcile({ force: true })
+
+        return () => {
+            window.clearInterval(interval)
+            document.removeEventListener('visibilitychange', handleVisibility)
+            window.removeEventListener('focus', handleFocus)
+            window.removeEventListener('online', handleOnline)
+        }
+    }, [session?.access_token, selectedAccount])
 
     const renderReactionsPill = (msg) => {
         const list = Array.isArray(msg?.reactions) ? msg.reactions : []
@@ -1424,14 +1538,18 @@ export default function LiveChat() {
 
         // Optimistic UI
         const optimisticId = Date.now()
+        const clientMessageId = `client-${optimisticId}-${Math.random().toString(36).slice(2)}`
         const optimisticMessage = {
             id: optimisticId,
+            clientMessageId,
             text: messageText,
             sender: 'agent',
+            createdAt: new Date(),
             time: format(new Date(), 'h:mm a'),
             type: 'text',
             agentName: 'You',
-            status: 'sent',
+            status: 'sending',
+            optimistic: true,
             quoted: replyingTo ? {
                 wa_message_id: replyingTo.wa_message_id,
                 text: replyingTo.text,
@@ -1440,11 +1558,12 @@ export default function LiveChat() {
                 found: true,
             } : null
         }
-        setMessages(prev => [...prev, optimisticMessage])
+        setMessages(prev => mergeMessages(prev, optimisticMessage))
         const textToSend = messageText
         const replyToSend = replyingTo
         setMessageText('')
         setReplyingTo(null)
+        requestAnimationFrame(() => scrollToBottom('smooth'))
 
         try {
             const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session'
@@ -1454,7 +1573,7 @@ export default function LiveChat() {
                     ...authHeaders,
                     'Content-Type': 'application/json' 
                 },
-                body: JSON.stringify({ text: textToSend, session_id: sessionId, reply_to_message_id: replyToSend?.wa_message_id || null })
+                body: JSON.stringify({ text: textToSend, session_id: sessionId, reply_to_message_id: replyToSend?.wa_message_id || null, client_message_id: clientMessageId })
             })
 
             if (!res.ok) {
@@ -1462,9 +1581,24 @@ export default function LiveChat() {
                 throw new Error(err?.error || 'Failed to send')
             }
 
-            // Refresh messages + conversation list (server is source of truth)
-            await fetchMessages(selectedChat)
-            await fetchChats()
+            const data = await res.json().catch(() => ({}))
+            if (data?.message) {
+                const storedMessage = formatMessageFromDb({
+                    ...data.message,
+                    text_body: data.message.content?.text || textToSend,
+                    content: {
+                        ...(data.message.content || {}),
+                        client_message_id: clientMessageId,
+                    },
+                    direction: data.message.direction || 'outbound',
+                    created_at: data.message.created_at || new Date().toISOString(),
+                })
+                if (storedMessage) {
+                    storedMessage.clientMessageId = clientMessageId
+                    setMessages(prev => mergeMessages(prev, storedMessage))
+                }
+            }
+            fetchChats()
         } catch (err) {
             console.error('Send failed:', err)
             // Mark as failed
@@ -2148,9 +2282,9 @@ export default function LiveChat() {
     // Render Chat Interface
     return (
         <AudioPlayerProvider>
-        <div className="flex h-full min-h-0 bg-white overflow-hidden">
+        <div className="flex h-full min-h-0 overflow-hidden bg-white">
             {/* Left Cone: Chat List */}
-            <div className={`${selectedChat ? 'hidden lg:flex' : 'flex'} w-full lg:w-80 border-r border-gray-200 flex-col bg-white overflow-hidden`}>
+            <div className={`${selectedChat ? 'hidden lg:flex' : 'flex'} w-full flex-col overflow-hidden border-r border-gray-200 bg-white lg:w-80`}>
                 {/* Header / Account Switcher */}
                 <div className="p-3 border-b border-gray-200 bg-gray-50/50">
                     <div className="flex items-center justify-between mb-2">
@@ -2163,7 +2297,7 @@ export default function LiveChat() {
                                 localStorage.setItem('selected_wa_account_id', next)
                                 window.dispatchEvent(new CustomEvent('selected-wa-account-change', { detail: { accountId: next } }))
                             }}
-                            className="bg-transparent text-xs font-medium text-indigo-600 focus:outline-none cursor-pointer"
+                            className="max-w-[48vw] cursor-pointer truncate bg-transparent text-xs font-medium text-indigo-600 focus:outline-none sm:max-w-none"
                         >
                             <option value="All">All Accounts</option>
                             {connectedAccounts.map(acc => (
@@ -2181,7 +2315,7 @@ export default function LiveChat() {
                             className="w-full rounded-full border-0 bg-gray-100 py-2.5 pl-11 pr-4 text-sm text-gray-700 placeholder:text-gray-500 outline-none transition-colors focus:bg-white focus:ring-1 focus:ring-green-500/40"
                         />
                     </div>
-                    <div className="relative mt-2 flex items-center gap-2" data-chat-filter-menu>
+                    <div className="relative mt-2 flex items-center gap-2 overflow-x-auto pb-1" data-chat-filter-menu>
                         {[
                             { id: 'all', label: 'All' },
                             { id: 'read', label: 'Read' },
@@ -2428,7 +2562,7 @@ export default function LiveChat() {
             </div>
 
             {/* Middle Cone: Chat Area */}
-            <div className={`${!selectedChat ? 'hidden lg:flex' : 'flex'} flex-1 flex-col min-w-0 bg-[#efeae2] relative`}>
+            <div className={`${!selectedChat ? 'hidden lg:flex' : 'flex'} relative min-w-0 flex-1 flex-col bg-[#efeae2]`}>
                 {!selectedChat ? (
                     <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-4">
                         <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
@@ -2439,8 +2573,8 @@ export default function LiveChat() {
                 ) : (
                     <>
                         {/* Chat Header */}
-                        <div className="h-16 px-4 bg-[#f0f2f5] border-b border-gray-200 flex items-center justify-between shrink-0 z-10">
-                            <div className="flex items-center gap-3">
+                        <div className="z-10 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-[#f0f2f5] px-3 sm:px-4">
+                            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                                 <button onClick={() => setSelectedChat(null)} className="lg:hidden p-1 -ml-1 text-gray-600">
                                     <ChevronLeft className="h-6 w-6" />
                                 </button>
@@ -2455,9 +2589,9 @@ export default function LiveChat() {
                                         <User className="h-5 w-5" />
                                     </div>
                                 )}
-                                <div>
+                                <div className="min-w-0">
                                     <div className="flex items-center gap-2">
-                                        <h3 className="text-sm font-bold text-gray-900 leading-tight">{selectedChat?.name}</h3>
+                                        <h3 className="truncate text-sm font-bold leading-tight text-gray-900">{selectedChat?.name}</h3>
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -2470,14 +2604,14 @@ export default function LiveChat() {
                                             <Pencil className="h-4 w-4" />
                                         </button>
                                     </div>
-                                    <p className="text-xs text-gray-500 flex items-center gap-1">
+                                    <p className="flex items-center gap-1 truncate text-xs text-gray-500">
                                         {formatPhoneForDisplay(selectedChat?.phone || selectedChat?.waId || '')}
                                     </p>
                                 </div>
                             </div>
-                                <div className="flex items-center gap-2.5">
+                                <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
                                     {/* Assign Agent Dropdown */}
-                                    <div className="relative" data-assign-menu>
+                                    <div className="relative hidden sm:block" data-assign-menu>
                                         <button
                                             type="button"
                                             onClick={() => setIsAssignMenuOpen(v => !v)}
