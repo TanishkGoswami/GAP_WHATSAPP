@@ -1,5 +1,7 @@
 import { X, Save } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { FLOW_TEMPLATES } from './flowTemplates';
 
 export default function NodeConfigPanel({ node, onClose, onSave }) {
     const [config, setConfig] = useState(node?.data?.config || {});
@@ -578,41 +580,158 @@ function ButtonConfig({ config, updateConfig }) {
 
 function TemplateConfig({ config, updateConfig }) {
     const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+    const { apiCall, session } = useAuth();
     const [templates, setTemplates] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const selectedSource = config.templateSource || 'whatsapp';
+    const selectedFlowTemplate = FLOW_TEMPLATES.find((template) => template.id === config.flowTemplateId) || null;
+
+    const setSource = (source) => {
+        updateConfig('templateSource', source);
+
+        if (source === 'flow') {
+            updateConfig('templateName', '');
+            updateConfig('template', selectedFlowTemplate?.name || FLOW_TEMPLATES[0]?.name || '');
+            updateConfig('flowTemplateId', selectedFlowTemplate?.id || FLOW_TEMPLATES[0]?.id || '');
+            updateConfig('language', 'Flow Template');
+            return;
+        }
+
+        updateConfig('flowTemplateId', '');
+        updateConfig('template', config.templateName || '');
+        updateConfig('language', config.language || 'en_US');
+    };
 
     useEffect(() => {
-        fetch(`${API_URL}/api/whatsapp/templates`, {
-            headers: { Authorization: `Bearer ${localStorage.getItem('sb-access-token')}` } // Fallback auth, you may want to adjust this
-        })
-        .then(r => r.json())
-        .then(data => setTemplates(Array.isArray(data) ? data : []))
-        .catch(() => setTemplates([]));
-    }, []);
+        if (!session?.access_token) {
+            setTemplates([]);
+            setLoading(false);
+            setError('');
+            return;
+        }
+
+        let isMounted = true;
+        setLoading(true);
+        setError('');
+
+        apiCall(`${API_URL}/api/whatsapp/templates`)
+            .then(async (response) => {
+                const data = await response.json().catch(() => []);
+                if (!isMounted) return;
+
+                if (!response.ok) {
+                    setTemplates([]);
+                    setError(data?.error || 'Could not load templates.');
+                    return;
+                }
+
+                setTemplates(Array.isArray(data) ? data : []);
+            })
+            .catch(() => {
+                if (!isMounted) return;
+                setTemplates([]);
+                setError('Could not load templates.');
+            })
+            .finally(() => {
+                if (isMounted) {
+                    setLoading(false);
+                }
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [API_URL, apiCall, session?.access_token]);
 
     return (
         <div className="space-y-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Template Select karo</label>
-                <select
-                    value={config.templateName || ''}
-                    onChange={(e) => {
-                        const selected = templates.find(t => t.name === e.target.value);
-                        updateConfig('templateName', e.target.value);
-                        updateConfig('language', selected?.language || 'en_US');
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                >
-                    <option value="">-- Template choose karo --</option>
-                    {templates.map(t => (
-                        <option key={t.name} value={t.name}>{t.name} ({t.status})</option>
-                    ))}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Template Source</label>
+                <div className="grid grid-cols-2 gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setSource('whatsapp')}
+                        className={`rounded-lg border px-3 py-2 text-sm font-semibold ${selectedSource === 'whatsapp' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 bg-white text-gray-700'}`}
+                    >
+                        WhatsApp Template
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSource('flow')}
+                        className={`rounded-lg border px-3 py-2 text-sm font-semibold ${selectedSource === 'flow' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-700'}`}
+                    >
+                        Flow Template
+                    </button>
+                </div>
             </div>
 
-            {config.templateName && (
+            {selectedSource === 'whatsapp' ? (
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Template Select karo</label>
+                    <select
+                        value={config.templateName || ''}
+                        disabled={loading || !!error}
+                        onChange={(e) => {
+                            const selected = templates.find((template) => template.name === e.target.value);
+                            updateConfig('templateName', e.target.value);
+                            updateConfig('template', e.target.value);
+                            updateConfig('language', selected?.language || config.language || 'en_US');
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
+                    >
+                        <option value="">
+                            {loading ? 'Loading templates...' : error ? 'Template unavailable' : '-- Template choose karo --'}
+                        </option>
+                        {templates.map((template) => (
+                            <option key={template.name || template.id} value={template.name || template.id}>
+                                {template.name || template.id} {template.status ? `(${template.status})` : ''}
+                            </option>
+                        ))}
+                    </select>
+                    {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+                    {!loading && !error && templates.length === 0 && (
+                        <p className="mt-2 text-xs text-gray-500">No approved Meta templates found for this account.</p>
+                    )}
+                </div>
+            ) : (
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Flow Template Select karo</label>
+                    <select
+                        value={config.flowTemplateId || ''}
+                        onChange={(e) => {
+                            const selected = FLOW_TEMPLATES.find((template) => template.id === e.target.value);
+                            updateConfig('flowTemplateId', e.target.value);
+                            updateConfig('template', selected?.name || '');
+                            updateConfig('templateName', '');
+                            updateConfig('language', 'Flow Template');
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    >
+                        <option value="">-- Flow template choose karo --</option>
+                        {FLOW_TEMPLATES.map((template) => (
+                            <option key={template.id} value={template.id}>
+                                {template.name} · {template.category}
+                            </option>
+                        ))}
+                    </select>
+                    {selectedFlowTemplate && (
+                        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                            <div className="font-semibold">{selectedFlowTemplate.name}</div>
+                            <div className="mt-1 text-xs text-emerald-800">{selectedFlowTemplate.description}</div>
+                            <div className="mt-2 text-[11px] text-emerald-700">
+                                {selectedFlowTemplate.preview.nodes.length} nodes · {selectedFlowTemplate.minutes} min
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {(selectedSource === 'whatsapp' ? config.templateName : selectedFlowTemplate?.name) && (
                 <div className="p-3 bg-indigo-50 rounded-lg">
-                    <p className="text-xs text-indigo-600 font-medium">Selected: {config.templateName}</p>
-                    <p className="text-xs text-gray-500">Language: {config.language}</p>
+                    <p className="text-xs text-indigo-600 font-medium">Selected: {selectedSource === 'whatsapp' ? config.templateName : selectedFlowTemplate?.name}</p>
+                    <p className="text-xs text-gray-500">Type: {selectedSource === 'whatsapp' ? 'WhatsApp Template' : 'Flow Template'}</p>
+                    <p className="text-xs text-gray-500">Language: {config.language || (selectedSource === 'flow' ? 'Flow Template' : 'en_US')}</p>
                 </div>
             )}
 

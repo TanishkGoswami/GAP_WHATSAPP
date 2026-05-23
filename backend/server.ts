@@ -2806,8 +2806,14 @@ async function processFlowEngine(
 
         // --- TEMPLATE NODE ---
         else if (nodeType === 'template') {
-            const tplName = config.templateName;
-            if (tplName) outputText.push(`[Template: ${tplName}]`);
+            const source = config.templateSource || 'whatsapp';
+            if (source === 'flow') {
+                const flowName = config.template || config.flowTemplateId || 'Flow template';
+                if (flowName) outputText.push(`[Flow Template: ${flowName}]`);
+            } else {
+                const tplName = config.templateName || config.template;
+                if (tplName) outputText.push(`[Template: ${tplName}]`);
+            }
         }
 
         // --- WHATSAPP FLOW NODE ---

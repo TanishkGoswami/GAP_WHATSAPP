@@ -133,11 +133,13 @@ function FlowEditorContent({ flow, waAccounts = [], onClose }) {
     const [nodes, setNodes, onNodesChange] = useNodesState(flow?.nodes || []);
     const [edges, setEdges, onEdgesChange] = useEdgesState(flow?.edges || []);
     const [reactFlowInstance, setReactFlowInstance] = useState(null);
-    const [selectedNode, setSelectedNode] = useState(null);
+    const [selectedNodeId, setSelectedNodeId] = useState(null);
     const [selectedEdgeId, setSelectedEdgeId] = useState(null);
     const [configPanelOpen, setConfigPanelOpen] = useState(false);
     const [accountScope, setAccountScope] = useState(flow?.wa_account_scope || 'all');
     const [accountIds, setAccountIds] = useState(Array.isArray(flow?.wa_account_ids) ? flow.wa_account_ids : []);
+
+    const selectedNode = nodes.find((node) => node.id === selectedNodeId) || null;
 
     const getId = () => `node_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -192,8 +194,8 @@ function FlowEditorContent({ flow, waAccounts = [], onClose }) {
         setNodes((nds) => nds.filter((n) => n.id !== nodeId));
         setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
         setSelectedEdgeId(null);
-        if (selectedNode?.id === nodeId) {
-            setSelectedNode(null);
+        if (selectedNodeId === nodeId) {
+            setSelectedNodeId(null);
             setConfigPanelOpen(false);
         }
     };
@@ -215,19 +217,20 @@ function FlowEditorContent({ flow, waAccounts = [], onClose }) {
     };
 
     const onNodeClick = useCallback((event, node) => {
-        setSelectedNode(node);
+        setSelectedNodeId(node.id);
         setSelectedEdgeId(null);
         setConfigPanelOpen(true);
     }, []);
 
     const onPaneClick = useCallback(() => {
-        setSelectedNode(null);
+        setSelectedNodeId(null);
         setSelectedEdgeId(null);
+        setConfigPanelOpen(false);
     }, []);
 
     const onEdgeClick = useCallback((event, edge) => {
         event.stopPropagation();
-        setSelectedNode(null);
+        setSelectedNodeId(null);
         setConfigPanelOpen(false);
         setSelectedEdgeId(edge.id);
     }, []);
