@@ -109,12 +109,23 @@ create table if not exists public.w_flow_versions (
   unique(flow_id, version_number)
 );
 
+alter table public.w_flow_versions
+  add column if not exists wa_account_scope text not null default 'all',
+  add column if not exists wa_account_ids uuid[] not null default '{}'::uuid[];
+
 do $$
 begin
   if not exists (select 1 from pg_constraint where conname = 'w_flow_versions_status_check') then
     alter table public.w_flow_versions
       add constraint w_flow_versions_status_check
       check (status in ('draft', 'published', 'archived'))
+      not valid;
+  end if;
+
+  if not exists (select 1 from pg_constraint where conname = 'w_flow_versions_wa_account_scope_check') then
+    alter table public.w_flow_versions
+      add constraint w_flow_versions_wa_account_scope_check
+      check (wa_account_scope in ('all', 'selected'))
       not valid;
   end if;
 end $$;
@@ -230,3 +241,5 @@ end $$;
 comment on table public.w_flow_versions is 'Immutable published snapshots used by the runtime engine.';
 comment on table public.w_flow_runs is 'One execution/audit record per flow trigger/resume.';
 comment on table public.w_flow_run_steps is 'Node-level execution logs for debugging and analytics.';
+
+notify pgrst, 'reload schema';

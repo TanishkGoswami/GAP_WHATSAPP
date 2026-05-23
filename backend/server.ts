@@ -2099,6 +2099,47 @@ function normalizeFlowAccountIds(value: any): string[] {
     return value.map((item) => String(item || '').trim()).filter(isUuid);
 }
 
+function isMissingFlowVersionAccountColumnsError(error: any) {
+    const message = String(error?.message || error?.details || '').toLowerCase();
+    const code = String(error?.code || '');
+    return (code === 'PGRST204' || code === '42703') &&
+        message.includes('w_flow_versions') &&
+        (message.includes('wa_account_scope') || message.includes('wa_account_ids'));
+}
+
+async function insertFlowVersionWithSchemaFallback(payload: any) {
+    const insertPayload = {
+        ...payload,
+        wa_account_scope: normalizeFlowAccountScope(payload?.wa_account_scope),
+        wa_account_ids: normalizeFlowAccountIds(payload?.wa_account_ids),
+    };
+
+    const firstAttempt = await supabase
+        .from('w_flow_versions')
+        .insert(insertPayload)
+        .select()
+        .single();
+
+    if (!firstAttempt.error || !isMissingFlowVersionAccountColumnsError(firstAttempt.error)) {
+        return firstAttempt;
+    }
+
+    const legacyPayload = { ...insertPayload };
+    delete legacyPayload.wa_account_scope;
+    delete legacyPayload.wa_account_ids;
+
+    console.warn(
+        '[Flow] w_flow_versions account scope columns are missing. ' +
+        'Retrying publish with legacy schema; run supabase/migrations/20260523_flow_versions_account_scope_fix.sql.'
+    );
+
+    return supabase
+        .from('w_flow_versions')
+        .insert(legacyPayload)
+        .select()
+        .single();
+}
+
 function flowAppliesToAccount(flow: any, waAccountId?: string | null) {
     const scope = normalizeFlowAccountScope(flow?.wa_account_scope);
     if (scope !== 'selected') return true;
@@ -4564,24 +4605,20 @@ app.post('/api/flows/:id/publish', authMiddleware, async (req: any, res) => {
             return res.status(400).json({ error: 'Flow trigger conflict', validation });
         }
 
-        const { data: version, error: versionErr } = await supabase
-            .from('w_flow_versions')
-            .insert({
-                organization_id: orgId,
-                flow_id: flow.id,
-                version_number: versionNumber,
-                nodes: flow.nodes || [],
-                edges: flow.edges || [],
-                trigger_type: flow.trigger_type || 'keyword',
-                trigger_keywords: triggerKeywords,
-                wa_account_scope: normalizeFlowAccountScope(flow.wa_account_scope),
-                wa_account_ids: normalizeFlowAccountIds(flow.wa_account_ids),
-                status: 'published',
-                validation_errors: [],
-                published_by_user_id: req.user?.id || null,
-            })
-            .select()
-            .single();
+        const { data: version, error: versionErr } = await insertFlowVersionWithSchemaFallback({
+            organization_id: orgId,
+            flow_id: flow.id,
+            version_number: versionNumber,
+            nodes: flow.nodes || [],
+            edges: flow.edges || [],
+            trigger_type: flow.trigger_type || 'keyword',
+            trigger_keywords: triggerKeywords,
+            wa_account_scope: normalizeFlowAccountScope(flow.wa_account_scope),
+            wa_account_ids: normalizeFlowAccountIds(flow.wa_account_ids),
+            status: 'published',
+            validation_errors: [],
+            published_by_user_id: req.user?.id || null,
+        });
         if (versionErr) throw versionErr;
 
         const { data: updated, error: updateErr } = await supabase
