@@ -77,6 +77,10 @@ export default function FlowBuilder() {
             const res = await axios.post(`${API_URL}/api/flow-template-stars/${templateId}`, {}, {
                 headers: { 'Authorization': `Bearer ${session?.access_token}` }
             });
+            if (res.data?.disabled) {
+                setTemplateStarStats(previous);
+                return;
+            }
             setTemplateStarStats(prev => ({
                 ...prev,
                 [templateId]: { stars: res.data?.stars || 0, starred: res.data?.starred === true }
@@ -84,7 +88,6 @@ export default function FlowBuilder() {
         } catch (error) {
             console.error('Failed to update template star:', error);
             setTemplateStarStats(previous);
-            alertDialog(error?.response?.data?.error || 'Could not update template star', { title: 'Template update failed', tone: 'danger' });
         }
     };
 

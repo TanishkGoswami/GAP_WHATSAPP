@@ -4696,6 +4696,16 @@ app.delete('/api/flows/:id', authMiddleware, async (req: any, res) => {
     } catch(e: any) { res.status(500).json({error: e.message}); }
 });
 
+function isTemplateStarsMissingError(error: any) {
+    const value = [
+        error?.code,
+        error?.message,
+        error?.details,
+        error?.hint,
+    ].filter(Boolean).join(' ');
+    return value.includes('42P01') || value.includes('w_flow_template_stars');
+}
+
 app.get('/api/flow-template-stars', authMiddleware, async (req: any, res) => {
     try {
         const userId = req.user.id;
@@ -4715,9 +4725,11 @@ app.get('/api/flow-template-stars', authMiddleware, async (req: any, res) => {
 
         res.json(stats);
     } catch (e: any) {
-        if (String(e?.message || '').includes('w_flow_template_stars')) {
-            return res.status(500).json({ error: 'Template stars table missing. Run supabase_flow_template_stars.sql.' });
+        if (isTemplateStarsMissingError(e)) {
+            console.warn('[FlowTemplateStars] Table unavailable while reading stats:', e?.message || e);
+            return res.json({});
         }
+        console.error('[FlowTemplateStars] Failed to read stats:', e);
         res.status(500).json({ error: e.message });
     }
 });
@@ -4729,6 +4741,7 @@ app.post('/api/flow-template-stars/:templateId', authMiddleware, async (req: any
 
         const userId = req.user.id;
         const orgId = req.organization_id;
+        if (!orgId) return res.status(400).json({ error: 'organization_id is required' });
 
         const { data: existing, error: lookupError } = await supabase
             .from('w_flow_template_stars')
@@ -4761,9 +4774,11 @@ app.post('/api/flow-template-stars/:templateId', authMiddleware, async (req: any
 
         res.json({ template_id: templateId, stars: count || 0, starred });
     } catch (e: any) {
-        if (String(e?.message || '').includes('w_flow_template_stars')) {
-            return res.status(500).json({ error: 'Template stars table missing. Run supabase_flow_template_stars.sql.' });
+        if (isTemplateStarsMissingError(e)) {
+            console.warn('[FlowTemplateStars] Table unavailable while updating star:', e?.message || e);
+            return res.json({ template_id: String(req.params.templateId || '').trim(), stars: 0, starred: false, disabled: true });
         }
+        console.error('[FlowTemplateStars] Failed to update star:', e);
         res.status(500).json({ error: e.message });
     }
 });
