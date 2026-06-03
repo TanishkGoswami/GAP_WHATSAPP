@@ -9,11 +9,14 @@ export const useAuth = () => useContext(AuthContext)
 function resolvePlanName(plan) {
     if (!plan) return 'Free'
     const p = plan.toLowerCase()
+    if (p.includes('monthly') || p.includes('core') || p === 'all_in_one_bundle_monthly') return 'GAP Core'
+    if (p.includes('quarterly') || p.includes('pro') || p === 'all_in_one_bundle_quarterly') return 'GAP Pro'
+    if (p.includes('half_yearly') || p.includes('max') || p === 'all_in_one_bundle_half_yearly') return 'GAP Max'
     if (p.includes('all_in_one') || p.includes('ultimate') || p.includes('enterprise')) return 'GAP Ultimate Ecosystem'
     if (p.includes('whatsapp_premium') || p.includes('premium')) return 'WhatsApp Premium'
     if (p.includes('whatsapp_pro') || p.includes('whatsapp')) return 'WhatsApp Pro'
     if (p === 'free' || p === '') return 'Free'
-    return plan // keep as-is for known names like "GAP Ultimate Ecosystem"
+    return plan
 }
 
 export function AuthProvider({ children }) {
@@ -28,11 +31,30 @@ export function AuthProvider({ children }) {
 
     const fetchUserProfile = useCallback(async (sessionUser) => {
         try {
-            // WhatsApp shares the same Supabase as the hub — query app_user_subscriptions directly
+            // Find organization owner to get their subscription status
+            const { data: member } = await supabase
+                .from('organization_members')
+                .select('organization_id')
+                .eq('user_id', sessionUser.id)
+                .maybeSingle()
+
+            let ownerId = sessionUser.id
+            if (member?.organization_id) {
+                const { data: ownerMember } = await supabase
+                    .from('organization_members')
+                    .select('user_id')
+                    .eq('organization_id', member.organization_id)
+                    .eq('role', 'owner')
+                    .maybeSingle()
+                if (ownerMember?.user_id) {
+                    ownerId = ownerMember.user_id
+                }
+            }
+
             const { data: sub } = await supabase
                 .from('app_user_subscriptions')
                 .select('plan_id, plan_label, expires_at')
-                .eq('user_id', sessionUser.id)
+                .eq('user_id', ownerId)
                 .maybeSingle()
 
             const isSubActive = sub?.expires_at ? new Date(sub.expires_at) > new Date() : false
@@ -43,9 +65,10 @@ export function AuthProvider({ children }) {
 
             resolvedPlan = resolvePlanName(resolvedPlan)
 
-            setUser(prev => prev ? { ...prev, plan: resolvedPlan, subscription_status: resolvedStatus } : null)
+            setUser(prev => prev ? { ...prev, plan: resolvedPlan, subscription_status: resolvedStatus, subscription_checked: true } : null)
         } catch (err) {
             console.error('[AUTH] fetchUserProfile error:', err)
+            setUser(prev => prev ? { ...prev, subscription_checked: true } : null)
         }
     }, [])
 

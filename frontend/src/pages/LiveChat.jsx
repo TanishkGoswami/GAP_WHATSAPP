@@ -484,6 +484,7 @@ export default function LiveChat() {
             automationSource: m.automation_source || null,
             isBotReply: m.is_bot_reply === true,
             botAgentId: m.bot_agent_id || null,
+            botAgentName: m.content?.bot_agent_name || m.metadata?.bot_agent_name || null,
             metadata: m.metadata || {},
             reactions: Array.isArray(m.reactions) ? m.reactions : [],
             content: m.content || {},
@@ -562,6 +563,7 @@ export default function LiveChat() {
             automationSource: msg.automation_source || msg.automationSource || null,
             isBotReply: msg.is_bot_reply === true || msg.isBotReply === true,
             botAgentId: msg.bot_agent_id || msg.botAgentId || null,
+            botAgentName: msg.bot_agent_name || msg.botAgentName || msg.content?.bot_agent_name || msg.metadata?.bot_agent_name || null,
             metadata: msg.metadata || msg.content?.metadata || {},
             reactions: Array.isArray(msg.reactions) ? msg.reactions : [],
             content: msg.content || {},
@@ -803,6 +805,12 @@ export default function LiveChat() {
         if (!agentId) return 'Unassigned';
         const member = teamMembers.find(m => m.user_id === agentId);
         return member ? member.name : 'Unknown Agent';
+    };
+
+    const getBotName = (botId) => {
+        if (!botId) return 'AI Agent';
+        const bot = availableBots.find(b => String(b.id) === String(botId));
+        return bot ? bot.name : 'AI Agent';
     };
 
     useEffect(() => {
@@ -1848,7 +1856,10 @@ export default function LiveChat() {
         const source = msg.automationSource || msg.automation_source || msg.metadata?.automation_source
         const senderType = msg.senderType || msg.sender_type
         if (source === 'flow' || msg.metadata?.flow_id) return { label: 'Flow', className: 'bg-blue-50 text-blue-700 border-blue-100' }
-        if (source === 'ai_agent' || msg.isBotReply || msg.botAgentId) return { label: 'AI Agent', className: 'bg-emerald-50 text-emerald-700 border-emerald-100' }
+        if (source === 'ai_agent' || msg.isBotReply || msg.botAgentId) {
+            const botName = msg.botAgentName || getBotName(msg.botAgentId);
+            return { label: botName, className: 'bg-emerald-50 text-emerald-700 border-emerald-100' }
+        }
         if (source === 'broadcast') return { label: 'Broadcast', className: 'bg-purple-50 text-purple-700 border-purple-100' }
         if (senderType === 'human_agent') return { label: 'Human', className: 'bg-slate-50 text-slate-600 border-slate-100' }
         return null

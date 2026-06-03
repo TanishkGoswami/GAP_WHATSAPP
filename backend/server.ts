@@ -362,6 +362,46 @@ async function uploadMetaProfilePicture(file: Express.Multer.File, token: string
     return uploadJson.h;
 }
 
+// ====== Active Subscription Verification helper ======
+async function checkSubscription(orgId: string): Promise<boolean> {
+    if (!supabase) return true; // Debug mode fallback
+    try {
+        const { data: ownerMember, error: ownerErr } = await supabase
+            .from('organization_members')
+            .select('user_id')
+            .eq('organization_id', orgId)
+            .eq('role', 'owner')
+            .maybeSingle();
+
+        if (ownerErr || !ownerMember) {
+            console.warn(`[Subscription Check] No owner found for org ${orgId}`);
+            return false;
+        }
+
+        const { data: sub, error: subErr } = await supabase
+            .from('app_user_subscriptions')
+            .select('plan_id, expires_at')
+            .eq('user_id', ownerMember.user_id)
+            .maybeSingle();
+
+        if (subErr || !sub) {
+            console.warn(`[Subscription Check] No subscription found for user ${ownerMember.user_id}`);
+            return false;
+        }
+
+        const expiresAt = sub.expires_at ? new Date(sub.expires_at).getTime() : 0;
+        const isActive = expiresAt > Date.now();
+        if (!isActive) return false;
+
+        const plan = String(sub.plan_id || '').toLowerCase();
+        const isWhatsAppPlan = plan.includes('whatsapp') || plan.includes('all_in_one') || plan.includes('bundle') || plan.includes('ultimate');
+        return isWhatsAppPlan;
+    } catch (err: any) {
+        console.error(`[Subscription Check] Error checking subscription for org ${orgId}:`, err.message);
+        return false;
+    }
+}
+
 // ====== Auth Middleware (Supabase JWT) ======
 async function authMiddleware(req: any, res: any, next: any) {
     const authHeader = req.headers.authorization;
@@ -472,6 +512,18 @@ async function authMiddleware(req: any, res: any, next: any) {
         }
         
         req.organization_id = orgId;
+
+        // Enforce active subscription check
+        const bypassPaths = [
+            '/api/team/my-profile',
+            '/api/wa/logout'
+        ];
+        if (!bypassPaths.includes(req.path)) {
+            const hasSub = await checkSubscription(orgId);
+            if (!hasSub) {
+                return res.status(403).json({ error: 'Subscription expired or plan does not include GAP WhatsApp access. Please upgrade.' });
+            }
+        }
         
         next();
     } catch (err: any) {
@@ -6846,7 +6898,7 @@ app.post("/webhook", async (req, res) => {
                         const storedBotReply = await storeMessage({
                             organization_id, contact_id: contact.id, conversation_id: conv.id,
                             wa_message_id: botWaMessageId, direction: "outbound", type: "text",
-                            content: { text: botResult.reply, bot_agent_id: botResult.agent?.id },
+                            content: { text: botResult.reply, bot_agent_id: botResult.agent?.id, bot_agent_name: botResult.agent?.name },
                             status: "sent",
                             is_bot_reply: true,
                             bot_agent_id: botResult.agent?.id || null,
@@ -7528,7 +7580,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                                         wa_message_id: botWaMessageId,
                                         direction: "outbound",
                                         type: "text",
-                                        content: { text: botResult.reply, bot_agent_id: botResult.agent?.id },
+                                        content: { text: botResult.reply, bot_agent_id: botResult.agent?.id, bot_agent_name: botResult.agent?.name },
                                         status: "sent",
                                         is_bot_reply: true,
                                         bot_agent_id: botResult.agent?.id || null,

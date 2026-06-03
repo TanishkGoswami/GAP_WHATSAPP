@@ -15,6 +15,9 @@ function getPlanName(planId: string): string {
   if (!planId) return "WhatsApp Pro";
   const p = planId.toLowerCase();
   if (p.includes("premium"))       return "WhatsApp Premium";
+  if (p.includes("all_in_one_bundle_monthly")) return "GAP Core";
+  if (p.includes("all_in_one_bundle_quarterly")) return "GAP Pro";
+  if (p.includes("all_in_one_bundle_half_yearly")) return "GAP Max";
   if (p.includes("all_in_one") || p.includes("ultimate")) return "GAP Ultimate Ecosystem";
   return "WhatsApp Pro";
 }
