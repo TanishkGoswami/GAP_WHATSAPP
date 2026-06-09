@@ -51,9 +51,94 @@ export default function Layout() {
         localStorage.removeItem('gap_appearance_mode')
     }, [isNightLight])
 
-    if (loading) return null // wait only for the initial auth check, never block on profile re-fetch
+    const planName = String(user?.plan || '').toLowerCase();
+    const isWhatsAppPlan = planName.includes('whatsapp') || planName.includes('ultimate') || planName.includes('ecosystem') || planName.includes('all_in_one') || planName.includes('bundle');
+    const hasActiveSubscription = user?.subscription_status === 'active' && isWhatsAppPlan;
+
+    const handleDirectLogout = async () => {
+        setIsLoggingOut(true);
+        try {
+            await signOut();
+            navigate('/login');
+        } catch (err) {
+            console.error('Logout error:', err);
+            navigate('/login');
+        } finally {
+            setIsLoggingOut(false);
+        }
+    };
+
+    if (loading || !user?.subscription_checked) {
+        return (
+            <div className="fixed inset-0 flex items-center justify-center bg-gray-50">
+                <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+            </div>
+        )
+    }
+
     if (!user) return <Navigate to="/login" replace />
     if (userRole === null) return null
+
+    if (!hasActiveSubscription) {
+        return (
+            <div className="fixed inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 via-slate-50 to-emerald-50 p-4 font-sans z-[9999]">
+                <div className="w-full max-w-lg bg-white/85 backdrop-blur-md rounded-3xl border border-gray-200/80 shadow-2xl p-8 sm:p-10 flex flex-col items-center text-center">
+                    {/* Logo */}
+                    <div className="h-16 w-16 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl flex items-center justify-center mb-6 shadow-lg rotate-3 hover:rotate-0 transition-transform duration-300">
+                        <img src="/logo.png" alt="GetAiPilot" className="h-9 w-9 object-contain" />
+                    </div>
+                    
+                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">GAP WhatsApp Access Locked</h2>
+                    <p className="text-sm text-gray-500 mt-2 leading-relaxed max-w-sm">
+                        An active WhatsApp Pro/Premium plan or Ultimate Ecosystem subscription is required to access your WhatsApp automations.
+                    </p>
+
+                    {/* Features Locker Info */}
+                    <div className="w-full bg-slate-50/80 rounded-2xl border border-slate-100 p-5 my-6 text-left space-y-3.5">
+                        <div className="flex items-start gap-3">
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold">✓</span>
+                            <div>
+                                <p className="text-sm font-bold text-gray-900 leading-none">Official Meta Cloud API Connection</p>
+                                <p className="text-xs text-gray-500 mt-1">Connect official business numbers or QR sessions securely.</p>
+                            </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold">✓</span>
+                            <div>
+                                <p className="text-sm font-bold text-gray-900 leading-none">AI Chatbots & Interactive Flows</p>
+                                <p className="text-xs text-gray-500 mt-1">Deploy automated answers and visual multi-step dialogs.</p>
+                            </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold">✓</span>
+                            <div>
+                                <p className="text-sm font-bold text-gray-900 leading-none">Broadcasts & Campaigns</p>
+                                <p className="text-xs text-gray-500 mt-1">Send bulk marketing/notification messages using approved templates.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col gap-3 w-full">
+                        <a
+                            href="https://getaipilot.in/pricing"
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3.5 text-sm font-bold text-white hover:bg-indigo-700 active:scale-[0.98] transition-all shadow-md shadow-indigo-100"
+                        >
+                            Upgrade Plan / Unlock Now
+                            <ExternalLink className="h-4 w-4" />
+                        </a>
+                        <button
+                            type="button"
+                            onClick={handleDirectLogout}
+                            disabled={isLoggingOut}
+                            className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-600 hover:bg-gray-50 active:scale-[0.98] transition-all disabled:opacity-50"
+                        >
+                            {isLoggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Log Out of Session'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
 
     // Redirect non-owners to live-chat if they try to access restricted paths
     if (!isOwner && location.pathname !== '/live-chat') {

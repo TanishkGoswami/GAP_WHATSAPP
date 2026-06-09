@@ -322,7 +322,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
                             </span>
                             <span className="min-w-0 flex-1">
                                 <span className="block truncate">{selectedAccountLabel}</span>
-                                <span className="block truncate text-[11px] font-medium text-emerald-600">GAP Ultimate Ecosystem</span>
+                                <span className="block truncate text-[11px] font-medium text-emerald-600">{user?.plan || 'Free'}</span>
                             </span>
                             <ChevronsUpDown className="h-4 w-4 shrink-0 text-gray-400" />
                         </button>
