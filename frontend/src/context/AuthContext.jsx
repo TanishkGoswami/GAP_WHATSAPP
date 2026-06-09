@@ -10,6 +10,9 @@ function resolvePlanName(plan) {
     if (!plan) return 'Free'
     const p = plan.toLowerCase()
     if (p.includes('all_in_one') || p.includes('ultimate') || p.includes('enterprise')) return 'GAP Ultimate Ecosystem'
+    if (p === 'starter' || p.includes('whatsapp_starter')) return 'Starter'
+    if (p === 'growth' || p.includes('whatsapp_growth')) return 'Growth'
+    if (p === 'pro') return 'Pro'
     if (p.includes('whatsapp_premium') || p.includes('premium')) return 'WhatsApp Premium'
     if (p.includes('whatsapp_pro') || p.includes('whatsapp')) return 'WhatsApp Pro'
     if (p === 'free' || p === '') return 'Free'

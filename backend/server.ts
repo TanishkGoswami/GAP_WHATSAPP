@@ -77,6 +77,10 @@ const GRAPH_API_VERSION = process.env.META_GRAPH_VERSION || 'v21.0';
 const N8N_HANDOFF_WEBHOOK_URL = process.env.N8N_HANDOFF_WEBHOOK_URL || '';
 const N8N_WEBHOOK_SECRET = process.env.N8N_WEBHOOK_SECRET || '';
 const N8N_WEBHOOK_TIMEOUT_MS = Number(process.env.N8N_WEBHOOK_TIMEOUT_MS || 15000);
+const DEFAULT_BILLING_MARKET = process.env.WHATSAPP_BILLING_MARKET || 'IN';
+const DEFAULT_BILLING_CURRENCY = process.env.WHATSAPP_BILLING_CURRENCY || 'INR';
+const META_EMBEDDED_SIGNUP_VERSION = process.env.META_EMBEDDED_SIGNUP_VERSION || 'v4';
+const META_EMBEDDED_SESSION_INFO_VERSION = process.env.META_EMBEDDED_SESSION_INFO_VERSION || '3';
 
 const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'wa-media';
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -90,6 +94,357 @@ const KNOWLEDGE_ALLOWED_MIME_TYPES = new Set([
     'text/csv',
     'application/json',
 ]);
+
+const DEFAULT_WHATSAPP_RATE_CARD: Record<string, { category: string; label: string; rate_paise: number; description: string }> = {
+    marketing: {
+        category: 'marketing',
+        label: 'Marketing',
+        rate_paise: 88,
+        description: 'Promotions, offers, re-engagement, abandoned cart, and campaign templates.'
+    },
+    utility: {
+        category: 'utility',
+        label: 'Utility',
+        rate_paise: 13,
+        description: 'Order, payment, appointment, shipping, and account updates requested by the user.'
+    },
+    authentication: {
+        category: 'authentication',
+        label: 'Authentication',
+        rate_paise: 13,
+        description: 'OTP and verification templates.'
+    },
+    service: {
+        category: 'service',
+        label: 'Service',
+        rate_paise: 0,
+        description: 'Replies inside the customer service window.'
+    }
+};
+
+function buildMetaEmbeddedSignupUrl() {
+    if (process.env.META_EMBEDDED_SIGNUP_URL) return process.env.META_EMBEDDED_SIGNUP_URL;
+    const appId = process.env.META_APP_ID || '';
+    const configId = process.env.META_CONFIG_ID || '';
+    const extras = {
+        sessionInfoVersion: META_EMBEDDED_SESSION_INFO_VERSION,
+        version: META_EMBEDDED_SIGNUP_VERSION,
+    };
+    const url = new URL('https://business.facebook.com/messaging/whatsapp/onboard/');
+    if (appId) url.searchParams.set('app_id', appId);
+    if (configId) url.searchParams.set('config_id', configId);
+    url.searchParams.set('extras', JSON.stringify(extras));
+    return url.toString();
+}
+
+type WhatsappBillingCategory = 'marketing' | 'utility' | 'authentication' | 'service';
+
+function normalizeWhatsappBillingCategory(value: any, fallback: WhatsappBillingCategory = 'marketing'): WhatsappBillingCategory {
+    const raw = String(value || '').toLowerCase().trim();
+    if (raw.includes('utility')) return 'utility';
+    if (raw.includes('auth')) return 'authentication';
+    if (raw.includes('service')) return 'service';
+    if (raw.includes('marketing')) return 'marketing';
+    return fallback;
+}
+
+async function getActiveWhatsappRate(category: WhatsappBillingCategory) {
+    const fallback = DEFAULT_WHATSAPP_RATE_CARD[category] || DEFAULT_WHATSAPP_RATE_CARD.marketing;
+    try {
+        const { data, error } = await supabase
+            .from('whatsapp_rate_cards')
+            .select('rate_paise, pass_through_rate_paise, markup_paise')
+            .eq('market', DEFAULT_BILLING_MARKET)
+            .eq('currency', DEFAULT_BILLING_CURRENCY)
+            .eq('category', category)
+            .eq('is_active', true)
+            .order('effective_from', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (error || !data) {
+            return {
+                rate_paise: fallback.rate_paise,
+                pass_through_rate_paise: fallback.rate_paise,
+                markup_paise: 0,
+            };
+        }
+        return data;
+    } catch {
+        return {
+            rate_paise: fallback.rate_paise,
+            pass_through_rate_paise: fallback.rate_paise,
+            markup_paise: 0,
+        };
+    }
+}
+
+async function recordWhatsappMessageUsage(params: {
+    organization_id: string;
+    wa_account_id?: string | null;
+    campaign_id?: string | null;
+    conversation_id?: string | null;
+    contact_id?: string | null;
+    message_id?: string | null;
+    wa_message_id?: string | null;
+    category: WhatsappBillingCategory;
+    template_name?: string | null;
+    source?: 'manual' | 'broadcast' | 'flow' | 'ai_agent' | 'webhook' | 'system';
+}) {
+    const category = normalizeWhatsappBillingCategory(params.category);
+    const rate = await getActiveWhatsappRate(category);
+    const chargedAmount = category === 'service' ? 0 : Number(rate.rate_paise || 0);
+    const now = new Date().toISOString();
+    let billingStatus: 'charged' | 'free' | 'failed' = chargedAmount > 0 ? 'charged' : 'free';
+    let walletTransactionId: string | null = null;
+
+    try {
+        if (chargedAmount > 0) {
+            const { data: wallet } = await supabase
+                .from('whatsapp_wallets')
+                .select('balance_paise, currency')
+                .eq('organization_id', params.organization_id)
+                .maybeSingle();
+
+            if (!wallet) {
+                await supabase.from('whatsapp_wallets').insert({
+                    organization_id: params.organization_id,
+                    currency: DEFAULT_BILLING_CURRENCY,
+                });
+                billingStatus = 'failed';
+            } else if (Number(wallet.balance_paise || 0) >= chargedAmount) {
+                const nextBalance = Number(wallet.balance_paise || 0) - chargedAmount;
+                const { error: walletErr } = await supabase
+                    .from('whatsapp_wallets')
+                    .update({ balance_paise: nextBalance, updated_at: now })
+                    .eq('organization_id', params.organization_id)
+                    .gte('balance_paise', chargedAmount);
+
+                if (walletErr) {
+                    billingStatus = 'failed';
+                } else {
+                    const { data: tx } = await supabase
+                        .from('whatsapp_wallet_transactions')
+                        .insert({
+                            organization_id: params.organization_id,
+                            type: 'message_debit',
+                            amount_paise: -chargedAmount,
+                            balance_after_paise: nextBalance,
+                            currency: DEFAULT_BILLING_CURRENCY,
+                            status: 'completed',
+                            reference_type: params.source || 'message',
+                            reference_id: params.message_id || params.wa_message_id || params.campaign_id || null,
+                            description: `${DEFAULT_WHATSAPP_RATE_CARD[category]?.label || category} WhatsApp message charge`,
+                            metadata: {
+                                category,
+                                template_name: params.template_name || null,
+                                campaign_id: params.campaign_id || null,
+                            },
+                        })
+                        .select('id')
+                        .maybeSingle();
+                    walletTransactionId = tx?.id || null;
+                }
+            } else {
+                billingStatus = 'failed';
+                await supabase.from('whatsapp_wallet_transactions').insert({
+                    organization_id: params.organization_id,
+                    type: 'failed_debit',
+                    amount_paise: -chargedAmount,
+                    balance_after_paise: Number(wallet.balance_paise || 0),
+                    currency: DEFAULT_BILLING_CURRENCY,
+                    status: 'failed',
+                    reference_type: params.source || 'message',
+                    reference_id: params.message_id || params.wa_message_id || params.campaign_id || null,
+                    description: `Insufficient wallet balance for ${category} WhatsApp message charge`,
+                    metadata: { category, template_name: params.template_name || null },
+                });
+            }
+
+            if (params.message_id) {
+                await supabase
+                    .from('w_messages')
+                    .update({
+                        billing_category: category,
+                        billing_amount_paise: chargedAmount,
+                        billing_status: billingStatus,
+                    })
+                    .eq('id', params.message_id);
+            }
+        } else if (params.message_id) {
+            await supabase
+                .from('w_messages')
+                .update({
+                    billing_category: category,
+                    billing_amount_paise: 0,
+                    billing_status: 'free',
+                })
+                .eq('id', params.message_id);
+        }
+
+        await supabase.from('whatsapp_message_usage_logs').insert({
+            organization_id: params.organization_id,
+            wa_account_id: params.wa_account_id || null,
+            campaign_id: params.campaign_id || null,
+            conversation_id: params.conversation_id || null,
+            contact_id: params.contact_id || null,
+            message_id: params.message_id || null,
+            wa_message_id: params.wa_message_id || null,
+            direction: 'outbound',
+            source: params.source || 'system',
+            category,
+            template_name: params.template_name || null,
+            recipient_country: DEFAULT_BILLING_MARKET,
+            rate_paise: chargedAmount,
+            meta_cost_paise: Number(rate.pass_through_rate_paise || chargedAmount),
+            markup_paise: Number(rate.markup_paise || 0),
+            charged_amount_paise: chargedAmount,
+            billable: chargedAmount > 0,
+            billing_status: billingStatus,
+            delivery_status: 'sent',
+            wallet_transaction_id: walletTransactionId,
+            metadata: {
+                market: DEFAULT_BILLING_MARKET,
+                currency: DEFAULT_BILLING_CURRENCY,
+            },
+        });
+    } catch (err: any) {
+        console.warn('[billing] Failed to record WhatsApp message usage:', err?.message || err);
+    }
+}
+
+async function getOrganizationPlanLimits(organizationId: string) {
+    const { data: org } = await supabase
+        .from('organizations')
+        .select('plan_id')
+        .eq('id', organizationId)
+        .maybeSingle();
+
+    const planId = org?.plan_id || 'free';
+    const { data: plan } = await supabase
+        .from('whatsapp_subscription_plans')
+        .select('id, name, limits')
+        .eq('id', planId)
+        .maybeSingle();
+
+    return {
+        plan_id: plan?.id || planId,
+        plan_name: plan?.name || planId,
+        limits: plan?.limits || {},
+    };
+}
+
+async function countBroadcastAudience(organizationId: string, audienceTag?: string | null, csvData?: any[] | null) {
+    if (Array.isArray(csvData)) {
+        return csvData.filter(row => row?.phone || row?.wa_id).length;
+    }
+
+    let query = supabase
+        .from('w_contacts')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .eq('contact_type', 'individual');
+
+    if (audienceTag) query = query.contains('tags', [audienceTag]);
+
+    const { count, error } = await query;
+    if (error) throw error;
+    return Number(count || 0);
+}
+
+async function getBroadcastCampaignsThisMonth(organizationId: string) {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+    const { count, error } = await supabase
+        .from('w_campaigns')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .gte('created_at', monthStart);
+    if (error) throw error;
+    return Number(count || 0);
+}
+
+async function buildBroadcastBillingEstimate(params: {
+    organization_id: string;
+    audience_tag?: string | null;
+    csv_data?: any[] | null;
+    template_category?: any;
+}) {
+    const category = normalizeWhatsappBillingCategory(params.template_category, 'marketing');
+    const rate = await getActiveWhatsappRate(category);
+    const audienceCount = await countBroadcastAudience(params.organization_id, params.audience_tag || null, params.csv_data || null);
+    const estimatedCostPaise = audienceCount * Number(rate.rate_paise || 0);
+    const [{ data: wallet }, planInfo, campaignsThisMonth] = await Promise.all([
+        supabase
+            .from('whatsapp_wallets')
+            .select('balance_paise, currency')
+            .eq('organization_id', params.organization_id)
+            .maybeSingle(),
+        getOrganizationPlanLimits(params.organization_id),
+        getBroadcastCampaignsThisMonth(params.organization_id),
+    ]);
+
+    const walletBalancePaise = Number(wallet?.balance_paise || 0);
+    const broadcastsLimit = Number(planInfo.limits?.broadcasts_per_month ?? 0);
+    const broadcastsRemaining = broadcastsLimit < 0 ? -1 : Math.max(0, broadcastsLimit - campaignsThisMonth);
+    const allowedByPlan = broadcastsLimit < 0 || campaignsThisMonth < broadcastsLimit;
+    const enoughWallet = estimatedCostPaise <= walletBalancePaise;
+
+    return {
+        category,
+        audience_count: audienceCount,
+        rate_paise: Number(rate.rate_paise || 0),
+        estimated_cost_paise: estimatedCostPaise,
+        wallet_balance_paise: walletBalancePaise,
+        wallet_after_paise: walletBalancePaise - estimatedCostPaise,
+        enough_wallet: enoughWallet,
+        plan: {
+            id: planInfo.plan_id,
+            name: planInfo.plan_name,
+            broadcasts_per_month: broadcastsLimit,
+            broadcasts_used_this_month: campaignsThisMonth,
+            broadcasts_remaining: broadcastsRemaining,
+            allowed: allowedByPlan,
+        },
+        can_launch: audienceCount > 0 && enoughWallet && allowedByPlan,
+    };
+}
+
+async function enforcePlanResourceLimit(params: {
+    organization_id: string;
+    resource: 'contacts' | 'flows' | 'ai_agents' | 'agents' | 'numbers';
+    table: string;
+    countColumn?: string;
+    filters?: Record<string, any>;
+    label: string;
+}) {
+    const planInfo = await getOrganizationPlanLimits(params.organization_id);
+    const limit = Number(planInfo.limits?.[params.resource] ?? -1);
+    if (limit < 0) return { allowed: true, limit, used: 0, plan: planInfo };
+
+    let query = supabase
+        .from(params.table)
+        .select(params.countColumn || 'id', { count: 'exact', head: true })
+        .eq('organization_id', params.organization_id);
+
+    for (const [key, value] of Object.entries(params.filters || {})) {
+        if (Array.isArray(value)) query = query.in(key, value);
+        else query = query.eq(key, value);
+    }
+
+    const { count, error } = await query;
+    if (error) throw error;
+    const used = Number(count || 0);
+
+    if (used >= limit) {
+        const err: any = new Error(`${params.label} limit reached for ${planInfo.plan_name} plan (${used}/${limit}). Upgrade your plan to add more.`);
+        err.statusCode = 402;
+        err.limit = { resource: params.resource, used, limit, plan: planInfo };
+        throw err;
+    }
+
+    return { allowed: true, limit, used, plan: planInfo };
+}
 
 const UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -190,6 +545,55 @@ function getMetaSendErrorMessage(error: any) {
         error?.fbtrace_id ? `trace ${error.fbtrace_id}` : ''
     ].filter(Boolean);
     return parts.join(' | ') || 'API Error';
+}
+
+function getMetaErrorMessage(data: any, fallback: string) {
+    const error = data?.error || data;
+    if (!error) return fallback;
+    const parts = [
+        error.message,
+        error.error_user_msg,
+        error.error_data?.details,
+        error.error_subcode ? `subcode ${error.error_subcode}` : '',
+        error.fbtrace_id ? `trace ${error.fbtrace_id}` : ''
+    ].filter(Boolean);
+    return parts.join(' | ') || fallback;
+}
+
+function buildAccountReadinessSummary(account: any) {
+    const isMeta = Boolean(account?.whatsapp_business_account_id || account?.access_token_encrypted);
+    if (!isMeta) {
+        return {
+            connection_type: 'qr_session',
+            send_ready: account?.status === 'connected' || account?.status === 'active',
+            diagnostics_summary: account?.status === 'connected' || account?.status === 'active'
+                ? 'QR testing session connected.'
+                : 'QR testing session is not connected.'
+        };
+    }
+
+    const issues = [];
+    if (!account?.phone_number_id) issues.push('Missing phone number ID');
+    if (!account?.whatsapp_business_account_id) issues.push('Missing WABA ID');
+    if (!account?.access_token_encrypted) issues.push('Missing Meta access token');
+    if (account?.status === 'disconnected') issues.push('Account disconnected');
+
+    return {
+        connection_type: 'meta_cloud_api',
+        send_ready: issues.length === 0,
+        diagnostics_summary: issues.length === 0
+            ? 'Cloud API account has required saved credentials. Run diagnostics for live Meta permission check.'
+            : issues.join(', ')
+    };
+}
+
+function toSafeWhatsappAccount(account: any) {
+    if (!account) return account;
+    const { access_token_encrypted, ...safe } = account;
+    return {
+        ...safe,
+        ...buildAccountReadinessSummary(account)
+    };
 }
 
 async function getMetaAccountDiagnostics(account: any) {
@@ -499,6 +903,171 @@ function decodeSupabaseJwtRole(token: string | null | undefined): string | null 
 const SUPABASE_KEY_ROLE = decodeSupabaseJwtRole(SUPABASE_SERVICE_ROLE_KEY);
 const INVITE_TTL_HOURS = Number(process.env.TEAM_INVITE_TTL_HOURS || 24);
 
+app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const userId = req.user?.id;
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+    const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
+
+    const fallbackRateCards = Object.values(DEFAULT_WHATSAPP_RATE_CARD).map(rate => ({
+        market: DEFAULT_BILLING_MARKET,
+        currency: DEFAULT_BILLING_CURRENCY,
+        category: rate.category,
+        label: rate.label,
+        rate_paise: rate.rate_paise,
+        pass_through_rate_paise: rate.rate_paise,
+        markup_paise: 0,
+        description: rate.description,
+        notes: 'Fallback rate. Run the billing migration to manage rates from Supabase.'
+    }));
+
+    try {
+        if (!orgId) return res.status(400).json({ error: 'organization_id is required' });
+
+        const [
+            orgResult,
+            plansResult,
+            walletResult,
+            rateCardsResult,
+            monthUsageResult,
+            todayUsageResult,
+            transactionsResult
+        ] = await Promise.all([
+            supabase
+                .from('organizations')
+                .select('id, name, plan_id, plan_status, plan_start_date, plan_end_date, billing_cycle, max_users, max_contacts')
+                .eq('id', orgId)
+                .maybeSingle(),
+            supabase
+                .from('whatsapp_subscription_plans')
+                .select('*')
+                .eq('is_active', true)
+                .order('sort_order', { ascending: true }),
+            supabase
+                .from('whatsapp_wallets')
+                .select('*')
+                .eq('organization_id', orgId)
+                .maybeSingle(),
+            supabase
+                .from('whatsapp_rate_cards')
+                .select('market, currency, category, rate_paise, pass_through_rate_paise, markup_paise, notes, effective_from')
+                .eq('market', DEFAULT_BILLING_MARKET)
+                .eq('currency', DEFAULT_BILLING_CURRENCY)
+                .eq('is_active', true)
+                .order('effective_from', { ascending: false }),
+            supabase
+                .from('whatsapp_message_usage_logs')
+                .select('category, charged_amount_paise, meta_cost_paise, billable, billing_status')
+                .eq('organization_id', orgId)
+                .gte('created_at', monthStart),
+            supabase
+                .from('whatsapp_message_usage_logs')
+                .select('category, charged_amount_paise')
+                .eq('organization_id', orgId)
+                .gte('created_at', todayStart),
+            supabase
+                .from('whatsapp_wallet_transactions')
+                .select('id, type, amount_paise, balance_after_paise, currency, status, description, reference_type, reference_id, created_at')
+                .eq('organization_id', orgId)
+                .order('created_at', { ascending: false })
+                .limit(8)
+        ]);
+
+        let walletData = walletResult.data;
+        if (!walletData && !walletResult.error && userId) {
+            const { data: createdWallet, error: createWalletError } = await supabase
+                .from('whatsapp_wallets')
+                .insert({ organization_id: orgId, currency: DEFAULT_BILLING_CURRENCY })
+                .select()
+                .maybeSingle();
+            if (!createWalletError && createdWallet) walletData = createdWallet;
+        }
+
+        const plans = plansResult.error ? [] : (plansResult.data || []);
+        const rateCardsFromDb = rateCardsResult.error
+            ? fallbackRateCards
+            : (rateCardsResult.data || []).reduce((acc: any[], row: any) => {
+                if (!acc.some(item => item.category === row.category)) {
+                    acc.push({
+                        ...row,
+                        label: DEFAULT_WHATSAPP_RATE_CARD[row.category]?.label || row.category,
+                        description: DEFAULT_WHATSAPP_RATE_CARD[row.category]?.description || ''
+                    });
+                }
+                return acc;
+            }, []);
+
+        const rateCards = rateCardsFromDb.length ? rateCardsFromDb : fallbackRateCards;
+        const monthUsageRows = monthUsageResult.error ? [] : (monthUsageResult.data || []);
+        const todayUsageRows = todayUsageResult.error ? [] : (todayUsageResult.data || []);
+
+        const emptyCategoryStats = Object.keys(DEFAULT_WHATSAPP_RATE_CARD).reduce((acc: any, category) => {
+            acc[category] = {
+                category,
+                label: DEFAULT_WHATSAPP_RATE_CARD[category].label,
+                message_count: 0,
+                charged_amount_paise: 0,
+                meta_cost_paise: 0
+            };
+            return acc;
+        }, {});
+
+        const categoryStats = monthUsageRows.reduce((acc: any, row: any) => {
+            const category = row.category || 'service';
+            if (!acc[category]) {
+                acc[category] = {
+                    category,
+                    label: DEFAULT_WHATSAPP_RATE_CARD[category]?.label || category,
+                    message_count: 0,
+                    charged_amount_paise: 0,
+                    meta_cost_paise: 0
+                };
+            }
+            acc[category].message_count += 1;
+            acc[category].charged_amount_paise += Number(row.charged_amount_paise || 0);
+            acc[category].meta_cost_paise += Number(row.meta_cost_paise || 0);
+            return acc;
+        }, emptyCategoryStats);
+
+        const monthSpendPaise = Object.values(categoryStats).reduce((sum: number, item: any) => sum + Number(item.charged_amount_paise || 0), 0);
+        const todaySpendPaise = todayUsageRows.reduce((sum: number, row: any) => sum + Number(row.charged_amount_paise || 0), 0);
+
+        const planId = orgResult.data?.plan_id || 'free';
+        const currentPlan = plans.find((plan: any) => plan.id === planId) || plans.find((plan: any) => plan.id === 'free') || null;
+
+        res.json({
+            organization: orgResult.data || { id: orgId, plan_id: 'free', plan_status: 'active' },
+            current_plan: currentPlan,
+            plans,
+            wallet: walletData || {
+                organization_id: orgId,
+                balance_paise: 0,
+                currency: DEFAULT_BILLING_CURRENCY,
+                low_balance_threshold_paise: 10000
+            },
+            spend: {
+                month_start: monthStart,
+                today_start: todayStart,
+                month_spend_paise: monthSpendPaise,
+                today_spend_paise: todaySpendPaise,
+                categories: Object.values(categoryStats)
+            },
+            rate_cards: rateCards,
+            recent_transactions: transactionsResult.error ? [] : (transactionsResult.data || []),
+            warnings: {
+                plans_table_missing: !!plansResult.error,
+                wallet_table_missing: !!walletResult.error,
+                usage_table_missing: !!monthUsageResult.error,
+                rate_card_table_missing: !!rateCardsResult.error
+            }
+        });
+    } catch (err: any) {
+        console.error('[billing/overview] Error:', err);
+        res.status(500).json({ error: err.message || 'Failed to load billing overview' });
+    }
+});
+
 console.log("Checking Env:", {
     SUPABASE_URL_PRESENT: !!SUPABASE_URL,
     KEY_PRESENT: !!SUPABASE_SERVICE_ROLE_KEY,
@@ -513,6 +1082,19 @@ function isUuid(value: string) {
 
 function isAllZeroUuid(value: string) {
     return String(value).toLowerCase() === '00000000-0000-0000-0000-000000000000';
+}
+
+function cleanText(value: any, maxLength = 500) {
+    return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength);
+}
+
+function cleanNullableText(value: any, maxLength = 500) {
+    const cleaned = cleanText(value, maxLength);
+    return cleaned || null;
+}
+
+function isValidEmail(value: string) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 // ====== Global / Shared Constants ======
@@ -1335,12 +1917,20 @@ app.get("/api/wa/connect/start", (req, res) => {
 
     // For Embedded Signup, it's often handled via FB SDK on client, returning a code/token to backend.
     // Assuming Frontend gets the "code" and calls backend to exchange/save.
-    res.json({ appId, configId });
+    res.json({
+        appId,
+        configId,
+        redirectUri,
+        scope,
+        hostedSignupUrl: buildMetaEmbeddedSignupUrl(),
+        sessionInfoVersion: META_EMBEDDED_SESSION_INFO_VERSION,
+        version: META_EMBEDDED_SIGNUP_VERSION
+    });
 });
 
 // 2. Callback: Exchange code for long-lived token & save
-app.post("/api/wa/connect/callback", async (req, res) => {
-    const { code, waba_id, organization_id } = req.body;
+app.post("/api/wa/connect/callback", authMiddleware, async (req: any, res) => {
+    const { code, waba_id } = req.body;
 
     if (!code) return res.status(400).json({ error: "Missing code" });
 
@@ -1349,37 +1939,58 @@ app.post("/api/wa/connect/callback", async (req, res) => {
         const appId = process.env.META_APP_ID;
         const appSecret = process.env.META_APP_SECRET;
         const redirectUri = process.env.META_REDIRECT_URI;
+        const targetOrgId = req.organization_id;
 
-        const tokenUrl = `https://graph.facebook.com/v21.0/oauth/access_token` +
+        if (!targetOrgId) return res.status(400).json({ error: 'No organization found for this user.' });
+        if (!appId || !appSecret) {
+            return res.status(500).json({ error: 'Meta app configuration is missing. Set META_APP_ID and META_APP_SECRET.' });
+        }
+
+        const tokenUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/oauth/access_token` +
             `?client_id=${appId}` +
             `&client_secret=${appSecret}` +
             `&code=${code}` +
             (redirectUri ? `&redirect_uri=${encodeURIComponent(redirectUri)}` : '');
         const tokenRes = await fetch(tokenUrl);
-        const tokenData = await tokenRes.json();
+        const tokenData: any = await tokenRes.json();
 
-        if (!tokenData.access_token) throw new Error("Failed to get access token");
+        if (!tokenRes.ok || tokenData.error || !tokenData.access_token) {
+            return res.status(400).json({
+                error: getMetaErrorMessage(tokenData, 'Meta could not exchange the signup code. Please retry Connect with Meta.')
+            });
+        }
 
         const shortToken = tokenData.access_token;
 
         // Exchange for long-lived token (System User approach is best, but for Embedded flow:)
-        const longTokenUrl = `https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${shortToken}`;
+        const longTokenUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${encodeURIComponent(shortToken)}`;
         const longRes = await fetch(longTokenUrl);
-        const longData = await longRes.json();
+        const longData: any = await longRes.json();
 
         const finalToken = longData.access_token || shortToken;
         const insertedAccounts = [];
+        const discoveryErrors = [];
 
         // --- NEW: Automatically Discover WABA IDs ---
         // Instead of requiring 'waba_id' from frontend, we fetch all WABAs a user has access to.
-        const wabaDiscoveryUrl = `https://graph.facebook.com/v21.0/me/whatsapp_business_accounts?access_token=${finalToken}`;
+        const wabaDiscoveryUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/me/whatsapp_business_accounts?access_token=${encodeURIComponent(finalToken)}`;
         const wabaRes = await fetch(wabaDiscoveryUrl);
-        const wabaData = await wabaRes.json();
+        const wabaData: any = await wabaRes.json();
 
-        const discoveredWabaIds = wabaData.data || (waba_id ? [{ id: waba_id }] : []);
+        if (!wabaRes.ok || wabaData.error) {
+            return res.status(400).json({
+                error: getMetaErrorMessage(wabaData, 'Meta could not list WhatsApp Business Accounts. Make sure the logged-in admin granted WhatsApp permissions.')
+            });
+        }
+
+        const discoveredWabaIds = Array.isArray(wabaData.data) && wabaData.data.length
+            ? wabaData.data
+            : (waba_id ? [{ id: waba_id }] : []);
         
         if (discoveredWabaIds.length === 0) {
-            throw new Error("No WhatsApp Business Accounts found for this user.");
+            return res.status(400).json({
+                error: 'No WhatsApp Business Account was found. Select/create a WABA during Meta onboarding, add a phone number, then try again.'
+            });
         }
 
         // Process each discovered WABA
@@ -1387,36 +1998,80 @@ app.post("/api/wa/connect/callback", async (req, res) => {
             const currentWabaId = waba.id;
             
             // Fetch Phone Numbers for this specific WABA
-            const numbersUrl = `https://graph.facebook.com/v21.0/${currentWabaId}/phone_numbers?access_token=${finalToken}`;
+            const numbersUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/${currentWabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status&access_token=${encodeURIComponent(finalToken)}`;
             const numRes = await fetch(numbersUrl);
-            const numData = await numRes.json();
+            const numData: any = await numRes.json();
 
-            if (numData.data) {
+            if (!numRes.ok || numData.error) {
+                discoveryErrors.push(getMetaErrorMessage(numData, `Could not fetch phone numbers for WABA ${currentWabaId}`));
+                continue;
+            }
+
+            if (numData.data?.length) {
                 for (const item of numData.data) {
                     const phone_number_id = item.id;
                     const display_phone_number = item.display_phone_number;
 
+                    const { data: existingAccount, error: existingAccountErr } = await supabase
+                        .from('w_wa_accounts')
+                        .select('id')
+                        .eq('organization_id', targetOrgId)
+                        .eq('phone_number_id', phone_number_id)
+                        .maybeSingle();
+                    if (existingAccountErr) throw existingAccountErr;
+
+                    if (!existingAccount?.id) {
+                        await enforcePlanResourceLimit({
+                            organization_id: targetOrgId,
+                            resource: 'numbers',
+                            table: 'w_wa_accounts',
+                            filters: { status: ['connected', 'active'] },
+                            label: 'WhatsApp number',
+                        });
+                    }
+
                     // Insert or Update in wa_accounts
                     const { data, error } = await supabase.from('w_wa_accounts').upsert({
-                        organization_id: organization_id || DEFAULT_ORG_ID,
+                        organization_id: targetOrgId,
                         whatsapp_business_account_id: currentWabaId,
                         phone_number_id,
                         display_phone_number,
+                        name: item.verified_name || display_phone_number || 'WhatsApp Business',
                         access_token_encrypted: encryptToken(finalToken),
                         status: 'connected'
                     }, { onConflict: 'phone_number_id' }).select();
 
-                    if (error) console.error(`DB Save Error for phone ${phone_number_id}:`, error);
-                    else if (data && data[0]) insertedAccounts.push(data[0]);
+                    if (error) {
+                        console.error(`DB Save Error for phone ${phone_number_id}:`, error);
+                        discoveryErrors.push(`Could not save phone ${display_phone_number || phone_number_id}: ${error.message}`);
+                    } else if (data && data[0]) {
+                        const diagnostics = await getMetaAccountDiagnostics(data[0]);
+                        insertedAccounts.push({
+                            ...toSafeWhatsappAccount(data[0]),
+                            ...buildAccountReadinessSummary(data[0]),
+                            send_ready: diagnostics.send_ready,
+                            diagnostics_summary: diagnostics.send_ready ? 'Cloud API send access verified.' : diagnostics.issues.join(', '),
+                            diagnostics
+                        });
+                    }
                 }
+            } else {
+                discoveryErrors.push(`No phone numbers found in WABA ${currentWabaId}. Add/verify a dedicated number in Meta onboarding first.`);
             }
         }
 
-        res.json({ success: true, accounts: insertedAccounts });
+        if (insertedAccounts.length === 0) {
+            return res.status(400).json({
+                error: discoveryErrors[0] || 'No WhatsApp phone number could be connected. Add a dedicated number and complete OTP verification in Meta.',
+                details: discoveryErrors
+            });
+        }
+
+        res.json({ success: true, accounts: insertedAccounts, warnings: discoveryErrors });
 
     } catch (e: any) {
         console.error("Connect Error:", e.message);
-        res.status(500).json({ error: e.message });
+        res.status(e.statusCode || 500).json({ error: e.message, limit: e.limit });
     }
 });
 
@@ -3588,6 +4243,14 @@ app.post('/api/contacts', authMiddleware, async (req: any, res) => {
             return res.status(409).json({ error: 'Contact already exists' });
         }
 
+        await enforcePlanResourceLimit({
+            organization_id,
+            resource: 'contacts',
+            table: 'w_contacts',
+            filters: { contact_type: 'individual' },
+            label: 'Contact',
+        });
+
         const { data, error } = await supabase
             .from('w_contacts')
             .insert({
@@ -3613,7 +4276,7 @@ app.post('/api/contacts', authMiddleware, async (req: any, res) => {
         res.status(201).json(data);
     } catch (err: any) {
         console.error('Error creating contact:', err);
-        res.status(500).json({ error: err.message || 'Failed to create contact' });
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create contact', limit: err.limit });
     }
 });
 
@@ -3923,6 +4586,16 @@ app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
             .ilike('email', normalizedEmail)
             .maybeSingle();
 
+        if (!existing?.id) {
+            await enforcePlanResourceLimit({
+                organization_id: orgId,
+                resource: 'agents',
+                table: 'organization_members',
+                filters: { role: ['agent', 'admin'] },
+                label: 'Team member',
+            });
+        }
+
         // 2. Create user via Supabase Admin (Requires service_role key)
         let userId: string;
         if (existing?.user_id) {
@@ -4021,7 +4694,7 @@ app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
 
         res.json({ success: true, message: 'Member invited successfully and email sent', expires_at: inviteExpiresAt.toISOString() });
     } catch (err: any) {
-        res.status(500).json({ error: err.message });
+        res.status(err.statusCode || 500).json({ error: err.message, limit: err.limit });
     }
 });
 
@@ -4515,10 +5188,17 @@ app.post('/api/flows', authMiddleware, async (req: any, res) => {
             updated_by_user_id: req.user?.id || null,
         };
         if (!payload.name) return res.status(400).json({ error: 'Flow name is required' });
+        await enforcePlanResourceLimit({
+            organization_id: orgId,
+            resource: 'flows',
+            table: 'w_flows',
+            filters: { status: ['draft', 'active', 'paused'] },
+            label: 'Flow',
+        });
         const { data, error } = await supabase.from('w_flows').insert(payload).select().single();
         if (error) throw error;
         res.status(201).json(data);
-    } catch(e: any) { res.status(500).json({error: e.message}); }
+    } catch(e: any) { res.status(e.statusCode || 500).json({error: e.message, limit: e.limit}); }
 });
 
 app.put('/api/flows/:id', authMiddleware, async (req: any, res) => {
@@ -4840,6 +5520,13 @@ app.post('/api/agents', authMiddleware, async (req: any, res) => {
             return res.status(400).json({ error: 'Agent name is required' });
         }
 
+        await enforcePlanResourceLimit({
+            organization_id,
+            resource: 'ai_agents',
+            table: 'bot_agents',
+            label: 'AI agent',
+        });
+
         const knowledgePayload = await buildAgentKnowledgePayload(organization_id, req.body || {});
 
         const { data, error } = await supabase
@@ -4873,7 +5560,7 @@ app.post('/api/agents', authMiddleware, async (req: any, res) => {
         res.status(201).json(data);
     } catch (err: any) {
         console.error('Error creating agent:', err);
-        res.status(500).json({ error: err.message || 'Failed to create agent' });
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create agent', limit: err.limit });
     }
 });
 
@@ -5978,6 +6665,88 @@ app.post("/api/conversations/:id/read", async (req, res) => {
 
 // ====== WhatsApp Accounts & Meta API Connection ======
 
+app.get('/api/whatsapp/number-requests', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+
+    try {
+        if (!orgId) return res.status(400).json({ error: 'No organization found' });
+
+        const { data, error } = await supabase
+            .from('whatsapp_number_requests')
+            .select('id, business_name, country, preferred_region, use_case, expected_monthly_messages, contact_name, contact_email, contact_phone, status, admin_notes, created_at, updated_at')
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        if (error) throw error;
+        res.json({ requests: data || [] });
+    } catch (err: any) {
+        console.error('[whatsapp/number-requests] List error:', err);
+        res.status(500).json({ error: err.message || 'Failed to load number requests' });
+    }
+});
+
+app.post('/api/whatsapp/number-requests', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const userId = req.user?.id || null;
+
+    try {
+        if (!orgId) return res.status(400).json({ error: 'No organization found' });
+
+        const businessName = cleanText(req.body?.business_name, 160);
+        const country = cleanText(req.body?.country || 'India', 80);
+        const preferredRegion = cleanNullableText(req.body?.preferred_region, 120);
+        const useCase = cleanText(req.body?.use_case, 800);
+        const contactName = cleanNullableText(req.body?.contact_name, 120);
+        const contactEmail = cleanNullableText(req.body?.contact_email, 160);
+        const contactPhone = cleanNullableText(req.body?.contact_phone, 40);
+        const expectedMonthlyMessagesRaw = req.body?.expected_monthly_messages;
+        const expectedMonthlyMessages = expectedMonthlyMessagesRaw === '' || expectedMonthlyMessagesRaw === null || expectedMonthlyMessagesRaw === undefined
+            ? null
+            : Number(expectedMonthlyMessagesRaw);
+
+        const errors: string[] = [];
+        if (!businessName) errors.push('Business name is required.');
+        if (!country) errors.push('Country is required.');
+        if (!useCase || useCase.length < 20) errors.push('Use case must explain the business requirement in at least 20 characters.');
+        if (contactEmail && !isValidEmail(contactEmail)) errors.push('Contact email is invalid.');
+        if (expectedMonthlyMessages !== null && (!Number.isInteger(expectedMonthlyMessages) || expectedMonthlyMessages < 0)) {
+            errors.push('Expected monthly messages must be a positive whole number.');
+        }
+        if (!contactEmail && !contactPhone) errors.push('Provide at least one contact email or phone number.');
+
+        if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+        const { data, error } = await supabase
+            .from('whatsapp_number_requests')
+            .insert({
+                organization_id: orgId,
+                user_id: userId,
+                business_name: businessName,
+                country,
+                preferred_region: preferredRegion,
+                use_case: useCase,
+                expected_monthly_messages: expectedMonthlyMessages,
+                contact_name: contactName,
+                contact_email: contactEmail,
+                contact_phone: contactPhone,
+                status: 'requested',
+                metadata: {
+                    source: 'self_serve_app',
+                    official_onboarding_model: 'assisted_request'
+                }
+            })
+            .select('id, business_name, country, preferred_region, use_case, expected_monthly_messages, contact_name, contact_email, contact_phone, status, admin_notes, created_at, updated_at')
+            .single();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, request: data });
+    } catch (err: any) {
+        console.error('[whatsapp/number-requests] Create error:', err);
+        res.status(500).json({ error: err.message || 'Failed to submit number request' });
+    }
+});
+
 // Get list of connected accounts
 app.get('/api/whatsapp/accounts', authMiddleware, async (req, res) => {
     const orgId = (req as any).organization_id;
@@ -5994,10 +6763,7 @@ app.get('/api/whatsapp/accounts', authMiddleware, async (req, res) => {
 
         if (error) throw error;
         // Strip encrypted tokens from the API response for security
-        const safeData = (data || []).map((acc: any) => {
-            const { access_token_encrypted, ...safe } = acc;
-            return safe;
-        });
+        const safeData = (data || []).map((acc: any) => toSafeWhatsappAccount(acc));
         res.json(safeData);
     } catch (err: any) {
         console.error('Error fetching accounts:', err);
@@ -6037,13 +6803,32 @@ app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
 
         const resolvedDisplayPhone = verifyData.display_phone_number || display_phone_number || null;
         const resolvedName = verifyData.verified_name || name || 'WhatsApp Business API';
+        const normalizedPhoneNumberId = String(phone_number_id).trim();
+
+        const { data: existingAccount, error: existingAccountErr } = await supabase
+            .from('w_wa_accounts')
+            .select('id')
+            .eq('organization_id', orgId)
+            .eq('phone_number_id', normalizedPhoneNumberId)
+            .maybeSingle();
+        if (existingAccountErr) throw existingAccountErr;
+
+        if (!existingAccount?.id) {
+            await enforcePlanResourceLimit({
+                organization_id: orgId,
+                resource: 'numbers',
+                table: 'w_wa_accounts',
+                filters: { status: ['connected', 'active'] },
+                label: 'WhatsApp number',
+            });
+        }
 
         // Upsert the account (token is AES-256 encrypted before storage)
         const { data, error } = await supabase
             .from('w_wa_accounts')
             .upsert({
                 organization_id: orgId,
-                phone_number_id: String(phone_number_id).trim(),
+                phone_number_id: normalizedPhoneNumberId,
                 whatsapp_business_account_id: waba_id ? String(waba_id).trim() : null,
                 access_token_encrypted: encryptToken(String(access_token).trim()),
                 display_phone_number: resolvedDisplayPhone,
@@ -6057,10 +6842,10 @@ app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
             console.error('Supabase upsert error:', error);
             throw new Error(error.message);
         }
-        res.json({ success: true, account: data });
+        res.json({ success: true, account: toSafeWhatsappAccount(data) });
     } catch (err: any) {
         console.error('Error saving Meta account:', err);
-        res.status(500).json({ error: err.message });
+        res.status(err.statusCode || 500).json({ error: err.message, limit: err.limit });
     }
 });
 
@@ -8053,6 +8838,21 @@ async function processCampaign(campaign: any) {
             return;
         }
 
+        const billingCategory = normalizeWhatsappBillingCategory(
+            campaign.billing_category || campaign.variable_mapping?._template_category,
+            'marketing'
+        );
+        const campaignRate = await getActiveWhatsappRate(billingCategory);
+        const estimatedCost = contactsToProcess.length * Number(campaignRate.rate_paise || 0);
+        await supabase
+            .from('w_campaigns')
+            .update({
+                billing_category: billingCategory,
+                estimated_cost_paise: estimatedCost,
+                billing_status: estimatedCost > 0 ? 'estimated' : 'charged',
+            })
+            .eq('id', campaign.id);
+
         let sent = 0;
         let failed = 0;
         const results = [];
@@ -8224,7 +9024,7 @@ async function processCampaign(campaign: any) {
                                 }).filter((button: any) => button.text)
                                 : [];
 
-                            await storeMessage({
+                            const storedMessage = await storeMessage({
                                 organization_id: orgId,
                                 conversation_id: conv.id,
                                 contact_id: currentContactId,
@@ -8248,6 +9048,19 @@ async function processCampaign(campaign: any) {
                                 },
                                 sender_type: 'system',
                                 automation_source: 'broadcast',
+                            });
+
+                            await recordWhatsappMessageUsage({
+                                organization_id: orgId,
+                                wa_account_id,
+                                campaign_id: campaign.id,
+                                conversation_id: conv.id,
+                                contact_id: currentContactId,
+                                message_id: storedMessage?.id || null,
+                                wa_message_id: wa_message_id || null,
+                                category: billingCategory,
+                                template_name: campaign.template_name,
+                                source: 'broadcast',
                             });
                         }
                     }
@@ -8276,6 +9089,11 @@ async function processCampaign(campaign: any) {
             sent_count: sent,
             failed_count: failed,
             results: results
+        }).eq('id', campaign.id);
+
+        await supabase.from('w_campaigns').update({
+            actual_cost_paise: sent * Number(campaignRate.rate_paise || 0),
+            billing_status: failed === contactsToProcess.length ? 'failed' : 'charged',
         }).eq('id', campaign.id);
 
     } catch (err) {
@@ -8328,6 +9146,25 @@ app.post('/api/broadcast/header-media', authMiddleware, upload.single('file'), a
     } catch (err: any) {
         console.error('Broadcast header media upload error:', err);
         res.status(500).json({ error: err.message || 'Failed to upload header media' });
+    }
+});
+
+app.post('/api/broadcast/estimate', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const { audience_tag, csv_data, template_category } = req.body || {};
+
+    try {
+        if (!orgId) return res.status(400).json({ error: 'organization_id is required' });
+        const estimate = await buildBroadcastBillingEstimate({
+            organization_id: orgId,
+            audience_tag: audience_tag || null,
+            csv_data: Array.isArray(csv_data) ? csv_data : null,
+            template_category,
+        });
+        res.json(estimate);
+    } catch (err: any) {
+        console.error('[broadcast/estimate] Error:', err);
+        res.status(500).json({ error: err.message || 'Failed to estimate broadcast cost' });
     }
 });
 
@@ -8398,7 +9235,7 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
         }
 
         if (account.whatsapp_business_account_id) {
-            const tplRes = await fetch(`https://graph.facebook.com/v20.0/${account.whatsapp_business_account_id}/message_templates?fields=name,language,status,components&limit=250`, {
+            const tplRes = await fetch(`https://graph.facebook.com/v20.0/${account.whatsapp_business_account_id}/message_templates?fields=name,language,status,category,components&limit=250`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             const tplJson = await tplRes.json();
@@ -8420,6 +9257,9 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
 
             if (body?.text && !variableMapping._template_body) variableMapping._template_body = body.text;
             if (footer?.text) variableMapping._template_footer = footer.text;
+            if (template?.category) {
+                variableMapping._template_category = normalizeWhatsappBillingCategory(template.category, 'marketing');
+            }
             variableMapping._template_buttons = templateButtons
                 .map((button: any, index: number) => ({
                     index,
@@ -8463,6 +9303,30 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
             }
         }
 
+        const billingCategory = normalizeWhatsappBillingCategory(variableMapping._template_category, 'marketing');
+        const estimate = await buildBroadcastBillingEstimate({
+            organization_id: orgId,
+            audience_tag: audience_tag || null,
+            csv_data: Array.isArray(csv_data) ? csv_data : null,
+            template_category: billingCategory,
+        });
+
+        if (estimate.audience_count <= 0) {
+            return res.status(400).json({ error: 'No recipients found for this broadcast audience.', estimate });
+        }
+        if (!estimate.plan.allowed) {
+            return res.status(402).json({
+                error: `Your ${estimate.plan.name} plan has reached its monthly broadcast limit. Upgrade your plan to launch more campaigns.`,
+                estimate,
+            });
+        }
+        if (!estimate.enough_wallet) {
+            return res.status(402).json({
+                error: `Insufficient wallet balance. Estimated cost is ₹${(estimate.estimated_cost_paise / 100).toLocaleString('en-IN')} but wallet balance is ₹${(estimate.wallet_balance_paise / 100).toLocaleString('en-IN')}. Recharge your wallet before launching.`,
+                estimate,
+            });
+        }
+
         const isScheduled = scheduled_at && new Date(scheduled_at) > new Date();
         console.log('[broadcast/send] saving variable_mapping', {
             template_name,
@@ -8504,6 +9368,15 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
         if (mappingPersistErr) {
             console.error('[broadcast/send] Failed to persist campaign variable_mapping after insert:', mappingPersistErr);
         }
+
+        await supabase
+            .from('w_campaigns')
+            .update({
+                billing_category: billingCategory,
+                estimated_cost_paise: estimate.estimated_cost_paise,
+                billing_status: estimate.estimated_cost_paise > 0 ? 'estimated' : 'charged',
+            })
+            .eq('id', campaign.id);
 
         const campaignForProcessing = {
             ...(persistedCampaign || campaign),

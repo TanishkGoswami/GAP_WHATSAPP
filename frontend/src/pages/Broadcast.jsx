@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info } from 'lucide-react'
+import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
+import { formatINRFromPaise } from '../config/whatsappPricing'
 
 const STEPS = [
     { id: 1, name: 'Details', icon: LayoutGrid },
@@ -142,6 +143,9 @@ export default function Broadcast() {
     const [isLoading, setIsLoading] = useState({ accounts: true, tags: true, templates: true, contacts: false })
     const [isSending, setIsSending] = useState(false)
     const [sendResult, setSendResult] = useState(null)
+    const [billingEstimate, setBillingEstimate] = useState(null)
+    const [isEstimating, setIsEstimating] = useState(false)
+    const [estimateError, setEstimateError] = useState('')
 
     const selectedTemplate = templates.find(t => t.name === campaign.template_name && t.language === campaign.template_language)
         || templates.find(t => t.name === campaign.template_name)
@@ -158,6 +162,8 @@ export default function Broadcast() {
         : campaign.audience_tag 
             ? contacts.filter(c => Array.isArray(c.tags) && c.tags.includes(campaign.audience_tag))
             : contacts;
+
+    const selectedTemplateCategory = selectedTemplate?.category || campaign.variable_mapping?._template_category || 'MARKETING'
 
     useEffect(() => {
         if (!token) return;
@@ -214,6 +220,39 @@ export default function Broadcast() {
             if (interval) clearInterval(interval);
         }
     }, [activeTab, token]);
+
+    useEffect(() => {
+        if (currentStep !== 4 || !token || !campaign.template_name) return;
+        let cancelled = false;
+
+        const fetchEstimate = async () => {
+            setIsEstimating(true);
+            setEstimateError('');
+            try {
+                const res = await apiCall(`${API_URL}/api/broadcast/estimate`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        audience_tag: campaign.audience_tag === 'CSV_UPLOAD' ? null : campaign.audience_tag,
+                        csv_data: campaign.audience_tag === 'CSV_UPLOAD' ? csvData : null,
+                        template_category: selectedTemplateCategory,
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Failed to estimate broadcast cost');
+                if (!cancelled) setBillingEstimate(data);
+            } catch (err) {
+                if (!cancelled) {
+                    setBillingEstimate(null);
+                    setEstimateError(err.message || 'Failed to estimate broadcast cost');
+                }
+            } finally {
+                if (!cancelled) setIsEstimating(false);
+            }
+        };
+
+        fetchEstimate();
+        return () => { cancelled = true; };
+    }, [currentStep, token, campaign.audience_tag, campaign.template_name, selectedTemplateCategory, csvData]);
 
     const deleteCampaign = async (id) => {
         const confirmed = await confirmDialog('Are you sure you want to cancel and delete this scheduled campaign?', {
@@ -387,6 +426,14 @@ export default function Broadcast() {
 
     const handleLaunch = async () => {
         if (!(await validateHeaderMediaUrl())) return;
+        if (billingEstimate && !billingEstimate.can_launch) {
+            const reason = !billingEstimate.plan?.allowed
+                ? 'Your current plan has reached its monthly broadcast limit.'
+                : !billingEstimate.enough_wallet
+                    ? 'Wallet balance is not enough for this campaign.'
+                    : 'Broadcast cannot be launched with the current estimate.';
+            return alertDialog(reason, { title: 'Billing check failed', tone: 'warning' });
+        }
         setIsSending(true);
         setSendResult(null);
 
@@ -399,6 +446,7 @@ export default function Broadcast() {
             }
         });
         finalMapping._template_body = selectedTemplate?.components?.find(c => c.type === 'BODY')?.text || `[Template: ${campaign.template_name}]`;
+        finalMapping._template_category = selectedTemplateCategory;
         if (needsHeaderMedia) {
             finalMapping._header_media_type = selectedHeaderFormat.toLowerCase();
             finalMapping._header_media_url = headerMediaUrl.trim();
@@ -1067,8 +1115,77 @@ export default function Broadcast() {
                                     </div>
                                 </div>
 
+                                <div className={`rounded-xl border p-4 text-left ${
+                                    billingEstimate?.can_launch ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'
+                                }`}>
+                                    <div className="mb-3 flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2">
+                                            <Wallet className={`h-4 w-4 ${billingEstimate?.can_launch ? 'text-green-700' : 'text-amber-700'}`} />
+                                            <h3 className={`text-sm font-bold ${billingEstimate?.can_launch ? 'text-green-950' : 'text-amber-950'}`}>
+                                                Billing estimate
+                                            </h3>
+                                        </div>
+                                        {isEstimating && <Loader2 className="h-4 w-4 animate-spin text-gray-500" />}
+                                    </div>
+
+                                    {estimateError ? (
+                                        <p className="text-sm text-red-700">{estimateError}</p>
+                                    ) : billingEstimate ? (
+                                        <div className="space-y-2 text-sm">
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Template category</span>
+                                                <span className="font-semibold capitalize text-gray-950">{billingEstimate.category}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Recipients</span>
+                                                <span className="font-semibold text-gray-950">{billingEstimate.audience_count}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Rate</span>
+                                                <span className="font-semibold text-gray-950">{formatINRFromPaise(billingEstimate.rate_paise)} / message</span>
+                                            </div>
+                                            <div className="flex justify-between border-t border-black/10 pt-2">
+                                                <span className="font-semibold text-gray-700">Estimated cost</span>
+                                                <span className="font-bold text-gray-950">{formatINRFromPaise(billingEstimate.estimated_cost_paise)}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Wallet balance</span>
+                                                <span className={`font-semibold ${billingEstimate.enough_wallet ? 'text-green-700' : 'text-red-700'}`}>
+                                                    {formatINRFromPaise(billingEstimate.wallet_balance_paise)}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">After launch</span>
+                                                <span className={`font-semibold ${billingEstimate.wallet_after_paise >= 0 ? 'text-gray-950' : 'text-red-700'}`}>
+                                                    {formatINRFromPaise(billingEstimate.wallet_after_paise)}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-600">Plan broadcasts</span>
+                                                <span className={`font-semibold ${billingEstimate.plan?.allowed ? 'text-gray-950' : 'text-red-700'}`}>
+                                                    {billingEstimate.plan?.broadcasts_per_month < 0
+                                                        ? 'Unlimited'
+                                                        : `${billingEstimate.plan?.broadcasts_used_this_month || 0}/${billingEstimate.plan?.broadcasts_per_month || 0} used`}
+                                                </span>
+                                            </div>
+                                            {!billingEstimate.enough_wallet && (
+                                                <p className="rounded-lg bg-white/70 p-3 text-xs font-medium leading-5 text-red-700">
+                                                    Recharge wallet before launching. Is campaign ke liye {formatINRFromPaise(billingEstimate.estimated_cost_paise - billingEstimate.wallet_balance_paise)} aur chahiye.
+                                                </p>
+                                            )}
+                                            {!billingEstimate.plan?.allowed && (
+                                                <p className="rounded-lg bg-white/70 p-3 text-xs font-medium leading-5 text-red-700">
+                                                    Monthly broadcast limit complete ho gaya hai. Plan upgrade required.
+                                                </p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-gray-600">Estimate loading...</p>
+                                    )}
+                                </div>
+
                                 <button 
-                                    disabled={isSending}
+                                    disabled={isSending || isEstimating || (billingEstimate && !billingEstimate.can_launch)}
                                     onClick={handleLaunch}
                                     className="w-full py-3 flex items-center justify-center gap-2 bg-green-600 text-white rounded-xl font-bold text-lg hover:bg-green-700 shadow-lg shadow-green-200 transition-all transform hover:scale-[1.02] disabled:opacity-70 disabled:hover:scale-100"
                                 >
