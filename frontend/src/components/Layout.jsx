@@ -52,7 +52,7 @@ export default function Layout() {
     }, [isNightLight])
 
     const planName = String(user?.plan || '').toLowerCase();
-    const isWhatsAppPlan = planName.includes('whatsapp') || planName.includes('ultimate') || planName.includes('ecosystem') || planName.includes('all_in_one') || planName.includes('bundle');
+    const isWhatsAppPlan = planName.includes('whatsapp') || planName.includes('ultimate') || planName.includes('ecosystem') || planName.includes('all_in_one') || planName.includes('bundle') || planName.includes('starter') || planName.includes('growth') || planName.includes('pro');
     const hasActiveSubscription = user?.subscription_status === 'active' && isWhatsAppPlan;
 
     const handleDirectLogout = async () => {
@@ -90,7 +90,7 @@ export default function Layout() {
                     
                     <h2 className="text-2xl font-black text-gray-900 tracking-tight">GAP WhatsApp Access Locked</h2>
                     <p className="text-sm text-gray-500 mt-2 leading-relaxed max-w-sm">
-                        An active WhatsApp Pro/Premium plan or Ultimate Ecosystem subscription is required to access your WhatsApp automations.
+                        An active WhatsApp Starter, Growth, Pro, or All-in-One plan subscription is required to access your WhatsApp automations.
                     </p>
 
                     {/* Features Locker Info */}

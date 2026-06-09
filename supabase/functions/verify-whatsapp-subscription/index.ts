@@ -12,9 +12,10 @@ const corsHeaders = {
 function getPlanName(planId: string): string {
   if (!planId) return "Growth";
   const p = planId.toLowerCase();
+  if (p.includes("free")) return "Free";
   if (p.includes("starter")) return "Starter";
   if (p.includes("growth")) return "Growth";
-  if (p === "pro" || p.includes("whatsapp_pro")) return "Pro";
+  if (p === "pro" || p.includes("whatsapp_pro") || p.includes("pro_monthly") || p.includes("pro_yearly")) return "Pro";
   if (p.includes("premium")) return "Pro";
   if (p.includes("all_in_one") || p.includes("ultimate")) return "GAP Ultimate Ecosystem";
   return "Growth";

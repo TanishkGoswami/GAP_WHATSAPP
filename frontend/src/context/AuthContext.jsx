@@ -9,16 +9,22 @@ export const useAuth = () => useContext(AuthContext)
 function resolvePlanName(plan) {
     if (!plan) return 'Free'
     const p = plan.toLowerCase()
+    
+    // Check WhatsApp specific plans first to avoid 'monthly'/'quarterly' conflict
+    if (p.includes('whatsapp_starter') || p === 'starter') return 'Starter'
+    if (p.includes('whatsapp_growth') || p === 'growth') return 'Growth'
+    if (p.includes('whatsapp_pro') || p === 'pro') return 'Pro'
+    if (p.includes('whatsapp_free') || p === 'free') return 'Free'
+    if (p.includes('whatsapp_premium') || p.includes('premium')) return 'WhatsApp Premium'
+    if (p.includes('whatsapp')) return 'WhatsApp Pro'
+    
+    // General GAP/All-in-one plans
     if (p.includes('monthly') || p.includes('core') || p === 'all_in_one_bundle_monthly') return 'GAP Core'
     if (p.includes('quarterly') || p.includes('pro') || p === 'all_in_one_bundle_quarterly') return 'GAP Pro'
     if (p.includes('half_yearly') || p.includes('max') || p === 'all_in_one_bundle_half_yearly') return 'GAP Max'
     if (p.includes('all_in_one') || p.includes('ultimate') || p.includes('enterprise')) return 'GAP Ultimate Ecosystem'
-    if (p === 'starter' || p.includes('whatsapp_starter')) return 'Starter'
-    if (p === 'growth' || p.includes('whatsapp_growth')) return 'Growth'
-    if (p === 'pro') return 'Pro'
-    if (p.includes('whatsapp_premium') || p.includes('premium')) return 'WhatsApp Premium'
-    if (p.includes('whatsapp_pro') || p.includes('whatsapp')) return 'WhatsApp Pro'
-    if (p === 'free' || p === '') return 'Free'
+    
+    if (p === '') return 'Free'
     return plan
 }
 

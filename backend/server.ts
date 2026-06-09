@@ -798,7 +798,7 @@ async function checkSubscription(orgId: string): Promise<boolean> {
         if (!isActive) return false;
 
         const plan = String(sub.plan_id || '').toLowerCase();
-        const isWhatsAppPlan = plan.includes('whatsapp') || plan.includes('all_in_one') || plan.includes('bundle') || plan.includes('ultimate');
+        const isWhatsAppPlan = plan.includes('whatsapp') || plan.includes('all_in_one') || plan.includes('bundle') || plan.includes('ultimate') || plan.includes('starter') || plan.includes('growth') || plan.includes('pro');
         return isWhatsAppPlan;
     } catch (err: any) {
         console.error(`[Subscription Check] Error checking subscription for org ${orgId}:`, err.message);
