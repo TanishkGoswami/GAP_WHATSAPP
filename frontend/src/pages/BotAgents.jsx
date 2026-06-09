@@ -22,6 +22,7 @@ import {
 } from '@phosphor-icons/react'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
+import { FALLBACK_PLANS } from '../config/whatsappPricing'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
@@ -55,7 +56,7 @@ const settingsType = '__agent_settings'
 const getDocCharCount = (doc) => Number(doc?.character_count ?? String(doc?.content || '').length ?? 0)
 
 export default function BotAgents() {
-    const { session, apiCall } = useAuth()
+    const { session, apiCall, user } = useAuth()
     const { alertDialog, confirmDialog } = useDialog()
     const [agents, setAgents] = useState([])
     const [knowledgeDocs, setKnowledgeDocs] = useState([])
@@ -154,6 +155,11 @@ export default function BotAgents() {
         const trainedChars = agents.reduce((sum, agent) => sum + Number(agent.characterCount || 0), 0)
         return { total: agents.length, active, unknown, trainedChars }
     }, [agents])
+
+    const currentPlanName = user?.plan || 'Free'
+    const currentPlanConfig = FALLBACK_PLANS.find(p => p.id.toLowerCase() === currentPlanName.toLowerCase() || p.name.toLowerCase() === currentPlanName.toLowerCase()) || FALLBACK_PLANS.find(p => p.id === 'free')
+    const aiAgentLimit = currentPlanConfig?.limits?.ai_agents ?? 0
+    const isLimitReached = aiAgentLimit !== -1 && agents.length >= aiAgentLimit
 
     const filteredAgents = agents.filter(agent => {
         const haystack = [agent.name, agent.description, agent.model, ...(agent.triggerKeywords || []), ...(agent.knowledgeBase || [])].join(' ').toLowerCase()
@@ -308,7 +314,12 @@ export default function BotAgents() {
                             API Settings
                             {apiKeyConfigured ? <Check size={16} weight="bold" /> : null}
                         </button>
-                        <button onClick={openCreate} className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-700">
+                        <button 
+                            onClick={openCreate} 
+                            disabled={isLimitReached}
+                            title={isLimitReached ? `AI agent limit reached for ${currentPlanName} plan (${agents.length}/${aiAgentLimit}). Upgrade your plan to add more.` : undefined}
+                            className={`inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition ${isLimitReached ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}`}
+                        >
                             <Plus size={18} weight="bold" />
                             Create Agent
                         </button>

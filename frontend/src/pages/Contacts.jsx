@@ -133,7 +133,7 @@ export default function Contacts() {
     const { data: contacts = [], isLoading: contactsLoading, error: contactsError } = useQuery({
         queryKey: ['contacts', session?.access_token],
         queryFn: async () => {
-            const res = await apiCall(`${API_BASE}/contacts`)
+            const res = await apiCall(`${API_BASE}/contacts?include_unsaved=true`)
             if (!res.ok) {
                 const body = await res.text().catch(() => '')
                 throw new Error(body || `Failed to fetch contacts (${res.status})`)
@@ -465,7 +465,7 @@ export default function Contacts() {
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-950">Contacts</h1>
-                        <p className="mt-1 text-sm text-gray-500">Manage customer profiles, account ownership, tags, and flexible business data.</p>
+                        <p className="mt-1 text-sm text-gray-500">Manage customer profiles, account ownership, and tags.</p>
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
                         <input
@@ -499,7 +499,6 @@ export default function Contacts() {
                         { label: 'Total contacts', value: stats.total, icon: UserRound },
                         { label: 'With account', value: stats.assigned, icon: Building2 },
                         { label: 'Tagged', value: stats.withTags, icon: Tag },
-                        { label: 'Custom data', value: stats.withFields, icon: Database },
                     ].map(item => (
                         <div key={item.label} className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
                             <div className="flex items-center justify-between">
@@ -537,7 +536,6 @@ export default function Contacts() {
                         </div>
                         <CustomSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} className="xl:w-44" />
                         <CustomSelect value={tagFilter} onChange={setTagFilter} options={tagOptions} className="xl:w-40" />
-                        <CustomSelect value={fieldFilter} onChange={setFieldFilter} options={fieldOptions} className="xl:w-40" />
                         <button type="button" onClick={resetFilters} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
                             <Filter className="h-4 w-4" />
                             Reset
@@ -553,7 +551,6 @@ export default function Contacts() {
                                     <th className="px-5 py-3">Customer</th>
                                     <th className="px-5 py-3">Account</th>
                                     <th className="px-5 py-3">Tags</th>
-                                    <th className="px-5 py-3">Business data</th>
                                     <th className="px-5 py-3">Activity</th>
                                     <th className="px-5 py-3 text-right">Action</th>
                                 </tr>
@@ -597,13 +594,6 @@ export default function Contacts() {
                                                 {(contact.tags || []).length > 3 ? <span className="text-xs text-gray-400">+{contact.tags.length - 3}</span> : null}
                                             </div>
                                         </td>
-                                        <td className="px-5 py-4">
-                                            {topFields(contact).length > 0 ? (
-                                                <BusinessDataCell fields={visibleCustomFields(contact)} />
-                                            ) : (
-                                                <span className="text-xs text-gray-400">No custom data</span>
-                                            )}
-                                        </td>
                                         <td className="px-5 py-4 text-xs text-gray-500">
                                             <div className="flex items-center gap-1">
                                                 <Calendar className="h-3.5 w-3.5 text-gray-400" />
@@ -622,7 +612,6 @@ export default function Contacts() {
                     </div>
                     <div className="flex flex-col gap-1 border-t border-gray-200 px-4 py-3 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                         <span>Showing <strong className="text-gray-800">{filteredContacts.length}</strong> of <strong className="text-gray-800">{contacts.length}</strong> contacts</span>
-                        <span>{allFieldKeys.length} custom field types</span>
                     </div>
                 </div>
             </div>
@@ -683,27 +672,6 @@ export default function Contacts() {
                                                 )) : <span className="text-sm text-gray-500">No tags yet</span>}
                                             </div>
                                         </section>
-
-                                        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                                            <div className="mb-3 flex items-center justify-between">
-                                                <h3 className="text-sm font-bold text-gray-950">Flexible data</h3>
-                                                <Layers3 className="h-4 w-4 text-gray-400" />
-                                            </div>
-                                            {selectedFields.length ? (
-                                                <div className="divide-y divide-gray-100">
-                                                    {selectedFields.map(([key, value]) => (
-                                                        <div key={key} className="grid grid-cols-[150px_1fr] gap-4 py-3 text-sm">
-                                                            <div className="font-medium text-gray-500">{key}</div>
-                                                            <div className="break-words font-semibold text-gray-900">{String(value)}</div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
-                                                    No invoice, address, amount, period, or other custom data saved yet.
-                                                </div>
-                                            )}
-                                        </section>
                                     </div>
                                 ) : (
                                     <form id="contact-editor" onSubmit={(event) => { event.preventDefault(); saveMutation.mutate(draft) }} className="space-y-5">
@@ -732,75 +700,6 @@ export default function Contacts() {
                                             </Field>
                                         </section>
 
-                                        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-                                            <div className="mb-4 flex items-center justify-between gap-3">
-                                                <div>
-                                                    <h3 className="text-sm font-bold text-gray-950">Flexible fields</h3>
-                                                    <p className="mt-1 text-xs text-gray-500">Save invoice, address, amount, period, plan, notes, or any business-specific data.</p>
-                                                </div>
-                                                <button type="button" onClick={() => addField()} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                                                    <Plus className="h-4 w-4" />
-                                                    Field
-                                                </button>
-                                            </div>
-
-                                            <div className="mb-4 grid gap-2 sm:grid-cols-2">
-                                                {FIELD_GROUPS.map(group => (
-                                                    <div key={group.label} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                                                        <div className="mb-2 flex items-center justify-between gap-2">
-                                                            <div className="flex items-center gap-2 text-sm font-bold text-gray-800">
-                                                                <group.icon className="h-4 w-4 text-gray-500" />
-                                                                {group.label}
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => addFieldGroup(group)}
-                                                                className="rounded-md px-2 py-1 text-xs font-bold text-green-700 hover:bg-green-50"
-                                                            >
-                                                                Add set
-                                                            </button>
-                                                        </div>
-                                                        <div className="flex flex-wrap gap-1.5">
-                                                            {group.fields.map(field => (
-                                                                <button
-                                                                    key={field.key}
-                                                                    type="button"
-                                                                    onClick={() => addField(field.key, '')}
-                                                                    className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 hover:border-green-200 hover:bg-green-50 hover:text-green-700"
-                                                                >
-                                                                    {field.label}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-
-                                            <div className="space-y-2">
-                                                {draft.fields.length === 0 ? (
-                                                    <div className="rounded-lg border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">No custom fields. Add only the data this customer needs.</div>
-                                                ) : draft.fields.map((field, index) => (
-                                                    <div key={`${index}-${field.key}`} className="grid gap-2 rounded-lg border border-gray-100 bg-white p-2 sm:grid-cols-[190px_1fr_40px]">
-                                                        <div>
-                                                            <input
-                                                                value={field.key}
-                                                                onChange={event => updateField(index, { key: event.target.value })}
-                                                                className="field-input"
-                                                                placeholder="field name"
-                                                                list="contact-field-presets"
-                                                            />
-                                                        </div>
-                                                        <FieldValueInput field={field} onChange={value => updateField(index, { value })} meta={getFieldMeta(field.key)} />
-                                                        <button type="button" onClick={() => removeField(index)} className="flex h-10 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600">
-                                                            <Trash2 className="h-4 w-4" />
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <datalist id="contact-field-presets">
-                                                {FIELD_PRESETS.map(field => <option key={field.key} value={field.key}>{field.label}</option>)}
-                                            </datalist>
-                                        </section>
                                     </form>
                                 )}
                             </div>

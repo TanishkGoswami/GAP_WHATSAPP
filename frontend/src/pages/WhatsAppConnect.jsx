@@ -165,7 +165,7 @@ export default function WhatsAppConnect() {
 
         setEmbedStatus('loading')
         setEmbedError('')
-        window.FB.login(handleEmbeddedSignupResponse, {
+        window.FB.login((response) => handleEmbeddedSignupResponse(response), {
             config_id: META_CONFIG_ID,
             response_type: 'code',
             override_default_response_type: true,

@@ -8,6 +8,7 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import multer from "multer";
 import path from "path";
+import twilio from 'twilio';
 import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
@@ -334,7 +335,7 @@ async function getOrganizationPlanLimits(organizationId: string) {
     };
 }
 
-async function countBroadcastAudience(organizationId: string, audienceTag?: string | null, csvData?: any[] | null) {
+async function countBroadcastAudience(organizationId: string, audienceTag?: string | null, csvData?: any[] | null, audienceType?: string) {
     if (Array.isArray(csvData)) {
         return csvData.filter(row => row?.phone || row?.wa_id).length;
     }
@@ -345,7 +346,14 @@ async function countBroadcastAudience(organizationId: string, audienceTag?: stri
         .eq('organization_id', organizationId)
         .eq('contact_type', 'individual');
 
-    if (audienceTag) query = query.contains('tags', [audienceTag]);
+    if (audienceType === 'saved') {
+        query = query.not('saved_at', 'is', null);
+    } else if (audienceType === 'tag' && audienceTag) {
+        query = query.contains('tags', [audienceTag]);
+    } else if (audienceTag) {
+        // Fallback for old behaviour
+        query = query.contains('tags', [audienceTag]);
+    }
 
     const { count, error } = await query;
     if (error) throw error;
@@ -367,12 +375,13 @@ async function getBroadcastCampaignsThisMonth(organizationId: string) {
 async function buildBroadcastBillingEstimate(params: {
     organization_id: string;
     audience_tag?: string | null;
+    audience_type?: string | null;
     csv_data?: any[] | null;
     template_category?: any;
 }) {
     const category = normalizeWhatsappBillingCategory(params.template_category, 'marketing');
     const rate = await getActiveWhatsappRate(category);
-    const audienceCount = await countBroadcastAudience(params.organization_id, params.audience_tag || null, params.csv_data || null);
+    const audienceCount = await countBroadcastAudience(params.organization_id, params.audience_tag || null, params.csv_data || null, params.audience_type || 'all');
     const estimatedCostPaise = audienceCount * Number(rate.rate_paise || 0);
     const [{ data: wallet }, planInfo, campaignsThisMonth] = await Promise.all([
         supabase
@@ -8876,7 +8885,14 @@ async function processCampaign(campaign: any) {
                 .eq('organization_id', orgId)
                 .eq('contact_type', 'individual');
                 
-            if (campaign.audience_tag) {
+            const audienceType = campaign.variable_mapping?._audience_type || 'all';
+            
+            if (audienceType === 'saved') {
+                query = query.not('saved_at', 'is', null);
+            } else if (audienceType === 'tag' && campaign.audience_tag) {
+                query = query.contains('tags', [campaign.audience_tag]);
+            } else if (campaign.audience_tag) {
+                // Fallback for old behaviour
                 query = query.contains('tags', [campaign.audience_tag]);
             }
             
@@ -8907,9 +8923,20 @@ async function processCampaign(campaign: any) {
 
         let sent = 0;
         let failed = 0;
+        let processed = 0;
+        let isCancelled = false;
         const results = [];
 
         for (const contact of contactsToProcess) {
+            processed++;
+            if (processed % 10 === 0) {
+                const { data: checkCamp } = await supabase.from('w_campaigns').select('status').eq('id', campaign.id).maybeSingle();
+                if (checkCamp && (checkCamp.status === 'cancelled' || checkCamp.status === 'paused')) {
+                    isCancelled = true;
+                    console.log(`[processCampaign] Campaign ${campaign.id} was cancelled/paused. Stopping.`);
+                    break;
+                }
+            }
             const recipient = contact.phone || contact.wa_id;
             if (!recipient) {
                 failed++;
@@ -9136,7 +9163,7 @@ async function processCampaign(campaign: any) {
         }
 
         await supabase.from('w_campaigns').update({ 
-            status: 'completed', 
+            status: isCancelled ? 'cancelled' : 'completed', 
             total_contacts: contactsToProcess.length,
             sent_count: sent,
             failed_count: failed,
@@ -9203,13 +9230,14 @@ app.post('/api/broadcast/header-media', authMiddleware, upload.single('file'), a
 
 app.post('/api/broadcast/estimate', authMiddleware, async (req: any, res) => {
     const orgId = req.organization_id;
-    const { audience_tag, csv_data, template_category } = req.body || {};
+    const { audience_tag, audience_type, csv_data, template_category } = req.body || {};
 
     try {
         if (!orgId) return res.status(400).json({ error: 'organization_id is required' });
         const estimate = await buildBroadcastBillingEstimate({
             organization_id: orgId,
             audience_tag: audience_tag || null,
+            audience_type: audience_type || null,
             csv_data: Array.isArray(csv_data) ? csv_data : null,
             template_category,
         });
@@ -9359,9 +9387,14 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
         const estimate = await buildBroadcastBillingEstimate({
             organization_id: orgId,
             audience_tag: audience_tag || null,
+            audience_type: req.body.audience_type || null,
             csv_data: Array.isArray(csv_data) ? csv_data : null,
             template_category: billingCategory,
         });
+
+        if (req.body.audience_type) {
+            variableMapping._audience_type = req.body.audience_type;
+        }
 
         if (estimate.audience_count <= 0) {
             return res.status(400).json({ error: 'No recipients found for this broadcast audience.', estimate });
@@ -9487,6 +9520,97 @@ app.delete('/api/broadcast/campaigns/:id', authMiddleware, async (req, res) => {
         res.json({ success: true });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/broadcast/campaigns/:id/cancel
+app.post('/api/broadcast/campaigns/:id/cancel', authMiddleware, async (req, res) => {
+    const orgId = (req as any).organization_id;
+    try {
+        const { data, error } = await supabase
+            .from('w_campaigns')
+            .update({ status: 'cancelled' })
+            .eq('id', req.params.id)
+            .eq('organization_id', orgId)
+            .in('status', ['processing', 'scheduled'])
+            .select()
+            .single();
+            
+        if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Campaign not found or cannot be cancelled' });
+        res.json({ success: true, campaign: data });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ====== Twilio Routes ======
+
+// Use placeholders or empty if not present, to avoid crashing
+const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || '';
+const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
+let twilioClient: any = null;
+if (TWILIO_SID && TWILIO_TOKEN) {
+    twilioClient = twilio(TWILIO_SID, TWILIO_TOKEN);
+}
+
+app.post('/api/twilio/available-numbers', authMiddleware, async (req: any, res) => {
+    try {
+        if (!twilioClient) {
+            return res.status(500).json({ error: 'Twilio API keys not configured on server.' });
+        }
+        const { country = 'US' } = req.body;
+        // Search local numbers
+        const numbers = await twilioClient.availablePhoneNumbers(country).local.list({
+            smsEnabled: true,
+            voiceEnabled: true,
+            limit: 10
+        });
+        res.json({ numbers });
+    } catch (err: any) {
+        console.error('[TWILIO SEARCH]', err);
+        res.status(500).json({ error: err.message || 'Failed to search Twilio numbers' });
+    }
+});
+
+app.post('/api/twilio/buy-number', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    try {
+        if (!twilioClient) {
+            return res.status(500).json({ error: 'Twilio API keys not configured on server.' });
+        }
+        const { phoneNumber } = req.body;
+        if (!phoneNumber) return res.status(400).json({ error: 'Phone number is required' });
+
+        // Check if user has space for a new number limit
+        await enforcePlanResourceLimit({
+            organization_id: orgId,
+            resource: 'numbers',
+            table: 'w_wa_accounts',
+            label: 'WhatsApp numbers'
+        });
+
+        // Buy the number
+        const purchasedNumber = await twilioClient.incomingPhoneNumbers.create({
+            phoneNumber,
+            friendlyName: `GAP FlowPilot - Org ${orgId}`
+        });
+
+        // Save it to w_wa_accounts as a connected/setup number (or pending)
+        const { data: acc, error: accErr } = await supabase.from('w_wa_accounts').insert({
+            organization_id: orgId,
+            phone_number: purchasedNumber.phoneNumber,
+            display_phone_number: purchasedNumber.phoneNumber,
+            status: 'PENDING_META_VERIFICATION', // Custom status telling the user to verify on Meta
+            is_active: true
+        }).select().single();
+
+        if (accErr) throw accErr;
+
+        res.json({ success: true, account: acc, twilio_number: purchasedNumber });
+    } catch (err: any) {
+        console.error('[TWILIO BUY]', err);
+        res.status(500).json({ error: err.message || 'Failed to buy Twilio number' });
     }
 });
 

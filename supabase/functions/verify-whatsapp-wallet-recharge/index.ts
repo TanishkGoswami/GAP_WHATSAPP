@@ -101,6 +101,29 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (existingTx?.id) {
+      // ATOMIC LOCK: Try to update the transaction from pending to completed.
+      const { data: updatedTx, error: updateTxErr } = await supabase
+        .from("whatsapp_wallet_transactions")
+        .update({
+          status: "completed",
+          description: "Wallet recharge completed",
+          metadata: { ...(rzpData.notes || {}), razorpay_status: status },
+        })
+        .eq("id", existingTx.id)
+        .eq("status", "pending")
+        .select()
+        .maybeSingle();
+
+      if (!updatedTx) {
+        // This transaction was already marked as completed by another concurrent webhook!
+        return new Response(
+          JSON.stringify({ success: true, status, already_verified: true, note: "Race condition prevented" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
     await supabase.from("whatsapp_wallets").upsert(
       { organization_id: organizationId, currency: "INR" },
       { onConflict: "organization_id" },
@@ -121,14 +144,10 @@ Deno.serve(async (req) => {
     if (updateWalletErr) throw updateWalletErr;
 
     if (existingTx?.id) {
+      // Update the balance_after_paise now that we have incremented the wallet
       await supabase
         .from("whatsapp_wallet_transactions")
-        .update({
-          status: "completed",
-          balance_after_paise: nextBalance,
-          description: "Wallet recharge completed",
-          metadata: { ...(rzpData.notes || {}), razorpay_status: status },
-        })
+        .update({ balance_after_paise: nextBalance })
         .eq("id", existingTx.id);
     } else {
       await supabase.from("whatsapp_wallet_transactions").insert({

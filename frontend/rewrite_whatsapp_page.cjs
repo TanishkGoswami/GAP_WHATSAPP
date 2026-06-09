@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react'
+const fs = require('fs');
+
+const content = `import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
     AlertCircle,
@@ -12,7 +14,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import TwilioNumberPurchase from '../components/TwilioNumberPurchase'
 
-const API_BASE = `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api`
+const API_BASE = \`\${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api\`
 
 const initialForm = {
     business_name: '',
@@ -56,7 +58,7 @@ export default function WhatsAppNumberPage() {
     const loadRequests = async () => {
         setLoading(true)
         try {
-            const res = await apiCall(`${API_BASE}/whatsapp/number-requests`)
+            const res = await apiCall(\`\${API_BASE}/whatsapp/number-requests\`)
             const data = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(data.error || 'Failed to load requests')
             setRequests(Array.isArray(data.requests) ? data.requests : [])
@@ -83,7 +85,7 @@ export default function WhatsAppNumberPage() {
                 ...form,
                 expected_monthly_messages: form.expected_monthly_messages === '' ? null : Number(form.expected_monthly_messages),
             }
-            const res = await apiCall(`${API_BASE}/whatsapp/number-requests`, {
+            const res = await apiCall(\`\${API_BASE}/whatsapp/number-requests\`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -138,7 +140,7 @@ export default function WhatsAppNumberPage() {
             <section className="text-center">
                 <h1 className="text-3xl font-extrabold tracking-tight text-gray-950 sm:text-4xl">Set up your WhatsApp number</h1>
                 <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-gray-600">
-                    Get a fresh virtual number instantly for WhatsApp Cloud API, or request our team\'s assistance for a guided onboarding experience.
+                    Get a fresh virtual number instantly for WhatsApp Cloud API, or request our team\\'s assistance for a guided onboarding experience.
                 </p>
                 <div className="mt-6 flex items-center justify-center gap-4">
                     <Link to="/whatsapp-connect" className="inline-flex items-center text-sm font-semibold text-indigo-600 hover:text-indigo-500">
@@ -152,14 +154,14 @@ export default function WhatsAppNumberPage() {
                 <div className="inline-flex rounded-xl bg-gray-200/60 p-1.5 shadow-inner">
                     <button
                         onClick={() => setActiveTab('instant')}
-                        className={`flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-bold transition-all ${activeTab === 'instant' ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-900/5' : 'text-gray-500 hover:text-gray-900'}`}
+                        className={\`flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-bold transition-all \${activeTab === 'instant' ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-900/5' : 'text-gray-500 hover:text-gray-900'}\`}
                     >
                         <Zap className="h-4 w-4" />
                         Instant Setup (Twilio)
                     </button>
                     <button
                         onClick={() => setActiveTab('assisted')}
-                        className={`flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-bold transition-all ${activeTab === 'assisted' ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-900/5' : 'text-gray-500 hover:text-gray-900'}`}
+                        className={\`flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-bold transition-all \${activeTab === 'assisted' ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-900/5' : 'text-gray-500 hover:text-gray-900'}\`}
                     >
                         <Briefcase className="h-4 w-4" />
                         Assisted Setup
@@ -181,7 +183,7 @@ export default function WhatsAppNumberPage() {
                                 <div className="rounded-xl border border-gray-100 bg-gray-50 p-5">
                                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">1</div>
                                     <h3 className="mt-4 font-bold text-gray-900">Verify Number</h3>
-                                    <p className="mt-2 text-sm text-gray-500">Use this number to receive SMS OTP during Meta\'s business verification process.</p>
+                                    <p className="mt-2 text-sm text-gray-500">Use this number to receive SMS OTP during Meta\\'s business verification process.</p>
                                 </div>
                                 <div className="rounded-xl border border-gray-100 bg-gray-50 p-5">
                                     <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700">2</div>
@@ -238,7 +240,7 @@ export default function WhatsAppNumberPage() {
                                             value={form.use_case}
                                             onChange={e => updateField('use_case', e.target.value)}
                                             rows={4}
-                                            className={`${inputClass} resize-y`}
+                                            className={\`\${inputClass} resize-y\`}
                                             placeholder="Example: customer support, abandoned cart reminders, appointment updates..."
                                         />
                                     </Field>
@@ -297,7 +299,7 @@ const inputClass = 'w-full rounded-xl border border-gray-300 bg-white px-4 py-3 
 
 function Field({ label, required, className = '', children }) {
     return (
-        <label className={`block ${className}`}>
+        <label className={\`block \${className}\`}>
             <span className="mb-2 block text-sm font-bold text-gray-700">
                 {label} {required && <span className="text-red-500">*</span>}
             </span>
@@ -310,7 +312,7 @@ function InlineNotice({ tone, text }) {
     const Icon = tone === 'success' ? CheckCircle2 : AlertCircle
     const classes = tone === 'success' ? 'border-green-200 bg-green-50 text-green-800' : 'border-red-200 bg-red-50 text-red-800'
     return (
-        <div className={`mt-4 flex items-start gap-3 rounded-xl border p-4 text-sm font-medium ${classes}`}>
+        <div className={\`mt-4 flex items-start gap-3 rounded-xl border p-4 text-sm font-medium \${classes}\`}>
             <Icon className="mt-0.5 h-5 w-5 shrink-0" />
             <span>{text}</span>
         </div>
@@ -324,9 +326,9 @@ function RequestCard({ request }) {
             <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                     <p className="truncate text-base font-bold text-gray-950">{request.business_name}</p>
-                    <p className="mt-1 truncate text-xs font-medium text-gray-500">{request.country}{request.preferred_region ? `, ${request.preferred_region}` : ''}</p>
+                    <p className="mt-1 truncate text-xs font-medium text-gray-500">{request.country}{request.preferred_region ? \`, \${request.preferred_region}\` : ''}</p>
                 </div>
-                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${isDone ? 'bg-green-50 text-green-700 ring-1 ring-inset ring-green-600/20' : 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20'}`}>
+                <span className={\`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold \${isDone ? 'bg-green-50 text-green-700 ring-1 ring-inset ring-green-600/20' : 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20'}\`}>
                     {isDone ? <ShieldCheck className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
                     {statusLabels[request.status] || request.status}
                 </span>
@@ -341,3 +343,6 @@ function RequestCard({ request }) {
         </div>
     )
 }
+`;
+
+fs.writeFileSync("c:/Users/tanis/Documents/GitHub/MetaBull's project/GAP_Whatsapp/frontend/src/pages/WhatsAppNumberPage.jsx", content);

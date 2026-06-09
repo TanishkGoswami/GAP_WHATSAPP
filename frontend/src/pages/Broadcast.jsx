@@ -126,6 +126,7 @@ export default function Broadcast() {
         name: '',
         wa_account_id: '',
         scheduled_at: '',
+        audience_type: 'saved', 
         audience_tag: '', 
         template_name: '',
         template_language: 'en_US',
@@ -157,11 +158,13 @@ export default function Broadcast() {
     const [headerMediaUrl, setHeaderMediaUrl] = useState('')
     const [isHeaderUploading, setIsHeaderUploading] = useState(false)
     
-    const filteredContacts = campaign.audience_tag === 'CSV_UPLOAD'
+    const filteredContacts = campaign.audience_type === 'CSV_UPLOAD'
         ? (csvData || [])
-        : campaign.audience_tag 
+        : campaign.audience_type === 'tag' && campaign.audience_tag
             ? contacts.filter(c => Array.isArray(c.tags) && c.tags.includes(campaign.audience_tag))
-            : contacts;
+            : campaign.audience_type === 'saved'
+                ? contacts.filter(c => c.saved_at != null)
+                : contacts;
 
     const selectedTemplateCategory = selectedTemplate?.category || campaign.variable_mapping?._template_category || 'MARKETING'
 
@@ -184,7 +187,7 @@ export default function Broadcast() {
             .catch(() => setIsLoading(p => ({ ...p, templates: false })));
 
         setIsLoading(p => ({ ...p, contacts: true }));
-        apiCall(`${API_URL}/api/contacts`)
+        apiCall(`${API_URL}/api/contacts?include_unsaved=true`)
             .then(res => res.json())
             .then(data => { 
                 const individuals = (data?.contacts || data || []).filter(c => c.contact_type === 'individual');
@@ -232,8 +235,9 @@ export default function Broadcast() {
                 const res = await apiCall(`${API_URL}/api/broadcast/estimate`, {
                     method: 'POST',
                     body: JSON.stringify({
-                        audience_tag: campaign.audience_tag === 'CSV_UPLOAD' ? null : campaign.audience_tag,
-                        csv_data: campaign.audience_tag === 'CSV_UPLOAD' ? csvData : null,
+                        audience_tag: campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag,
+                        audience_type: campaign.audience_type === 'CSV_UPLOAD' ? null : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag'),
+                        csv_data: campaign.audience_type === 'CSV_UPLOAD' ? csvData : null,
                         template_category: selectedTemplateCategory,
                     })
                 });
@@ -273,6 +277,28 @@ export default function Broadcast() {
             }
         } catch (e) {
             alertDialog('Error: ' + e.message, { title: 'Delete failed', tone: 'danger' });
+        }
+    }
+
+    const cancelCampaign = async (id) => {
+        const confirmed = await confirmDialog('Are you sure you want to stop this campaign? It will be permanently cancelled.', {
+            title: 'Stop & Cancel Campaign',
+            tone: 'danger',
+            confirmLabel: 'Stop Campaign',
+        });
+        if (!confirmed) return;
+        try {
+            const res = await apiCall(`${API_URL}/api/broadcast/campaigns/${id}/cancel`, {
+                method: 'POST'
+            });
+            if (res.ok) {
+                fetchCampaignHistory();
+            } else {
+                const data = await res.json();
+                alertDialog(data.error || 'Failed to cancel campaign', { title: 'Cancellation failed', tone: 'danger' });
+            }
+        } catch (e) {
+            alertDialog('Error: ' + e.message, { title: 'Cancellation failed', tone: 'danger' });
         }
     }
 
@@ -467,8 +493,9 @@ export default function Broadcast() {
         const payload = {
             ...campaign,
             scheduled_at: formattedScheduledAt,
-            audience_tag: campaign.audience_tag === 'CSV_UPLOAD' ? null : campaign.audience_tag,
-            csv_data: campaign.audience_tag === 'CSV_UPLOAD' ? csvData : null,
+            audience_tag: campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag,
+            audience_type: campaign.audience_type === 'CSV_UPLOAD' ? null : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag'),
+            csv_data: campaign.audience_type === 'CSV_UPLOAD' ? csvData : null,
             variable_mapping: finalMapping,
             required_header_type: needsHeaderMedia ? selectedHeaderFormat.toLowerCase() : undefined,
             header_media_type: needsHeaderMedia ? selectedHeaderFormat.toLowerCase() : undefined,
@@ -502,6 +529,7 @@ export default function Broadcast() {
             ...campaign,
             name: '',
             scheduled_at: '',
+            audience_type: 'saved',
             audience_tag: '',
             template_name: '',
             variable_mapping: {}
@@ -509,22 +537,22 @@ export default function Broadcast() {
     }
 
     return (
-        <div className="max-w-5xl mx-auto space-y-8 pb-12">
+        <div className="max-w-6xl mx-auto space-y-10 pb-16">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Broadcasts</h1>
-                    <p className="text-sm text-gray-500 mt-1">Manage and schedule bulk messages</p>
+                    <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Broadcasts</h1>
+                    <p className="text-sm text-gray-500 mt-2 max-w-lg leading-relaxed">Design, schedule, and track bulk message campaigns for your audience.</p>
                 </div>
-                <div className="flex bg-gray-100 p-1 rounded-lg">
+                <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-sm backdrop-blur-sm">
                     <button 
                         onClick={() => setActiveTab('new')}
-                        className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'new' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                        className={`px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'new' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
                     >
                         New Campaign
                     </button>
                     <button 
                         onClick={() => setActiveTab('history')}
-                        className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${activeTab === 'history' ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+                        className={`px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'history' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
                     >
                         History
                     </button>
@@ -532,150 +560,174 @@ export default function Broadcast() {
             </div>
 
             {activeTab === 'history' ? (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                        <h2 className="text-lg font-medium text-gray-900">Campaign History</h2>
-                        <button onClick={fetchCampaignHistory} className="text-sm text-indigo-600 font-medium hover:text-indigo-800 flex items-center gap-1">
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="px-8 py-6 border-b border-gray-200 flex justify-between items-center bg-gradient-to-b from-gray-50/50 to-white">
+                        <h2 className="text-xl font-bold text-gray-900">Campaign History</h2>
+                        <button onClick={fetchCampaignHistory} className="text-sm text-indigo-600 font-semibold hover:text-indigo-800 flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-lg transition-colors">
                             <Loader2 className={`w-4 h-4 ${isLoadingHistory ? 'animate-spin' : ''}`} />
-                            Refresh
+                            Refresh Data
                         </button>
                     </div>
                     {isLoadingHistory && campaignsList.length === 0 ? (
-                        <div className="p-12 text-center text-gray-500 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-indigo-500"/></div>
+                        <div className="p-16 text-center flex justify-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500"/></div>
                     ) : campaignsList.length === 0 ? (
-                        <div className="p-12 text-center text-gray-500">
-                            No campaigns found. Schedule your first broadcast!
+                        <div className="p-16 text-center flex flex-col items-center justify-center">
+                            <div className="w-16 h-16 bg-indigo-50 text-indigo-300 rounded-2xl flex items-center justify-center mb-4"><Calendar className="w-8 h-8" /></div>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-1">No campaigns found</h3>
+                            <p className="text-gray-500">Schedule your first broadcast to engage your audience.</p>
                         </div>
                     ) : (
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-gray-50 text-gray-500 font-medium uppercase text-xs">
-                                <tr>
-                                    <th className="px-6 py-4">Campaign Name</th>
-                                    <th className="px-6 py-4">Status</th>
-                                    <th className="px-6 py-4">Audience</th>
-                                    <th className="px-6 py-4">Date / Scheduled</th>
-                                    <th className="px-6 py-4">Performance</th>
-                                    <th className="px-6 py-4 text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-200">
-                                {campaignsList.map(camp => (
-                                    <React.Fragment key={camp.id}>
-                                        <tr className="hover:bg-gray-50 transition-colors">
-                                            <td className="px-6 py-4">
-                                                <div className="font-medium text-gray-900">{camp.name}</div>
-                                                <div className="text-xs text-gray-500">{camp.template_name}</div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
-                                                    camp.status === 'completed' ? 'bg-green-100 text-green-700' :
-                                                    camp.status === 'failed' ? 'bg-red-100 text-red-700' :
-                                                    camp.status === 'processing' ? 'bg-blue-100 text-blue-700' :
-                                                    'bg-yellow-100 text-yellow-700'
-                                                }`}>
-                                                    {camp.status.toUpperCase()}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 text-gray-500">
-                                                {camp.audience_tag || (camp.csv_data ? 'CSV Upload' : 'All Contacts')}
-                                            </td>
-                                            <td className="px-6 py-4 text-gray-500">
-                                                {camp.scheduled_at ? format(new Date(camp.scheduled_at), 'PPp') : format(new Date(camp.created_at), 'PPp')}
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                {camp.status === 'completed' ? (
-                                                    <div className="flex gap-3 text-xs items-center">
-                                                        <span className="text-green-600 font-medium bg-green-50 px-2 py-1 rounded">✅ {camp.sent_count}</span>
-                                                        <span className="text-red-600 font-medium bg-red-50 px-2 py-1 rounded">❌ {camp.failed_count}</span>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm whitespace-nowrap">
+                                <thead className="bg-gray-50/80 text-gray-500 font-semibold uppercase text-xs tracking-wider border-b border-gray-200">
+                                    <tr>
+                                        <th className="px-8 py-5">Campaign Name</th>
+                                        <th className="px-8 py-5">Status</th>
+                                        <th className="px-8 py-5">Audience</th>
+                                        <th className="px-8 py-5">Date / Scheduled</th>
+                                        <th className="px-8 py-5">Performance</th>
+                                        <th className="px-8 py-5 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {campaignsList.map(camp => (
+                                        <React.Fragment key={camp.id}>
+                                            <tr className="hover:bg-gray-50/60 transition-colors">
+                                                <td className="px-8 py-5">
+                                                    <div className="font-bold text-gray-900">{camp.name}</div>
+                                                    <div className="text-xs font-medium text-gray-500 mt-1 flex items-center gap-1.5">
+                                                        <FileText className="w-3.5 h-3.5" /> {camp.template_name}
                                                     </div>
-                                                ) : '-'}
-                                            </td>
-                                            <td className="px-6 py-4 text-right">
-                                                <div className="flex justify-end gap-2 items-center">
-                                                    {camp.status === 'scheduled' && (
-                                                        <button 
-                                                            onClick={() => deleteCampaign(camp.id)}
-                                                            className="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-50"
-                                                            title="Cancel Scheduled Campaign"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    )}
-                                                    {camp.status === 'completed' && camp.results && camp.results.length > 0 && (
-                                                        <button 
-                                                            onClick={() => setExpandedCampaignId(expandedCampaignId === camp.id ? null : camp.id)}
-                                                            className="text-indigo-600 hover:text-indigo-800 text-xs font-medium flex items-center gap-1"
-                                                        >
-                                                            {expandedCampaignId === camp.id ? 'Hide Details' : 'View Results'}
-                                                            {expandedCampaignId === camp.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                        {expandedCampaignId === camp.id && camp.results && (
-                                            <tr>
-                                                <td colSpan="6" className="bg-gray-50 p-6 border-b border-gray-200 shadow-inner">
-                                                    <h4 className="text-sm font-bold text-gray-900 mb-3">Detailed Delivery Results</h4>
-                                                    <div className="max-h-60 overflow-y-auto space-y-2 pr-2">
-                                                        {camp.results.map((res, idx) => (
-                                                            <div key={idx} className="grid grid-cols-[1fr_auto] gap-4 text-xs p-3 bg-white rounded shadow-sm border border-gray-100">
-                                                                <div className="flex min-w-0 items-center gap-3">
-                                                                    <div className={`w-2 h-2 rounded-full ${res.status === 'sent' ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                                                                    <span className="font-semibold text-gray-800">{res.name}</span> 
-                                                                    <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{res.phone || 'Unknown Phone'}</span>
-                                                                </div>
-                                                                {res.status === 'sent' ? (
-                                                                    <span className="text-green-600 font-medium">Delivered successfully</span>
-                                                                ) : (
-                                                                    <span className="max-w-xl whitespace-normal break-words text-right font-medium text-red-600" title={res.error}>
-                                                                        Failed: {res.error}
-                                                                    </span>
-                                                                )}
+                                                </td>
+                                                <td className="px-8 py-5">
+                                                    <span className={`px-3 py-1.5 text-xs font-bold rounded-lg uppercase tracking-wide flex items-center inline-flex gap-1.5 ${
+                                                        camp.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' :
+                                                        camp.status === 'failed' ? 'bg-rose-50 text-rose-700 border border-rose-200/60' :
+                                                        camp.status === 'cancelled' ? 'bg-gray-50 text-gray-700 border border-gray-300' :
+                                                        camp.status === 'processing' ? 'bg-blue-50 text-blue-700 border border-blue-200/60' :
+                                                        'bg-amber-50 text-amber-700 border border-amber-200/60'
+                                                    }`}>
+                                                        {camp.status === 'processing' && <Loader2 className="w-3 h-3 animate-spin" />}
+                                                        {camp.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-8 py-5 text-gray-600 font-medium">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <Users className="w-4 h-4 text-gray-400" />
+                                                        {camp.audience_tag || (camp.csv_data ? 'CSV Upload' : 'All Contacts')}
+                                                    </div>
+                                                </td>
+                                                <td className="px-8 py-5 text-gray-600 font-medium">
+                                                    {camp.scheduled_at ? format(new Date(camp.scheduled_at), 'MMM dd, yyyy · hh:mm a') : format(new Date(camp.created_at), 'MMM dd, yyyy · hh:mm a')}
+                                                </td>
+                                                <td className="px-8 py-5">
+                                                    {camp.status === 'completed' ? (
+                                                        <div className="flex gap-3 text-xs items-center">
+                                                            <div className="flex items-center gap-1.5 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-100">
+                                                                <Check className="w-3.5 h-3.5" /> {camp.sent_count}
                                                             </div>
-                                                        ))}
+                                                            <div className="flex items-center gap-1.5 text-rose-700 font-bold bg-rose-50 px-2.5 py-1.5 rounded-lg border border-rose-100">
+                                                                <Info className="w-3.5 h-3.5" /> {camp.failed_count}
+                                                            </div>
+                                                        </div>
+                                                    ) : <span className="text-gray-400 font-medium">-</span>}
+                                                </td>
+                                                <td className="px-8 py-5 text-right">
+                                                    <div className="flex justify-end gap-3 items-center">
+                                                        {(camp.status === 'processing' || camp.status === 'scheduled') && (
+                                                            <button 
+                                                                onClick={() => cancelCampaign(camp.id)}
+                                                                className="text-rose-600 hover:text-white text-xs font-bold flex items-center gap-1.5 bg-rose-50 hover:bg-rose-500 px-3 py-1.5 rounded-lg transition-colors border border-rose-200 hover:border-rose-500"
+                                                                title="Stop and Abandon Campaign"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" /> Stop & Cancel
+                                                            </button>
+                                                        )}
+                                                        {(camp.status === 'completed' || camp.status === 'cancelled') && camp.results && camp.results.length > 0 && (
+                                                            <button 
+                                                                onClick={() => setExpandedCampaignId(expandedCampaignId === camp.id ? null : camp.id)}
+                                                                className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors"
+                                                            >
+                                                                {expandedCampaignId === camp.id ? 'Hide Details' : 'View Results'}
+                                                                {expandedCampaignId === camp.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
-                                        )}
-                                    </React.Fragment>
-                                ))}
-                            </tbody>
-                        </table>
+                                            {expandedCampaignId === camp.id && camp.results && (
+                                                <tr>
+                                                    <td colSpan="6" className="bg-gray-50/50 p-8 border-b border-gray-200 shadow-inner">
+                                                        <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                                            <LayoutGrid className="w-4 h-4 text-gray-400" /> Delivery Report
+                                                        </h4>
+                                                        <div className="max-h-80 overflow-y-auto space-y-2.5 pr-3 scrollbar-thin scrollbar-thumb-gray-200">
+                                                            {camp.results.map((res, idx) => (
+                                                                <div key={idx} className="grid grid-cols-[1fr_auto] gap-4 text-sm p-4 bg-white rounded-xl shadow-sm border border-gray-200/60 hover:border-gray-300 transition-colors">
+                                                                    <div className="flex min-w-0 items-center gap-3">
+                                                                        <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${res.status === 'sent' ? 'bg-emerald-500 shadow-emerald-200' : 'bg-rose-500 shadow-rose-200'}`}></div>
+                                                                        <span className="font-bold text-gray-900">{res.name}</span> 
+                                                                        <span className="text-gray-500 bg-gray-100/80 px-2.5 py-1 rounded-md font-mono text-xs">{res.phone || 'Unknown Phone'}</span>
+                                                                    </div>
+                                                                    {res.status === 'sent' ? (
+                                                                        <span className="text-emerald-600 font-semibold flex items-center gap-1.5">
+                                                                            <Check className="w-4 h-4" /> Delivered
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="max-w-xl whitespace-normal break-words text-right font-semibold text-rose-600 flex items-center gap-1.5" title={res.error}>
+                                                                            <Info className="w-4 h-4 shrink-0" /> Failed: {res.error}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     )}
                 </div>
             ) : sendResult ? (
-                <div className="max-w-2xl mx-auto mt-12 bg-white rounded-xl shadow-sm p-8 text-center space-y-6">
-                    <div className={`mx-auto h-20 w-20 rounded-full flex items-center justify-center ${sendResult.status === 'scheduled' ? 'bg-yellow-100 text-yellow-600' : 'bg-green-100 text-green-600'}`}>
-                        {sendResult.status === 'scheduled' ? <Clock className="h-10 w-10" /> : <Check className="h-10 w-10" />}
+                <div className="max-w-2xl mx-auto mt-12 bg-white rounded-2xl shadow-xl shadow-gray-200/40 p-10 text-center space-y-8 border border-gray-100">
+                    <div className={`mx-auto h-24 w-24 rounded-full flex items-center justify-center ${sendResult.status === 'scheduled' ? 'bg-amber-50 text-amber-500 ring-8 ring-amber-50' : 'bg-emerald-50 text-emerald-500 ring-8 ring-emerald-50'}`}>
+                        {sendResult.status === 'scheduled' ? <Clock className="h-12 w-12" /> : <Check className="h-12 w-12" />}
                     </div>
-                    <h2 className="text-3xl font-bold text-gray-900">
-                        {sendResult.status === 'scheduled' ? 'Campaign Scheduled!' : 'Campaign Launched!'}
-                    </h2>
-                    <p className="text-gray-500">
-                        {sendResult.status === 'scheduled' 
-                            ? `It will automatically run at ${format(new Date(campaign.scheduled_at), 'PPp')}.`
-                            : 'Your messages are currently being processed in the background.'}
-                    </p>
-                    <div className="flex justify-center gap-4 mt-6">
+                    <div>
+                        <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight mb-3">
+                            {sendResult.status === 'scheduled' ? 'Campaign Scheduled!' : 'Campaign Launched!'}
+                        </h2>
+                        <p className="text-gray-500 text-lg leading-relaxed">
+                            {sendResult.status === 'scheduled' 
+                                ? `It will automatically run at ${format(new Date(campaign.scheduled_at), 'PPp')}.`
+                                : 'Your messages are currently being processed in the background.'}
+                        </p>
+                    </div>
+                    <div className="flex justify-center gap-4 pt-4 border-t border-gray-100">
                         <button 
                             onClick={startNew}
-                            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium"
+                            className="px-8 py-3.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-bold shadow-lg shadow-indigo-200 transition-all hover:-translate-y-0.5"
                         >
                             Start New Campaign
                         </button>
                         <button 
                             onClick={() => setActiveTab('history')}
-                            className="px-6 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+                            className="px-8 py-3.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-bold shadow-sm transition-all"
                         >
                             View History
                         </button>
                     </div>
                 </div>
             ) : (
-                <>
+                <div className="space-y-10">
                     {/* Progress Steps */}
-                    <div className="relative after:absolute after:inset-x-0 after:top-1/2 after:h-0.5 after:-translate-y-1/2 after:bg-gray-200">
+                    <div className="relative">
+                        <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -translate-y-1/2 rounded-full"></div>
+                        <div className="absolute top-1/2 left-0 h-1 bg-indigo-600 -translate-y-1/2 rounded-full transition-all duration-500 ease-in-out" style={{ width: `${((currentStep - 1) / (STEPS.length - 1)) * 100}%` }}></div>
+                        
                         <div className="relative z-10 flex justify-between">
                             {STEPS.map((step) => {
                                 const isActive = step.id === currentStep
@@ -683,20 +735,21 @@ export default function Broadcast() {
                                 return (
                                     <div 
                                         key={step.id} 
-                                        className={`flex flex-col items-center bg-gray-50 px-2 ${isCompleted ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                                        className={`flex flex-col items-center bg-transparent ${isCompleted ? 'cursor-pointer hover:scale-105 transition-transform' : ''}`}
                                         onClick={() => {
                                             if (isCompleted) {
                                                 setCurrentStep(step.id)
                                             }
                                         }}
                                     >
-                                        <div className={`flex h-10 w-10 items-center justify-center rounded-full border-2 transition-colors ${isActive ? 'border-indigo-600 bg-indigo-600 text-white' :
-                                                isCompleted ? 'border-green-500 bg-green-500 text-white' :
-                                                    'border-gray-300 bg-white text-gray-400'
+                                        <div className={`flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm transition-all duration-300 ${
+                                                isActive ? 'bg-indigo-600 text-white ring-4 ring-indigo-100 scale-110' :
+                                                isCompleted ? 'bg-emerald-500 text-white border-2 border-emerald-500' :
+                                                'bg-white text-gray-400 border-2 border-gray-200'
                                             }`}>
-                                            <step.icon className="h-5 w-5" />
+                                            <step.icon className={`h-6 w-6 ${isActive || isCompleted ? '' : 'opacity-70'}`} />
                                         </div>
-                                        <span className={`mt-2 text-xs font-medium ${isActive ? 'text-indigo-600' : 'text-gray-500'}`}>
+                                        <span className={`mt-4 text-sm font-bold tracking-wide uppercase transition-colors ${isActive ? 'text-indigo-700' : isCompleted ? 'text-emerald-600' : 'text-gray-400'}`}>
                                             {step.name}
                                         </span>
                                     </div>
@@ -771,41 +824,65 @@ export default function Broadcast() {
                                     <p className="text-sm text-gray-500">Who should receive this message?</p>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <label className={`
                                         relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-colors
-                                        ${campaign.audience_tag === '' ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
+                                        ${campaign.audience_type === 'saved' ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
                                     `}>
                                         <input
                                             type="radio"
                                             name="audience"
                                             className="sr-only"
-                                            checked={campaign.audience_tag === ''}
-                                            onChange={() => setCampaign({ ...campaign, audience_tag: '' })}
+                                            checked={campaign.audience_type === 'saved'}
+                                            onChange={() => setCampaign({ ...campaign, audience_type: 'saved', audience_tag: '' })}
                                         />
                                         <span className="flex flex-1">
                                             <span className="flex flex-col">
-                                                <span className="block text-sm font-medium text-gray-900">All Contacts</span>
+                                                <span className="block text-sm font-medium text-gray-900">Saved Contacts Only <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">Recommended</span></span>
                                                 <span className="mt-1 flex items-center text-sm text-gray-500">
                                                     <Users className="h-4 w-4 mr-1" />
                                                     {isLoading.contacts ? <Loader2 className="w-3 h-3 animate-spin mr-1"/> : null}
-                                                    {contacts.length} contacts
+                                                    {contacts.filter(c => c.saved_at != null).length} saved contacts
                                                 </span>
                                             </span>
                                         </span>
-                                        <Check className={`h-5 w-5 ${campaign.audience_tag === '' ? 'text-indigo-600' : 'invisible'}`} />
+                                        <Check className={`h-5 w-5 ${campaign.audience_type === 'saved' ? 'text-indigo-600' : 'invisible'}`} />
+                                    </label>
+
+                                    <label className={`
+                                        relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-colors
+                                        ${campaign.audience_type === 'all' ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
+                                    `}>
+                                        <input
+                                            type="radio"
+                                            name="audience"
+                                            className="sr-only"
+                                            checked={campaign.audience_type === 'all'}
+                                            onChange={() => setCampaign({ ...campaign, audience_type: 'all', audience_tag: '' })}
+                                        />
+                                        <span className="flex flex-1">
+                                            <span className="flex flex-col">
+                                                <span className="block text-sm font-medium text-gray-900">All Contacts <span className="text-xs font-normal text-gray-400">(Includes Synced)</span></span>
+                                                <span className="mt-1 flex items-center text-sm text-gray-500">
+                                                    <Users className="h-4 w-4 mr-1" />
+                                                    {isLoading.contacts ? <Loader2 className="w-3 h-3 animate-spin mr-1"/> : null}
+                                                    {contacts.length} total contacts
+                                                </span>
+                                            </span>
+                                        </span>
+                                        <Check className={`h-5 w-5 ${campaign.audience_type === 'all' ? 'text-indigo-600' : 'invisible'}`} />
                                     </label>
                                     
                                     <label className={`
                                         relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-colors
-                                        ${campaign.audience_tag === 'CSV_UPLOAD' ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
+                                        ${campaign.audience_type === 'CSV_UPLOAD' ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
                                     `}>
                                         <input
                                             type="radio"
                                             name="audience"
                                             className="sr-only"
-                                            checked={campaign.audience_tag === 'CSV_UPLOAD'}
-                                            onChange={() => setCampaign({ ...campaign, audience_tag: 'CSV_UPLOAD' })}
+                                            checked={campaign.audience_type === 'CSV_UPLOAD'}
+                                            onChange={() => setCampaign({ ...campaign, audience_type: 'CSV_UPLOAD', audience_tag: 'CSV_UPLOAD' })}
                                         />
                                         <span className="flex flex-1">
                                             <span className="flex flex-col">
@@ -816,7 +893,7 @@ export default function Broadcast() {
                                                 </span>
                                             </span>
                                         </span>
-                                        <Check className={`h-5 w-5 ${campaign.audience_tag === 'CSV_UPLOAD' ? 'text-indigo-600' : 'invisible'}`} />
+                                        <Check className={`h-5 w-5 ${campaign.audience_type === 'CSV_UPLOAD' ? 'text-indigo-600' : 'invisible'}`} />
                                     </label>
 
                                     {isLoading.tags ? (
@@ -828,14 +905,14 @@ export default function Broadcast() {
                                         return (
                                             <label key={tag} className={`
                                                 relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-colors
-                                                ${campaign.audience_tag === tag ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
+                                                ${campaign.audience_type === 'tag' && campaign.audience_tag === tag ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
                                             `}>
                                                 <input
                                                     type="radio"
                                                     name="audience"
                                                     className="sr-only"
-                                                    checked={campaign.audience_tag === tag}
-                                                    onChange={() => setCampaign({ ...campaign, audience_tag: tag })}
+                                                    checked={campaign.audience_type === 'tag' && campaign.audience_tag === tag}
+                                                    onChange={() => setCampaign({ ...campaign, audience_type: 'tag', audience_tag: tag })}
                                                 />
                                                 <span className="flex flex-1">
                                                     <span className="flex flex-col">
@@ -846,12 +923,12 @@ export default function Broadcast() {
                                                         </span>
                                                     </span>
                                                 </span>
-                                                <Check className={`h-5 w-5 ${campaign.audience_tag === tag ? 'text-indigo-600' : 'invisible'}`} />
+                                                <Check className={`h-5 w-5 ${campaign.audience_type === 'tag' && campaign.audience_tag === tag ? 'text-indigo-600' : 'invisible'}`} />
                                             </label>
                                         )
                                     })}
 
-                                    {campaign.audience_tag === 'CSV_UPLOAD' && (
+                                    {campaign.audience_type === 'CSV_UPLOAD' && (
                                         <div className="col-span-2 mt-4 p-8 border-2 border-dashed border-gray-300 rounded-xl text-center bg-gray-50 transition-colors hover:border-indigo-400">
                                             <input type="file" accept=".csv" className="hidden" id="csv-upload" onChange={handleFileUpload} />
                                             <label htmlFor="csv-upload" className="cursor-pointer">
@@ -1218,7 +1295,7 @@ export default function Broadcast() {
                             </button>
                         )}
                     </div>
-                </>
+                </div>
             )}
         </div>
     )

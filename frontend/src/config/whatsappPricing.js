@@ -10,7 +10,7 @@ export const FALLBACK_PLANS = [
         description: 'Trial workspace for testing WhatsApp chat and basic automation.',
         monthly_price_paise: 0,
         yearly_price_paise: 0,
-        limits: { numbers: 1, contacts: 200, agents: 1, flows: 2, broadcasts_per_month: 0 },
+        limits: { numbers: 1, contacts: 200, agents: 1, flows: 2, ai_agents: 0, broadcasts_per_month: 0, allow_broadcasts: false, allow_scheduling: false, allow_api_webhooks: false, allow_exports: false },
         features: ['1 WhatsApp number', '200 contacts', '1 team member', '2 basic flows', 'Live chat access'],
     },
     {
@@ -19,7 +19,7 @@ export const FALLBACK_PLANS = [
         description: 'Simple WhatsApp workspace for small shops and service businesses.',
         monthly_price_paise: 99900,
         yearly_price_paise: 999000,
-        limits: { numbers: 1, contacts: 1000, agents: 1, flows: 5, broadcasts_per_month: 5 },
+        limits: { numbers: 1, contacts: 1000, agents: 5, flows: 5, ai_agents: 0, broadcasts_per_month: 100, allow_broadcasts: true, allow_scheduling: false, allow_api_webhooks: false, allow_exports: false },
         features: ['1 WhatsApp number', '1,000 contacts', '5 automation flows', 'Manual broadcasts', 'Basic bot replies'],
     },
     {
@@ -28,7 +28,7 @@ export const FALLBACK_PLANS = [
         description: 'Best plan for growing teams running campaigns and customer support.',
         monthly_price_paise: 199900,
         yearly_price_paise: 1999000,
-        limits: { numbers: 1, contacts: 10000, agents: 5, flows: -1, broadcasts_per_month: 50 },
+        limits: { numbers: 1, contacts: 10000, agents: 5, flows: -1, ai_agents: 5, broadcasts_per_month: -1, allow_broadcasts: true, allow_scheduling: false, allow_api_webhooks: false, allow_exports: false },
         features: ['10,000 contacts', '5 agents included', 'Unlimited flows', 'Broadcast campaigns', 'Message spend dashboard'],
         badge: 'Recommended',
     },
@@ -38,7 +38,7 @@ export const FALLBACK_PLANS = [
         description: 'Advanced automation, campaigns, AI agents, and reporting.',
         monthly_price_paise: 349900,
         yearly_price_paise: 3499000,
-        limits: { numbers: 2, contacts: 50000, agents: 10, flows: -1, broadcasts_per_month: 200 },
+        limits: { numbers: 2, contacts: 50000, agents: 10, flows: -1, ai_agents: -1, broadcasts_per_month: -1, allow_broadcasts: true, allow_scheduling: true, allow_api_webhooks: true, allow_exports: true },
         features: ['2 WhatsApp numbers', '50,000 contacts', '10 agents included', 'Campaign scheduler', 'API and webhooks'],
     },
 ]

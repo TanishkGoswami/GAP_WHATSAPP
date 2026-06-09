@@ -68,7 +68,7 @@ export default function Layout() {
         }
     };
 
-    if (loading || !user?.subscription_checked) {
+    if (loading || (user && !user.subscription_checked)) {
         return (
             <div className="fixed inset-0 flex items-center justify-center bg-gray-50">
                 <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />

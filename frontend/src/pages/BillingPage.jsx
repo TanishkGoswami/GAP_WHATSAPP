@@ -65,7 +65,8 @@ export default function BillingPage() {
                 if (!cancelled) setLoading(false)
             })
         return () => { cancelled = true }
-    }, [apiCall])
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
     const plans = overview?.plans?.length ? overview.plans : FALLBACK_PLANS
     const rateCards = overview?.rate_cards?.length ? overview.rate_cards : FALLBACK_RATE_CARDS
@@ -363,20 +364,163 @@ export default function BillingPage() {
                     <div className="divide-y divide-gray-100">
                         {(overview?.recent_transactions || []).length === 0 ? (
                             <p className="p-5 text-sm text-gray-500">Abhi wallet transaction history empty hai.</p>
-                        ) : overview.recent_transactions.map(tx => (
-                            <div key={tx.id} className="flex items-center justify-between gap-4 p-4">
-                                <div>
-                                    <p className="text-sm font-semibold capitalize text-gray-900">{String(tx.type || '').replaceAll('_', ' ')}</p>
-                                    <p className="mt-1 text-xs text-gray-500">{tx.description || tx.status}</p>
+                        ) : overview.recent_transactions.map(tx => {
+                            const isPending = tx.status === 'pending';
+                            const isCompleted = tx.status === 'completed';
+                            return (
+                                <div key={tx.id} className="flex items-center justify-between gap-4 p-4">
+                                    <div>
+                                        <p className="text-sm font-semibold capitalize text-gray-900">{String(tx.type || '').replaceAll('_', ' ')}</p>
+                                        <div className="mt-1 flex items-center gap-2">
+                                            {isPending ? (
+                                                <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/10">
+                                                    Incomplete / Cancelled
+                                                </span>
+                                            ) : isCompleted ? (
+                                                <span className="inline-flex rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                                                    Completed
+                                                </span>
+                                            ) : (
+                                                <span className="text-xs text-gray-500">{tx.description || tx.status}</span>
+                                            )}
+                                            {isCompleted && (
+                                                <button
+                                                    onClick={() => {
+                                                        const invoiceDate = new Date(tx.created_at).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
+                                                        const invoiceNo = `GAP-${new Date(tx.created_at).getFullYear()}-${tx.id.split('-')[0].toUpperCase()}`;
+                                                        const customerName = user?.user_metadata?.organization_name || user?.user_metadata?.full_name || 'Customer';
+                                                        const amountFormatted = formatINRFromPaise(Math.abs(tx.amount_paise));
+                                                        
+                                                        const receiptContent = `
+                                                            <html>
+                                                            <head>
+                                                            <title>Invoice - ${invoiceNo}</title>
+                                                            <style>
+                                                            body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 40px; margin: 0; color: #111827; background: #fff; }
+                                                            .invoice-container { max-width: 800px; margin: 0 auto; }
+                                                            .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; }
+                                                            .logo-container { display: flex; align-items: center; gap: 10px; font-size: 24px; font-weight: 800; letter-spacing: -0.5px; }
+                                                            .logo-icon { width: 32px; height: 32px; object-fit: contain; }
+                                                            .invoice-title { font-size: 28px; font-weight: 500; letter-spacing: 2px; color: #374151; }
+                                                            .company-details { margin-top: 10px; font-size: 14px; color: #4b5563; line-height: 1.5; }
+                                                            .billing-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 40px; }
+                                                            .bill-to h3 { font-size: 11px; font-weight: 600; color: #6b7280; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }
+                                                            .bill-to p { font-size: 14px; margin: 0; line-height: 1.5; color: #4b5563; }
+                                                            .bill-to strong { color: #111827; font-size: 16px; display: block; margin-bottom: 4px; }
+                                                            .meta-table { width: 100%; border-collapse: collapse; }
+                                                            .meta-table td { padding: 6px 0; font-size: 14px; }
+                                                            .meta-table td:first-child { font-weight: 600; color: #374151; width: 40%; }
+                                                            .meta-table td:last-child { text-align: right; color: #111827; }
+                                                            .invoice-table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+                                                            .invoice-table th { padding: 12px 0; border-bottom: 2px solid #e5e7eb; font-size: 11px; font-weight: 600; color: #111827; text-transform: uppercase; letter-spacing: 1px; text-align: right; }
+                                                            .invoice-table th:first-child { text-align: left; }
+                                                            .invoice-table td { padding: 16px 0; border-bottom: 1px solid #e5e7eb; font-size: 14px; text-align: right; color: #374151; }
+                                                            .invoice-table td:first-child { text-align: left; font-weight: 600; color: #111827; }
+                                                            .invoice-table .desc-sub { display: block; font-weight: normal; color: #6b7280; font-size: 12px; margin-top: 4px; }
+                                                            .summary-container { display: flex; justify-content: flex-end; }
+                                                            .summary-table { width: 300px; border-collapse: collapse; }
+                                                            .summary-table td { padding: 8px 0; font-size: 14px; text-align: right; }
+                                                            .summary-table td:first-child { text-align: left; color: #4b5563; }
+                                                            .summary-table .total-row td { padding-top: 12px; border-top: 2px solid #111827; font-weight: 700; font-size: 16px; color: #111827; }
+                                                            .memo { margin-top: 60px; font-size: 13px; color: #4b5563; line-height: 1.6; }
+                                                            .memo strong { color: #111827; display: block; margin-bottom: 4px; font-size: 14px; }
+                                                            </style>
+                                                            </head>
+                                                            <body>
+                                                                <div class="invoice-container">
+                                                                    <div class="header">
+                                                                        <div>
+                                                                            <div class="logo-container">
+                                                                                <img src="https://getaipilot.in/logo.png" alt="Get AI Pilot Logo" class="logo-icon" />
+                                                                                <span>Get AI Pilot</span>
+                                                                            </div>
+                                                                            <div class="company-details">
+                                                                                Get AI Pilot Automation<br>
+                                                                                India<br>
+                                                                                support@getaipilot.in
+                                                                            </div>
+                                                                        </div>
+                                                                        <div class="invoice-title">INVOICE</div>
+                                                                    </div>
+                                                            
+                                                                    <div class="billing-grid">
+                                                                        <div class="bill-to">
+                                                                            <h3>Bill To</h3>
+                                                                            <strong>${customerName}</strong>
+                                                                            <p>${user?.email || ''}</p>
+                                                                            <p>India</p>
+                                                                        </div>
+                                                                        <div>
+                                                                            <table class="meta-table">
+                                                                                <tr><td>Invoice number</td><td>${invoiceNo}</td></tr>
+                                                                                <tr><td>Invoice date</td><td>${invoiceDate}</td></tr>
+                                                                                <tr><td>Amount due</td><td>${amountFormatted}</td></tr>
+                                                                            </table>
+                                                                        </div>
+                                                                    </div>
+                                                            
+                                                                    <table class="invoice-table">
+                                                                        <thead>
+                                                                            <tr>
+                                                                                <th>Description</th>
+                                                                                <th>Quantity</th>
+                                                                                <th>Rate</th>
+                                                                                <th>Amount</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody>
+                                                                            <tr>
+                                                                                <td>
+                                                                                    WhatsApp Message Wallet Recharge
+                                                                                    <span class="desc-sub">Transaction ID: ${tx.id}</span>
+                                                                                </td>
+                                                                                <td>1</td>
+                                                                                <td>${amountFormatted}</td>
+                                                                                <td>${amountFormatted}</td>
+                                                                            </tr>
+                                                                        </tbody>
+                                                                    </table>
+                                                            
+                                                                    <div class="summary-container">
+                                                                        <table class="summary-table">
+                                                                            <tr><td>Subtotal</td><td>${amountFormatted}</td></tr>
+                                                                            <tr><td>Tax</td><td>₹0.00</td></tr>
+                                                                            <tr class="total-row"><td>Amount due</td><td>${amountFormatted}</td></tr>
+                                                                        </table>
+                                                                    </div>
+                                                            
+                                                                    <div class="memo">
+                                                                        <strong>Memo:</strong>
+                                                                        Thank you for choosing Get AI Pilot.<br>
+                                                                        This invoice is generated for your wallet recharge and account services.<br>
+                                                                        Taxes, if applicable, are calculated from the saved billing profile and local regulations.<br>
+                                                                        For billing support, contact support@getaipilot.in.
+                                                                    </div>
+                                                                </div>
+                                                                <script>setTimeout(() => window.print(), 500);</script>
+                                                            </body>
+                                                            </html>
+                                                        `;
+                                                        const printWin = window.open('', '_blank');
+                                                        printWin.document.write(receiptContent);
+                                                        printWin.document.close();
+                                                    }}
+                                                    className="ml-2 text-xs font-semibold text-indigo-600 hover:text-indigo-500 hover:underline"
+                                                >
+                                                    Download Receipt
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className={`text-sm font-semibold ${tx.amount_paise < 0 ? 'text-red-600' : 'text-gray-950'} ${isPending ? 'line-through text-gray-400 opacity-60' : ''}`}>
+                                            {formatINRFromPaise(Math.abs(tx.amount_paise))}
+                                        </p>
+                                        <p className="mt-1 text-xs text-gray-500">{new Date(tx.created_at).toLocaleDateString('en-IN')}</p>
+                                    </div>
                                 </div>
-                                <div className="text-right">
-                                    <p className={`text-sm font-semibold ${tx.amount_paise < 0 ? 'text-red-600' : 'text-gray-950'}`}>
-                                        {formatINRFromPaise(tx.amount_paise)}
-                                    </p>
-                                    <p className="mt-1 text-xs text-gray-500">{new Date(tx.created_at).toLocaleDateString('en-IN')}</p>
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </section>
             </div>
