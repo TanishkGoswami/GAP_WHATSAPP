@@ -831,14 +831,14 @@ async function authMiddleware(req: any, res: any, next: any) {
         }
 
         req.user = user;
-        
+
         // Fetch member role and org
         const { data: member } = await supabase
             .from('organization_members')
             .select('role, organization_id, is_active')
             .eq('user_id', user.id)
             .maybeSingle();
-        
+
         // Resolve role and portal context
 
         const portal = req.headers['x-auth-portal'] || 'owner';
@@ -880,7 +880,7 @@ async function authMiddleware(req: any, res: any, next: any) {
                     const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
                     const { data: newOrg, error: orgErr } = await supabase
                         .from('organizations')
-                        .insert({ 
+                        .insert({
                             name: orgName,
                             slug: slug,
                             plan_id: 'starter',
@@ -918,12 +918,12 @@ async function authMiddleware(req: any, res: any, next: any) {
                 // Continue, might still fail 403 below
             }
         }
-        
+
         if (!orgId) {
             console.warn(`⚠️ User ${user.email} (${user.id}) has no organization_id.`);
             return res.status(403).json({ error: 'Forbidden - User does not belong to any organization' });
         }
-        
+
         req.organization_id = orgId;
 
         // Enforce active subscription check
@@ -937,7 +937,7 @@ async function authMiddleware(req: any, res: any, next: any) {
                 return res.status(403).json({ error: 'Subscription expired or plan does not include GAP WhatsApp access. Please upgrade.' });
             }
         }
-        
+
         next();
     } catch (err: any) {
         console.error("Auth Middleware Exception:", err.message);
@@ -2082,7 +2082,7 @@ app.post("/api/wa/connect/callback", authMiddleware, async (req: any, res) => {
         const discoveredWabaIds = Array.isArray(wabaData.data) && wabaData.data.length
             ? wabaData.data
             : (waba_id ? [{ id: waba_id }] : []);
-        
+
         if (discoveredWabaIds.length === 0) {
             return res.status(400).json({
                 error: 'No WhatsApp Business Account was found. Select/create a WABA during Meta onboarding, add a phone number, then try again.'
@@ -2092,7 +2092,7 @@ app.post("/api/wa/connect/callback", authMiddleware, async (req: any, res) => {
         // Process each discovered WABA
         for (const waba of discoveredWabaIds) {
             const currentWabaId = waba.id;
-            
+
             // Fetch Phone Numbers for this specific WABA
             const numbersUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/${currentWabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status&access_token=${encodeURIComponent(finalToken)}`;
             const numRes = await fetch(numbersUrl);
@@ -2204,7 +2204,7 @@ app.post("/api/wa/logout", async (req, res) => {
                 }
             }, 500);
         }
-        
+
         // Clear all session states
         initializingSessions.delete(sessionId);
         latestQrBySession.delete(sessionId);
@@ -2346,9 +2346,9 @@ async function upsertContact(organization_id: string, wa_account_id: string, wa_
     // Use upsert with ON CONFLICT to handle race conditions
     const { data: inserted, error: insErr } = await supabase
         .from('w_contacts')
-        .upsert(insertPayload, { 
+        .upsert(insertPayload, {
             onConflict: 'organization_id,wa_id',
-            ignoreDuplicates: false 
+            ignoreDuplicates: false
         })
         .select()
         .single();
@@ -2382,7 +2382,7 @@ async function performAutoAssignment(organization_id: string, conversation_id: s
             .eq('organization_id', organization_id)
             .eq('role', 'agent')
             .eq('is_active', true);
-        
+
         if (memErr || !members || members.length === 0) return;
 
         const eligibleAgents = members
@@ -2420,7 +2420,7 @@ async function performAutoAssignment(organization_id: string, conversation_id: s
             .eq('id', conversation_id)
             .select('assigned_agent_id, assigned_to')
             .single();
-        
+
         if (updErr) throw updErr;
 
         // Fetch agent name
@@ -2733,7 +2733,7 @@ async function getBotAgentReply(params: {
 
         // Call OpenAI
         const systemPrompt = targetAgent.system_prompt || `You are ${targetAgent.name}, a helpful WhatsApp assistant. ${targetAgent.description || ''}`;
-        
+
         const messages = [
             {
                 role: 'system',
@@ -3928,7 +3928,7 @@ app.get("/api/flow-sessions/:contact_id", async (req, res) => {
             .maybeSingle();
         if (error) throw error;
         res.json(data || null);
-    } catch(err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete("/api/flow-sessions/:id", async (req, res) => {
@@ -3937,7 +3937,7 @@ app.delete("/api/flow-sessions/:id", async (req, res) => {
         const { error } = await supabase.from('w_flow_sessions').update({ status: 'abandoned' }).eq('id', id);
         if (error) throw error;
         res.json({ success: true });
-    } catch(err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
 function createInviteToken() {
@@ -4335,7 +4335,7 @@ app.get('/api/contacts', authMiddleware, async (req: any, res) => {
     const organization_id = req.organization_id;
     const includeGroups = req.query.include_groups === 'true';
     const includeUnsaved = req.query.include_unsaved === 'true';
-    
+
     if (!organization_id) {
         return res.status(403).json({ error: 'No organization linked to this account' });
     }
@@ -4739,7 +4739,7 @@ app.get('/api/team/members', authMiddleware, async (req: any, res) => {
             .select('*')
             .eq('organization_id', orgId)
             .order('created_at', { ascending: true });
-        
+
         if (error) throw error;
         res.json((data || []).map((member: any) => ({
             ...member,
@@ -4808,10 +4808,10 @@ app.post('/api/team/invite', authMiddleware, async (req: any, res) => {
                         const { data: users, error: listErr } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
                         if (listErr) throw listErr;
                         if (!users?.users?.length) break;
-                        
+
                         existingUser = users.users.find((u: any) => u.email?.toLowerCase() === normalizedEmail);
                         if (existingUser) break;
-                        
+
                         if (users.users.length < 1000) break;
                         page++;
                     }
@@ -5142,7 +5142,7 @@ app.patch('/api/conversations/:id/assign', authMiddleware, async (req: any, res)
 
         const { data: updated, error } = await supabase
             .from('w_conversations')
-            .update({ 
+            .update({
                 assigned_to: normalizedAgentId,
                 assigned_agent_id: normalizedAgentId
             })
@@ -5332,7 +5332,7 @@ app.get('/api/flows', authMiddleware, async (req: any, res) => {
             .order('updated_at', { ascending: false });
         if (error) throw error;
         res.json(data || []);
-    } catch(e: any) { res.status(500).json({error: e.message}); }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/flows/:id', authMiddleware, async (req: any, res) => {
@@ -5347,7 +5347,7 @@ app.get('/api/flows/:id', authMiddleware, async (req: any, res) => {
         if (error) throw error;
         if (!data) return res.status(404).json({ error: 'Flow not found' });
         res.json(data);
-    } catch(e: any) { res.status(500).json({error: e.message}); }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/flows', authMiddleware, async (req: any, res) => {
@@ -5383,7 +5383,7 @@ app.post('/api/flows', authMiddleware, async (req: any, res) => {
         const { data, error } = await supabase.from('w_flows').insert(payload).select().single();
         if (error) throw error;
         res.status(201).json(data);
-    } catch(e: any) { res.status(e.statusCode || 500).json({error: e.message, limit: e.limit}); }
+    } catch (e: any) { res.status(e.statusCode || 500).json({ error: e.message, limit: e.limit }); }
 });
 
 app.put('/api/flows/:id', authMiddleware, async (req: any, res) => {
@@ -5422,7 +5422,7 @@ app.put('/api/flows/:id', authMiddleware, async (req: any, res) => {
         if (error) throw error;
         if (!data) return res.status(404).json({ error: 'Flow not found' });
         res.json(data);
-    } catch(e: any) { res.status(500).json({error: e.message}); }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/flows/:id/validate', authMiddleware, async (req: any, res) => {
@@ -5437,7 +5437,7 @@ app.post('/api/flows/:id/validate', authMiddleware, async (req: any, res) => {
         if (error) throw error;
         if (!flow) return res.status(404).json({ error: 'Flow not found' });
         res.json(validateFlowDefinition(flow));
-    } catch(e: any) { res.status(500).json({error: e.message}); }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/flows/:id/publish', authMiddleware, async (req: any, res) => {
@@ -5509,7 +5509,7 @@ app.post('/api/flows/:id/publish', authMiddleware, async (req: any, res) => {
         if (updateErr) throw updateErr;
 
         res.json({ success: true, flow: updated, version });
-    } catch(e: any) { res.status(500).json({error: e.message}); }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/flows/:id/runs', authMiddleware, async (req: any, res) => {
@@ -5524,7 +5524,7 @@ app.get('/api/flows/:id/runs', authMiddleware, async (req: any, res) => {
             .limit(50);
         if (error) throw error;
         res.json(data || []);
-    } catch(e: any) { res.status(500).json({error: e.message}); }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/api/flow-runs/:id', authMiddleware, async (req: any, res) => {
@@ -5546,7 +5546,7 @@ app.get('/api/flow-runs/:id', authMiddleware, async (req: any, res) => {
             .order('started_at', { ascending: true });
         if (stepErr) throw stepErr;
         res.json({ ...run, steps: steps || [] });
-    } catch(e: any) { res.status(500).json({error: e.message}); }
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/api/flows/:id', authMiddleware, async (req: any, res) => {
@@ -5557,8 +5557,8 @@ app.delete('/api/flows/:id', authMiddleware, async (req: any, res) => {
             .eq('id', req.params.id)
             .eq('organization_id', req.organization_id);
         if (error) throw error;
-        res.json({success: true});
-    } catch(e: any) { res.status(500).json({error: e.message}); }
+        res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
 });
 
 function isTemplateStarsMissingError(error: any) {
@@ -5668,8 +5668,8 @@ app.get('/api/agents', authMiddleware, async (req: any, res) => {
             // Check if table doesn't exist
             if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
                 console.error('bot_agents table does not exist. Please run the migration.');
-                return res.status(500).json({ 
-                    error: 'Database table "bot_agents" not found. Please run the migration: supabase/migrations/20260127100000_add_bot_agents_and_conversation_bot_settings.sql' 
+                return res.status(500).json({
+                    error: 'Database table "bot_agents" not found. Please run the migration: supabase/migrations/20260127100000_add_bot_agents_and_conversation_bot_settings.sql'
                 });
             }
             throw error;
@@ -5735,8 +5735,8 @@ app.post('/api/agents', authMiddleware, async (req: any, res) => {
             // Check if table doesn't exist
             if (error.message?.includes('relation') && error.message?.includes('does not exist')) {
                 console.error('bot_agents table does not exist. Please run the migration.');
-                return res.status(500).json({ 
-                    error: 'Database table "bot_agents" not found. Please run the migration first.' 
+                return res.status(500).json({
+                    error: 'Database table "bot_agents" not found. Please run the migration first.'
                 });
             }
             throw error;
@@ -5873,7 +5873,7 @@ app.get('/api/settings/openai', authMiddleware, async (req: any, res) => {
 
         if (error) throw error;
 
-        res.json({ 
+        res.json({
             configured: !!data,
             hasEnvKey: !!process.env.OPENAI_API_KEY
         });
@@ -7044,7 +7044,7 @@ app.delete('/api/whatsapp/accounts/:id', authMiddleware, async (req, res) => {
             .update({ status: 'disconnected', access_token_encrypted: null })
             .eq('id', id)
             .eq('organization_id', orgId); // Ensure user can only delete their own accounts
-            
+
         if (error) throw error;
         res.json({ success: true });
     } catch (err: any) {
@@ -7154,10 +7154,10 @@ app.patch('/api/whatsapp/accounts/:id/business-profile', authMiddleware, upload.
 // Get list of templates
 app.get('/api/whatsapp/templates', authMiddleware, async (req, res) => {
     const orgId = (req as any).organization_id;
-    
+
     try {
         if (!orgId) throw new Error('No organization found');
-        
+
         const { data: accounts } = await supabase
             .from('w_wa_accounts')
             .select('*')
@@ -7165,7 +7165,7 @@ app.get('/api/whatsapp/templates', authMiddleware, async (req, res) => {
             .not('whatsapp_business_account_id', 'is', null);
 
         if (!accounts || accounts.length === 0) {
-            return res.json([]); 
+            return res.json([]);
         }
 
         const account = accounts[0];
@@ -7176,7 +7176,7 @@ app.get('/api/whatsapp/templates', authMiddleware, async (req, res) => {
             headers: { Authorization: `Bearer ${token}` }
         });
         const json = await response.json();
-        
+
         if (!response.ok) {
             console.error('Meta API Error:', json);
             return res.status(response.status).json({ error: json.error?.message || 'Failed to fetch templates from Meta' });
@@ -7215,32 +7215,38 @@ app.post('/api/whatsapp/templates', authMiddleware, upload.single('file'), async
         let parsedComponents = [];
         try {
             parsedComponents = JSON.parse(components || '[]');
-        } catch(e) { 
+        } catch (e) {
             return res.status(400).json({ error: 'Invalid components format' });
         }
 
         if (file) {
-            // Meta Resumable Upload API
-            const initRes = await fetch(`https://graph.facebook.com/v20.0/${phone_id}/uploads?file_length=${file.size}&file_type=${file.mimetype}`, {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            // Meta Resumable Upload API — must use App ID (not phone_id) to create upload sessions
+            const appId = process.env.META_APP_ID;
+            if (!appId) throw new Error('META_APP_ID is not configured. Cannot upload media for templates.');
+
+            const initUrl = new URL(`https://graph.facebook.com/v20.0/${appId}/uploads`);
+            initUrl.searchParams.set('file_length', String(file.size));
+            initUrl.searchParams.set('file_type', file.mimetype);
+            initUrl.searchParams.set('access_token', token);
+
+            const initRes = await fetch(initUrl, { method: 'POST' });
             const initJson = await initRes.json();
             if (!initRes.ok) throw new Error(initJson.error?.message || 'Upload initialization failed');
-            
+
             const uploadSessionId = initJson.id;
 
             const uploadRes = await fetch(`https://graph.facebook.com/v20.0/${uploadSessionId}`, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     Authorization: `OAuth ${token}`,
-                    file_offset: '0'
+                    file_offset: '0',
+                    'Content-Type': file.mimetype || 'application/octet-stream'
                 },
                 body: file.buffer as any
             });
             const uploadJson = await uploadRes.json();
             if (!uploadRes.ok) throw new Error(uploadJson.error?.message || 'File upload failed');
-            
+
             const handle = uploadJson.h;
 
             // Inject the handle into the HEADER component
@@ -7251,20 +7257,29 @@ app.post('/api/whatsapp/templates', authMiddleware, upload.single('file'), async
         }
 
         const payload = { name, category, language, components: parsedComponents };
+        console.log('[Template] Submitting to Meta:', JSON.stringify(payload, null, 2));
 
         const response = await fetch(`https://graph.facebook.com/v20.0/${waba_id}/message_templates`, {
             method: 'POST',
-            headers: { 
+            headers: {
                 Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(payload)
         });
         const json = await response.json();
-        
+
         if (!response.ok) {
-            console.error('Meta API Error:', json);
-            return res.status(response.status).json({ error: json.error?.message || 'Template creation failed' });
+            console.error('[Template] Meta API Error (full):', JSON.stringify(json, null, 2));
+            const errMsg = json.error?.error_user_msg || json.error?.message || 'Template creation failed';
+            const errSubcode = json.error?.error_subcode || json.error?.code || null;
+            const errData = json.error?.error_data || null;
+            return res.status(response.status).json({
+                error: errMsg,
+                error_subcode: errSubcode,
+                error_data: errData,
+                meta_error: json.error
+            });
         }
         res.json({ success: true, data: json });
     } catch (err: any) {
@@ -7280,7 +7295,7 @@ app.delete('/api/whatsapp/templates/:name', authMiddleware, async (req, res) => 
 
     try {
         if (!orgId) throw new Error('No organization found');
-        
+
         const { data: accounts } = await supabase
             .from('w_wa_accounts')
             .select('*')
@@ -7295,15 +7310,40 @@ app.delete('/api/whatsapp/templates/:name', authMiddleware, async (req, res) => 
         const token = decryptToken(account.access_token_encrypted);
         const waba_id = account.whatsapp_business_account_id;
 
-        const response = await fetch(`https://graph.facebook.com/v20.0/${waba_id}/message_templates?name=${name}`, {
+        // Step 1: Fetch the template to get its numeric ID (hsm_id)
+        // Meta recommends using both name + hsm_id for precise deletion
+        let deleteUrl = `https://graph.facebook.com/v20.0/${waba_id}/message_templates?name=${encodeURIComponent(name)}`;
+        try {
+            const listRes = await fetch(
+                `https://graph.facebook.com/v20.0/${waba_id}/message_templates?name=${encodeURIComponent(name)}&fields=id,name,status`,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const listJson = await listRes.json();
+            if (listRes.ok && listJson.data?.length > 0) {
+                const hsmId = listJson.data[0].id;
+                // Use hsm_id for precise deletion of this specific variant
+                deleteUrl = `https://graph.facebook.com/v20.0/${waba_id}/message_templates?name=${encodeURIComponent(name)}&hsm_id=${hsmId}`;
+            }
+        } catch (lookupErr) {
+            // If lookup fails, proceed with name-only deletion
+            console.warn('[Template Delete] Could not fetch hsm_id, using name-only delete:', lookupErr);
+        }
+
+        // Step 2: Delete the template
+        const response = await fetch(deleteUrl, {
             method: 'DELETE',
             headers: { Authorization: `Bearer ${token}` }
         });
         const json = await response.json();
-        
+
         if (!response.ok) {
-            console.error('Meta API Error:', json);
-            return res.status(response.status).json({ error: json.error?.message || 'Template deletion failed' });
+            console.error('[Template Delete] Meta API Error:', JSON.stringify(json, null, 2));
+            // Provide a user-friendly message for permission errors
+            let errMsg = json.error?.message || 'Template deletion failed';
+            if (json.error?.code === 100 || errMsg.includes('permission')) {
+                errMsg = 'Permission denied by Meta. Your connected account needs WhatsApp Business Management admin access to delete templates. You can delete it directly from Meta Business Manager.';
+            }
+            return res.status(response.status).json({ error: errMsg });
         }
         res.json({ success: true });
     } catch (err: any) {
@@ -7489,11 +7529,11 @@ app.post("/webhook", async (req, res) => {
                 text = msg.text?.body || '';
             } else if (type === 'interactive') {
                 interactivePayload = msg.interactive;
-                text = (msg.interactive?.button_reply?.title || 
-                        msg.interactive?.list_reply?.title || 
-                        msg.interactive?.button_reply?.id || 
-                        msg.interactive?.list_reply?.id || 
-                        `[interactive:${msg.interactive.type}]`);
+                text = (msg.interactive?.button_reply?.title ||
+                    msg.interactive?.list_reply?.title ||
+                    msg.interactive?.button_reply?.id ||
+                    msg.interactive?.list_reply?.id ||
+                    `[interactive:${msg.interactive.type}]`);
             } else if (type === 'button') {
                 text = msg.button?.text || '';
             } else if (type === 'image') {
@@ -7544,9 +7584,9 @@ app.post("/webhook", async (req, res) => {
                     wa_message_id: msg.context.id,
                     from: msg.context.from || null,
                     // Agar DB mein mila toh uska text use karo
-                    text: quotedMsg?.text_body 
-                          || quotedMsg?.content?.text 
-                          || null,
+                    text: quotedMsg?.text_body
+                        || quotedMsg?.content?.text
+                        || null,
                     type: quotedMsg?.type || 'text',
                     direction: quotedMsg?.direction || null,
                     found: !!quotedMsg,
@@ -7554,8 +7594,8 @@ app.post("/webhook", async (req, res) => {
             }
 
             // PRE-DEFINE CONTENT (Media will update this row later)
-            const enrichedContent: any = { 
-                text, 
+            const enrichedContent: any = {
+                text,
                 raw: msg,
                 quoted: quotedMessage,
                 forwarded: isForwarded,
@@ -8366,15 +8406,15 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                             try {
                                 let flowConsumedMessage = false;
                                 const flowResult = await processFlowEngine(orgId, contact.id, conv.id, captionText, stored?.id || null, conv.wa_account_id || null);
-                                
+
                                 if (flowResult?.consumed) {
                                     flowConsumedMessage = true;
-                                    
+
                                     if (flowResult.output) {
                                         console.log(`ðŸŒŠ Flow Engine (Baileys) replying to: "${captionText.substring(0, 50)}..."`);
                                         const botMsg = await sock.sendMessage(remoteJid, { text: flowResult.output });
                                         const botWaMessageId = botMsg?.key?.id || null;
-                                        
+
                                         const storedBotReply = await storeMessage({
                                             organization_id: orgId, contact_id: contact.id, conversation_id: conv.id,
                                             wa_message_id: botWaMessageId, direction: "outbound", type: "text",
@@ -8391,7 +8431,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                                                 handoff: flowResult.handoff === true,
                                             },
                                         } as any);
-                                        
+
                                         io.emit("new_message", {
                                             from: myPhone, phone: contactWaId, text: flowResult.output,
                                             sender: 'agent', conversation_id: conv.id, contact_id: contact.id, message_id: storedBotReply?.id || null,
@@ -8485,53 +8525,53 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
 
                                     if (botResult?.reply) {
                                         console.log(`ðŸ¤– Bot "${botResult.agent?.name}" replying via Baileys to: "${captionText.substring(0, 50)}..."`);
-                                    
-                                    // Send the reply via Baileys
-                                    const botMsg = await sock.sendMessage(remoteJid, { text: botResult.reply });
-                                    const botWaMessageId = botMsg?.key?.id || null;
 
-                                    // Store the bot's reply message
-                                    const storedBotReply = await storeMessage({
-                                        organization_id: orgId,
-                                        contact_id: contact.id,
-                                        conversation_id: conv.id,
-                                        wa_message_id: botWaMessageId,
-                                        direction: "outbound",
-                                        type: "text",
-                                        content: { text: botResult.reply, bot_agent_id: botResult.agent?.id, bot_agent_name: botResult.agent?.name },
-                                        status: "sent",
-                                        is_bot_reply: true,
-                                        bot_agent_id: botResult.agent?.id || null,
-                                        sender_type: 'ai_agent',
-                                        automation_source: 'ai_agent',
-                                    } as any);
+                                        // Send the reply via Baileys
+                                        const botMsg = await sock.sendMessage(remoteJid, { text: botResult.reply });
+                                        const botWaMessageId = botMsg?.key?.id || null;
 
-                                    // Emit the bot reply to frontend
-                                    io.emit("new_message", {
-                                        from: myPhone,
-                                        phone: contactWaId,
-                                        text: botResult.reply,
-                                        sender: 'agent',
-                                        conversation_id: conv.id,
-                                        contact_id: contact.id,
-                                        message_id: storedBotReply?.id || null,
-                                        wa_message_id: botWaMessageId,
-                                        created_at: storedBotReply?.created_at || new Date().toISOString(),
-                                        connectedAccount: myPhone,
-                                        type: 'text',
-                                        is_bot_reply: true,
-                                        bot_agent_name: botResult.agent?.name,
-                                    });
+                                        // Store the bot's reply message
+                                        const storedBotReply = await storeMessage({
+                                            organization_id: orgId,
+                                            contact_id: contact.id,
+                                            conversation_id: conv.id,
+                                            wa_message_id: botWaMessageId,
+                                            direction: "outbound",
+                                            type: "text",
+                                            content: { text: botResult.reply, bot_agent_id: botResult.agent?.id, bot_agent_name: botResult.agent?.name },
+                                            status: "sent",
+                                            is_bot_reply: true,
+                                            bot_agent_id: botResult.agent?.id || null,
+                                            sender_type: 'ai_agent',
+                                            automation_source: 'ai_agent',
+                                        } as any);
 
-                                    // Update conversation preview
-                                    await supabase
-                                        .from('w_conversations')
-                                        .update({
-                                            last_message_at: new Date().toISOString(),
-                                            last_message_preview: botResult.reply.substring(0, 100)
-                                        })
-                                        .eq('id', conv.id);
-                                }
+                                        // Emit the bot reply to frontend
+                                        io.emit("new_message", {
+                                            from: myPhone,
+                                            phone: contactWaId,
+                                            text: botResult.reply,
+                                            sender: 'agent',
+                                            conversation_id: conv.id,
+                                            contact_id: contact.id,
+                                            message_id: storedBotReply?.id || null,
+                                            wa_message_id: botWaMessageId,
+                                            created_at: storedBotReply?.created_at || new Date().toISOString(),
+                                            connectedAccount: myPhone,
+                                            type: 'text',
+                                            is_bot_reply: true,
+                                            bot_agent_name: botResult.agent?.name,
+                                        });
+
+                                        // Update conversation preview
+                                        await supabase
+                                            .from('w_conversations')
+                                            .update({
+                                                last_message_at: new Date().toISOString(),
+                                                last_message_preview: botResult.reply.substring(0, 100)
+                                            })
+                                            .eq('id', conv.id);
+                                    }
                                 }
                             } catch (botErr: any) {
                                 console.error('Bot auto-reply error (Baileys):', botErr.message || botErr);
@@ -8557,8 +8597,8 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
 
                 if (newStatus && update.key.id) {
                     // Update DB
-                        const orgId = await ensureDefaultOrganizationId();
-                        if (orgId) {
+                    const orgId = await ensureDefaultOrganizationId();
+                    if (orgId) {
                         await supabase.from('w_messages')
                             .update({ status: newStatus })
                             .eq('wa_message_id', update.key.id);
@@ -8649,7 +8689,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                 if (shouldReconnect) {
                     // Get current attempt count
                     const attempts = reconnectAttempts.get(sessionId) || 0;
-                    
+
                     if (attempts >= MAX_RECONNECT_ATTEMPTS) {
                         console.log(`âŒ Max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}) reached for ${sessionId}. Stopping.`);
                         reconnectAttempts.delete(sessionId);
@@ -8657,12 +8697,12 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                         socket.emit('reconnect_failed', { reason: 'Max attempts reached. Please reconnect manually.' });
                         return;
                     }
-                    
+
                     // Exponential backoff: 3s, 6s, 12s, 24s, 48s
                     const delay = 3000 * Math.pow(2, attempts);
                     reconnectAttempts.set(sessionId, attempts + 1);
-                    
-                    console.log(`â³ Reconnect attempt ${attempts + 1}/${MAX_RECONNECT_ATTEMPTS} in ${delay/1000}s...`);
+
+                    console.log(`â³ Reconnect attempt ${attempts + 1}/${MAX_RECONNECT_ATTEMPTS} in ${delay / 1000}s...`);
                     setTimeout(() => {
                         setupBaileys(sessionId, socket);
                     }, delay);
@@ -8720,7 +8760,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
         // Final Guard: If we're no longer in initializingSessions, it means we aborted or logged out mid-flow
         if (!initializingSessions.has(sessionId)) {
             console.log(`âš ï¸ Session ${sessionId} initialization aborted (likely logout). Not setting session.`);
-            try { sock.end(undefined); } catch (e) {}
+            try { sock.end(undefined); } catch (e) { }
             return;
         }
 
@@ -8802,7 +8842,7 @@ io.on("connection", (socket) => {
             if (existing && !existing?.user?.id) {
                 console.log(`â„¹ï¸ Session ${sessionId} exists but not connected yet. Emitting scanning status.`);
                 socket.emit("status", "scanning");
-                
+
                 // If a QR is already generated but connection isn't open, resend the QR
                 const cached = latestQrBySession.get(sessionId);
                 if (cached?.qr) {
@@ -8840,7 +8880,7 @@ io.on("connection", (socket) => {
             console.log(`âš ï¸ Killing existing session ${sessionId} to force fresh QR scan.`);
             try {
                 existing.end(undefined);
-            } catch (e) {}
+            } catch (e) { }
             sessions.delete(sessionId);
             initializingSessions.delete(sessionId);
             reconnectAttempts.delete(sessionId);
@@ -8862,9 +8902,9 @@ io.on("connection", (socket) => {
     // NEW: Explicit Logout request
     socket.on("logout", async (sessionId: string) => {
         console.log(`Logout requested for session ${sessionId}`);
-        
+
         // Clear all tracking maps for this session
-        initializingSessions.delete(sessionId); 
+        initializingSessions.delete(sessionId);
         reconnectAttempts.delete(sessionId);
         latestQrBySession.delete(sessionId);
 
@@ -8904,10 +8944,10 @@ io.on("connection", (socket) => {
                 try {
                     fs.rmSync(sessionDir, { recursive: true, force: true });
                     console.log(`âœ… Session directory ${sessionId} cleared on request. Chat data remains in DB.`);
-                } catch (e) {}
+                } catch (e) { }
             }, 500);
         }
-        
+
         socket.emit("status", "ready");
     });
 
@@ -8935,16 +8975,16 @@ app.get('/api/broadcast/tags', authMiddleware, async (req, res) => {
             .from('w_contacts')
             .select('tags')
             .eq('organization_id', orgId);
-            
+
         if (fetchErr) throw fetchErr;
-        
+
         const tagsSet = new Set<string>();
         contacts?.forEach((c: any) => {
             if (Array.isArray(c.tags)) {
                 c.tags.forEach((t: string) => tagsSet.add(t));
             }
         });
-        
+
         res.json({ tags: Array.from(tagsSet) });
     } catch (err: any) {
         console.error('Fetch Tags Error:', err);
@@ -8985,10 +9025,10 @@ async function processCampaign(campaign: any) {
         }
 
         await supabase.from('w_campaigns').update({ status: 'processing' }).eq('id', campaign.id);
-        
+
         const orgId = campaign.organization_id;
         const wa_account_id = campaign.wa_account_id;
-        
+
         const { data: account, error: accErr } = await supabase
             .from('w_wa_accounts')
             .select('id, phone_number_id, whatsapp_business_account_id, access_token_encrypted')
@@ -9008,9 +9048,9 @@ async function processCampaign(campaign: any) {
                 .select('id, name, custom_name, phone, wa_id, tags')
                 .eq('organization_id', orgId)
                 .eq('contact_type', 'individual');
-                
+
             const audienceType = campaign.variable_mapping?._audience_type || 'all';
-            
+
             if (audienceType === 'saved') {
                 query = query.not('saved_at', 'is', null);
             } else if (audienceType === 'tag' && campaign.audience_tag) {
@@ -9019,12 +9059,12 @@ async function processCampaign(campaign: any) {
                 // Fallback for old behaviour
                 query = query.contains('tags', [campaign.audience_tag]);
             }
-            
+
             const { data: contacts, error: contactsErr } = await query;
             if (contactsErr) throw contactsErr;
             contactsToProcess = contacts || [];
         }
-        
+
         if (contactsToProcess.length === 0) {
             await supabase.from('w_campaigns').update({ status: 'completed', total_contacts: 0 }).eq('id', campaign.id);
             return;
@@ -9070,7 +9110,7 @@ async function processCampaign(campaign: any) {
 
             const components = [];
             const mapping = campaign.variable_mapping || {};
-            
+
             let renderedText = mapping._template_body || `[Broadcast Template: ${campaign.template_name}]`;
             const parameters = [];
             const { type: headerMediaType, url: headerMediaUrl } = normalizeTemplateHeaderMedia(mapping);
@@ -9133,8 +9173,8 @@ async function processCampaign(campaign: any) {
                 let text = '';
                 if (field === 'name') text = contact.custom_name || contact.name || '';
                 else if (field === 'phone') text = contact.phone || '';
-                else text = field || ''; 
-                
+                else text = field || '';
+
                 renderedText = renderedText.replace(new RegExp(`\\{\\{\\s*${String(key).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\}\\}`, 'g'), text);
                 const parameter: any = { type: 'text', text: text || ' ' };
                 if (!/^\d+$/.test(String(key))) {
@@ -9164,16 +9204,16 @@ async function processCampaign(campaign: any) {
                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                
+
                 const data = await response.json();
-                
+
                 if (response.ok) {
                     sent++;
                     results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'sent' });
 
                     const wa_message_id = data.messages?.[0]?.id;
                     const realWaId = data.contacts?.[0]?.wa_id || recipient;
-                    
+
                     let currentContactId = contact.id;
 
                     if (!currentContactId) {
@@ -9200,7 +9240,7 @@ async function processCampaign(campaign: any) {
                                 })
                                 .select('id')
                                 .single();
-                                
+
                             if (newContact) {
                                 currentContactId = newContact.id;
                             }
@@ -9211,7 +9251,7 @@ async function processCampaign(campaign: any) {
                         const conv = await upsertConversation(orgId, wa_account_id, currentContactId, {
                             lastMessagePreview: `[Broadcast] ${campaign.template_name}`
                         });
-                        
+
                         if (conv && conv.id) {
                             const templateButtons = Array.isArray(mapping._template_buttons)
                                 ? mapping._template_buttons.map((button: any) => {
@@ -9282,12 +9322,12 @@ async function processCampaign(campaign: any) {
                 failed++;
                 results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'failed', error: e.message || 'Network/Unknown Error' });
             }
-            
+
             await new Promise(r => setTimeout(r, 300));
         }
 
-        await supabase.from('w_campaigns').update({ 
-            status: isCancelled ? 'cancelled' : 'completed', 
+        await supabase.from('w_campaigns').update({
+            status: isCancelled ? 'cancelled' : 'completed',
             total_contacts: contactsToProcess.length,
             sent_count: sent,
             failed_count: failed,
@@ -9315,7 +9355,7 @@ setInterval(async () => {
             .lte('scheduled_at', new Date().toISOString());
 
         if (error || !campaigns) return;
-        
+
         for (const camp of campaigns) {
             processCampaign(camp); // runs asynchronously
         }
@@ -9387,7 +9427,7 @@ app.post('/api/broadcast/send', authMiddleware, async (req, res) => {
         header_media_type,
         header_media_url
     } = req.body;
-    
+
     try {
         if (!wa_account_id || !template_name || !template_language) {
             return res.status(400).json({ error: 'Missing required fields' });
@@ -9621,7 +9661,7 @@ app.get('/api/broadcast/campaigns', authMiddleware, async (req, res) => {
             .select('*')
             .eq('organization_id', orgId)
             .order('created_at', { ascending: false });
-            
+
         if (error) throw error;
         res.json({ campaigns: data });
     } catch (err: any) {
@@ -9639,7 +9679,7 @@ app.delete('/api/broadcast/campaigns/:id', authMiddleware, async (req, res) => {
             .eq('id', req.params.id)
             .eq('organization_id', orgId)
             .eq('status', 'scheduled'); // Only allow deleting scheduled campaigns
-            
+
         if (error) throw error;
         res.json({ success: true });
     } catch (err: any) {
@@ -9659,7 +9699,7 @@ app.post('/api/broadcast/campaigns/:id/cancel', authMiddleware, async (req, res)
             .in('status', ['processing', 'scheduled'])
             .select()
             .single();
-            
+
         if (error) throw error;
         if (!data) return res.status(404).json({ error: 'Campaign not found or cannot be cancelled' });
         res.json({ success: true, campaign: data });

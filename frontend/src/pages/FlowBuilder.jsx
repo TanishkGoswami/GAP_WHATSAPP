@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap, Activity, X, LayoutTemplate, Star, Search, Sparkles, Clock, Layers, CheckCircle2, Smartphone, ShieldCheck, QrCode, Info } from 'lucide-react';
+import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap, Activity, X, LayoutTemplate, Star, Search, Sparkles, Clock, Layers, CheckCircle2, Smartphone, ShieldCheck, QrCode, Info, ChevronRight, MessageSquare, LifeBuoy, Send, MoreHorizontal } from 'lucide-react';
 import axios from 'axios';
 import FlowEditor from '../components/flow-builder/FlowEditor';
 import { useAuth } from '../context/AuthContext';
@@ -262,6 +262,45 @@ export default function FlowBuilder() {
         }
     };
 
+    const formatRelativeTime = (dateString) => {
+        if (!dateString) return 'Just now';
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffMs = now - date;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffMins < 1) return 'Just now';
+        if (diffMins < 60) return `${diffMins} min ago`;
+        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+        if (diffDays === 1) return '1 day ago';
+        return `${diffDays} days ago`;
+    };
+
+    const getFlowCardTheme = (flowName) => {
+        const name = (flowName || '').toLowerCase();
+        if (name.includes('support') || name.includes('triage') || name.includes('help') || name.includes('issue')) {
+            return {
+                icon: LifeBuoy,
+                bgColor: 'bg-purple-50 border-purple-100 text-purple-600',
+                iconColor: 'text-purple-600'
+            };
+        }
+        if (name.includes('welcome') || name.includes('lead') || name.includes('capture') || name.includes('greet')) {
+            return {
+                icon: MessageSquare,
+                bgColor: 'bg-green-50 border-green-100 text-green-600',
+                iconColor: 'text-green-600'
+            };
+        }
+        return {
+            icon: Layers,
+            bgColor: 'bg-blue-50 border-blue-100 text-blue-600',
+            iconColor: 'text-blue-600'
+        };
+    };
+
     if (editingFlow) {
         return <FlowEditor flow={editingFlow} waAccounts={waAccounts} onClose={() => { setEditingFlow(null); fetchFlows(); }} />;
     }
@@ -294,53 +333,109 @@ export default function FlowBuilder() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]">
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-                    <div className="flex items-start gap-3">
-                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white">
-                            <Info className="h-4 w-4" />
-                        </div>
-                        <div>
-                            <h2 className="text-sm font-bold text-blue-950">Which number will this flow run on?</h2>
-                            <p className="mt-1 text-sm leading-6 text-blue-900">
-                                Har flow ko all connected numbers ya selected WhatsApp numbers par run kar sakte hain. Customer jis number par message bhejta hai, reply usi receiving number se jayega.
-                            </p>
-                            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                                <span className="rounded-full bg-white px-3 py-1 font-semibold text-blue-800 ring-1 ring-blue-200">
-                                    Current switch: {selectedAccount ? (selectedAccount.display_phone_number || selectedAccount.phone_number_id || selectedAccount.name) : 'All connected accounts'}
-                                </span>
-                                <span className="rounded-full bg-white px-3 py-1 text-blue-700 ring-1 ring-blue-200">
-                                    {waAccounts.length} connected number(s)
-                                </span>
-                                <span className="rounded-full bg-white px-3 py-1 text-blue-700 ring-1 ring-blue-200">
-                                    Duplicate trigger protection active
-                                </span>
+            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]">
+                {/* Which number will this flow run on Card */}
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-6 flex flex-col justify-between md:flex-row md:items-center gap-6">
+                    <div className="flex-1">
+                        <div className="flex items-start gap-3">
+                            <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+                                <Info className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <h2 className="text-base font-bold text-blue-950">Which number will this flow run on?</h2>
+                                <p className="mt-1.5 text-sm leading-6 text-blue-900/90">
+                                    Har flow ko all connected numbers ya selected WhatsApp numbers par run kar sakte hain. Customer jis number par message bhejta hai, reply usi receiving number se jayega.
+                                </p>
                             </div>
                         </div>
+                        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                            <span className="rounded-full bg-white px-3 py-1.5 font-semibold text-blue-800 ring-1 ring-blue-100/50 shadow-sm">
+                                Current switch: {selectedAccount ? (selectedAccount.display_phone_number || selectedAccount.phone_number_id || selectedAccount.name) : 'All connected accounts'}
+                            </span>
+                            <span className="rounded-full bg-white px-3 py-1.5 text-blue-700 ring-1 ring-blue-100/50 shadow-sm">
+                                {waAccounts.length} connected number(s)
+                            </span>
+                            <span className="rounded-full bg-white px-3 py-1.5 text-blue-700 ring-1 ring-blue-100/50 shadow-sm">
+                                Duplicate trigger protection active
+                            </span>
+                        </div>
+                    </div>
+                    {/* Visual Graphic Mockup */}
+                    <div className="hidden md:block shrink-0 select-none pointer-events-none">
+                        <svg width="180" height="110" viewBox="0 0 180 110" fill="none">
+                            <circle cx="130" cy="55" r="45" fill="#E0F2FE" opacity="0.6" />
+                            <circle cx="50" cy="65" r="25" fill="#F0FDFA" opacity="0.6" />
+                            
+                            {/* Card 1 */}
+                            <g filter="drop-shadow(0px 2px 4px rgba(59,130,246,0.06))">
+                                <rect x="30" y="15" width="80" height="32" rx="6" fill="white" />
+                                <rect x="38" y="22" width="40" height="4" rx="2" fill="#E2E8F0" />
+                                <rect x="38" y="30" width="25" height="3" rx="1.5" fill="#F1F5F9" />
+                                <circle cx="98" cy="31" r="5" fill="#3B82F6" opacity="0.8" />
+                            </g>
+                            
+                            {/* Card 2 (WhatsApp Card) */}
+                            <g filter="drop-shadow(0px 4px 10px rgba(0,0,0,0.06))">
+                                <rect x="65" y="45" width="95" height="45" rx="8" fill="white" />
+                                <rect x="75" y="56" width="50" height="5" rx="2.5" fill="#cbd5e1" />
+                                <rect x="75" y="66" width="35" height="4" rx="2" fill="#e2e8f0" />
+                                
+                                <circle cx="138" cy="67" r="11" fill="#25D366" />
+                                {/* WhatsApp phone path inside circle */}
+                                <path d="M135.5 66.5a2 2 0 0 0 2 2m-2-3.5a3.5 3.5 0 0 1 3.5 3.5" stroke="white" strokeWidth="1" strokeLinecap="round" />
+                                <path d="M134.7 64.7a0.8 0 0 0-.8.8v1.2a3.2 3.2 0 0 0 3.2 3.2h1.2a0.8 0 0 0 .8-.8v-.6a0.4 0 0 0-.2-.4l-1-.4a0.4 0 0 0-.5.2l-.2.2a2 2 0 0 1-1-1l.2-.2a0.4 0 0 0 .2-.5l-.4-1a0.4 0 0 0-.4-.2h-.6Z" fill="white" />
+                            </g>
+                            
+                            {/* Connection line */}
+                            <path d="M70 31c0 8-10 8-10 14" stroke="#cbd5e1" strokeWidth="1.5" strokeDasharray="3 3" />
+                            <circle cx="60" cy="45" r="2" fill="#3B82F6" />
+                        </svg>
                     </div>
                 </div>
 
-                <div className="rounded-xl border border-gray-200 bg-white p-4">
-                    <div className="mb-3 flex items-center justify-between">
-                        <h2 className="text-sm font-bold text-gray-950">Connected access types</h2>
+                {/* Connected access types Card */}
+                <div className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col justify-between shadow-sm">
+                    <div className="mb-4 flex items-center justify-between">
+                        <h2 className="text-sm font-bold text-gray-900">Connected access types</h2>
                         <Smartphone className="h-4 w-4 text-gray-400" />
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        <div className="rounded-lg border border-green-100 bg-green-50 p-3">
-                            <div className="flex items-center gap-2 text-xs font-bold text-green-800">
-                                <ShieldCheck className="h-3.5 w-3.5" />
-                                Meta API
+                    <div className="flex flex-col gap-3">
+                        {/* Meta API Row */}
+                        <div className="flex items-center justify-between border border-gray-100 rounded-xl p-3 bg-white hover:bg-gray-50/50 transition-colors">
+                            <div className="flex items-center gap-3">
+                                <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-green-50 text-green-600 shrink-0">
+                                    <ShieldCheck className="h-5 w-5" />
+                                </div>
+                                <div className="min-w-0">
+                                    <h3 className="text-sm font-semibold text-gray-900">Meta API</h3>
+                                    <p className="text-[11px] leading-4 text-gray-500 truncate max-w-[200px] xl:max-w-[170px]">
+                                        Templates, broadcasts, profile sync...
+                                    </p>
+                                </div>
                             </div>
-                            <p className="mt-1 text-2xl font-bold text-green-900">{metaAccounts.length}</p>
-                            <p className="text-[11px] leading-4 text-green-800">Templates, broadcasts, profile sync, stable webhooks.</p>
+                            <div className="flex items-center gap-1.5 pl-2">
+                                <span className="text-xl font-bold text-gray-900">{metaAccounts.length}</span>
+                                <ChevronRight className="h-4 w-4 text-gray-400" />
+                            </div>
                         </div>
-                        <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
-                            <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
-                                <QrCode className="h-3.5 w-3.5" />
-                                QR Session
+
+                        {/* QR Session Row */}
+                        <div className="flex items-center justify-between border border-gray-100 rounded-xl p-3 bg-white hover:bg-gray-50/50 transition-colors">
+                            <div className="flex items-center gap-3">
+                                <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-amber-50 text-amber-600 shrink-0">
+                                    <QrCode className="h-5 w-5" />
+                                </div>
+                                <div className="min-w-0">
+                                    <h3 className="text-sm font-semibold text-gray-900">QR Session</h3>
+                                    <p className="text-[11px] leading-4 text-gray-500 truncate max-w-[200px] xl:max-w-[170px]">
+                                        Chats and flow replies only...
+                                    </p>
+                                </div>
                             </div>
-                            <p className="mt-1 text-2xl font-bold text-amber-900">{qrAccounts.length}</p>
-                            <p className="text-[11px] leading-4 text-amber-800">Chats and flow replies only while session stays connected.</p>
+                            <div className="flex items-center gap-1.5 pl-2">
+                                <span className="text-xl font-bold text-gray-900">{qrAccounts.length}</span>
+                                <ChevronRight className="h-4 w-4 text-gray-400" />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -348,141 +443,183 @@ export default function FlowBuilder() {
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-gray-500">Total Flows</p>
-                            <p className="text-2xl font-bold text-gray-900 mt-1">{flows.length}</p>
-                        </div>
-                        <div className="p-3 bg-blue-50 rounded-lg">
-                            <Zap className="h-6 w-6 text-blue-600" />
-                        </div>
+                {/* Total Flows */}
+                <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+                    <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                        <TrendingUp className="h-6 w-6" />
+                    </div>
+                    <div>
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Flows</p>
+                        <p className="text-2xl font-bold text-gray-900 mt-0.5">{flows.length}</p>
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-gray-500">Active Flows</p>
-                            <p className="text-2xl font-bold text-gray-900 mt-1">
-                                {flows.filter(f => f.status === 'active').length}
-                            </p>
-                        </div>
-                        <div className="p-3 bg-green-50 rounded-lg">
-                            <Play className="h-6 w-6 text-green-600" />
-                        </div>
+
+                {/* Active Flows */}
+                <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+                    <div className="h-12 w-12 rounded-xl bg-green-50 flex items-center justify-center text-green-600 shrink-0">
+                        <Play className="h-5 w-5 fill-green-600 text-green-600" />
+                    </div>
+                    <div>
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Active Flows</p>
+                        <p className="text-2xl font-bold text-gray-900 mt-0.5">
+                            {flows.filter(f => f.status === 'active').length}
+                        </p>
                     </div>
                 </div>
-                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm text-gray-500">Messages Sent</p>
-                            <p className="text-2xl font-bold text-gray-900 mt-1">
-                                {flows.reduce((sum, f) => sum + (f.messagesSent || 0), 0).toLocaleString()}
-                            </p>
-                        </div>
-                        <div className="p-3 bg-purple-50 rounded-lg">
-                            <TrendingUp className="h-6 w-6 text-purple-600" />
-                        </div>
+
+                {/* Messages Sent */}
+                <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
+                    <div className="h-12 w-12 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0">
+                        <Send className="h-5 w-5 text-purple-600 fill-purple-600/10" />
+                    </div>
+                    <div>
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Messages Sent</p>
+                        <p className="text-2xl font-bold text-gray-900 mt-0.5">
+                            {flows.reduce((sum, f) => sum + (f.messagesSent || 0), 0).toLocaleString()}
+                        </p>
                     </div>
                 </div>
             </div>
 
             {/* Flows List */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {flows.map(flow => (
-                    <div key={flow.id} className="flex flex-col bg-white rounded-xl border border-gray-200 hover:shadow-lg transition-shadow">
-                        <div className="flex-1 p-6">
-                            <div className="flex items-start justify-between mb-4">
-                                <div className="flex-1">
-                                    <h3 className="font-semibold text-gray-900 mb-1">{flow.name}</h3>
-                                    <p className="text-sm text-gray-500 line-clamp-2">{flow.description}</p>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={() => toggleFlowStatus(flow)}
-                                        className={`p-1.5 rounded-lg border ${flow.status === 'active' ? 'text-amber-600 border-amber-200 bg-amber-50 hover:bg-amber-100' : 'text-green-600 border-green-200 bg-green-50 hover:bg-green-100'}`}
-                                        title={flow.status === 'active' ? 'Pause Flow' : 'Activate Flow'}
-                                    >
-                                        {flow.status === 'active' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                                    </button>
-                                    <button
-                                        onClick={() => handleDuplicateFlow(flow)}
-                                        className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg flex items-center justify-center"
-                                        title="Duplicate"
-                                    >
-                                        <Copy className="h-4 w-4" />
-                                    </button>
-                                    <button
-                                        onClick={() => handleDeleteFlow(flow.id)}
-                                        className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center justify-center"
-                                        title="Delete"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </button>
-                                </div>
-                            </div>
+                {flows.map(flow => {
+                    const theme = getFlowCardTheme(flow.name);
+                    const IconComp = theme.icon;
 
-                            <div className="space-y-3">
-                                <div className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-500">Status</span>
-                                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${flow.status === 'active'
-                                            ? 'bg-green-50 text-green-700 border border-green-200'
-                                            : 'bg-gray-50 text-gray-600 border border-gray-200'
-                                        }`}>
-                                        {flow.status}
-                                    </span>
-                                </div>
-                                <div className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-500">Nodes</span>
-                                    <span className="font-medium text-gray-900">{Array.isArray(flow.nodes) ? flow.nodes.length : 0}</span>
-                                </div>
-                                <div className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-500">Messages Sent</span>
-                                    <span className="font-medium text-gray-900">{(flow.messagesSent || 0).toLocaleString()}</span>
-                                </div>
-                                {flow.triggers?.length > 0 && (
-                                    <div className="pt-2 border-t border-gray-100">
-                                        <div className="text-xs text-gray-500 mb-1">Triggers:</div>
-                                        <div className="flex flex-wrap gap-1">
-                                            {flow.triggers.map((trigger, i) => (
-                                                <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded">
-                                                    {trigger}
+                    return (
+                        <div key={flow.id} className="flex flex-col bg-white rounded-2xl border border-gray-200 hover:shadow-lg transition-shadow p-5">
+                            <div className="flex-1">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex items-start flex-1 min-w-0">
+                                        <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 border ${theme.bgColor}`}>
+                                            <IconComp className="h-5 w-5" />
+                                        </div>
+                                        <div className="ml-3 min-w-0 flex-1">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <h3 className="font-bold text-gray-900 truncate text-sm sm:text-base" title={flow.name}>
+                                                    {flow.name}
+                                                </h3>
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider shrink-0 ${
+                                                    flow.status === 'active'
+                                                        ? 'bg-green-50 text-green-700 border-green-200'
+                                                        : flow.status === 'paused'
+                                                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                        : 'bg-gray-50 text-gray-600 border-gray-200'
+                                                }`}>
+                                                    {flow.status}
                                                 </span>
-                                            ))}
+                                            </div>
+                                            {flow.description && (
+                                                <p className="text-xs text-gray-400 mt-1 line-clamp-2 leading-relaxed">
+                                                    {flow.description}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
-                                )}
-                                <div className="pt-2 border-t border-gray-100">
-                                    <div className="text-xs text-gray-500 mb-1">Runs on:</div>
-                                    <div className="flex flex-wrap gap-1">
-                                        {getFlowAccountBadges(flow, waAccounts).map((badge) => (
-                                            <span key={badge.key} className={`px-2 py-0.5 text-xs rounded ${badge.className}`}>
-                                                {badge.label}
-                                            </span>
-                                        ))}
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                            onClick={() => toggleFlowStatus(flow)}
+                                            className={`p-1.5 rounded-lg border transition-all ${
+                                                flow.status === 'active'
+                                                    ? 'text-amber-600 border-amber-200 bg-amber-50 hover:bg-amber-100'
+                                                    : 'text-green-600 border-green-200 bg-green-50 hover:bg-green-100'
+                                            }`}
+                                            title={flow.status === 'active' ? 'Pause Flow' : 'Activate Flow'}
+                                        >
+                                            {flow.status === 'active' ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+                                        </button>
+                                        <button
+                                            onClick={() => handleDuplicateFlow(flow)}
+                                            className="p-1.5 text-gray-400 hover:text-gray-600 border border-gray-200 hover:bg-gray-50 rounded-lg flex items-center justify-center transition-all"
+                                            title="Duplicate"
+                                        >
+                                            <Copy className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteFlow(flow.id)}
+                                            className="p-1.5 text-gray-400 hover:text-red-600 border border-gray-200 hover:bg-red-50 rounded-lg flex items-center justify-center transition-all"
+                                            title="Delete"
+                                        >
+                                            <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100 grid grid-cols-3 gap-2 text-center text-xs mt-5">
+                                    <div>
+                                        <span className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Nodes</span>
+                                        <span className="block text-sm font-bold text-gray-900 mt-0.5">{Array.isArray(flow.nodes) ? flow.nodes.length : 0}</span>
+                                    </div>
+                                    <div>
+                                        <span className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Messages Sent</span>
+                                        <span className="block text-sm font-bold text-gray-900 mt-0.5">{(flow.messagesSent || 0).toLocaleString()}</span>
+                                    </div>
+                                    <div className="min-w-0">
+                                        <span className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Runs on</span>
+                                        <span className="block text-[10px] font-bold text-blue-700 mt-1 truncate bg-blue-50/60 rounded px-1.5 py-0.5 border border-blue-100/30">
+                                            {flow.wa_account_scope === 'all' ? 'All numbers' : `${flow.wa_account_ids?.length || 0} selected`}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-end justify-between mt-5">
+                                    <div>
+                                        <span className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Triggers</span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {flow.triggers && flow.triggers.length > 0 ? (
+                                                flow.triggers.map((trigger, i) => (
+                                                    <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-semibold rounded border border-blue-100/50">
+                                                        {trigger}
+                                                    </span>
+                                                ))
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">No triggers</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                        <span className="text-[10px] font-semibold text-gray-400 block uppercase tracking-wider">Last edited</span>
+                                        <span className="text-xs font-semibold text-gray-600 block mt-0.5">
+                                            {formatRelativeTime(flow.updated_at || flow.created_at)}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <div className="mt-auto px-6 py-4 bg-gray-50 border-t border-gray-100 flex gap-2">
-                            <button
-                                onClick={() => setEditingFlow(flow)}
-                                className="flex-1 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2"
-                            >
-                                <Edit2 className="h-4 w-4" />
-                                Edit Flow
-                            </button>
-                            <button
-                                onClick={() => openRunsModal(flow)}
-                                className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 flex items-center justify-center"
-                                title="Run logs"
-                            >
-                                <Activity className="h-4 w-4" />
-                            </button>
+                            <div className="mt-5 pt-4 border-t border-gray-100 flex gap-2">
+                                <button
+                                    onClick={() => setEditingFlow(flow)}
+                                    className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2 shadow-sm transition-colors"
+                                >
+                                    <Edit2 className="h-3.5 w-3.5 text-gray-500" />
+                                    Edit Flow
+                                </button>
+                                <button
+                                    onClick={() => openRunsModal(flow)}
+                                    className="px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 flex items-center justify-center shadow-sm transition-colors"
+                                    title="Run logs"
+                                >
+                                    <Activity className="h-3.5 w-3.5 text-gray-500" />
+                                </button>
+                            </div>
                         </div>
+                    );
+                })}
+
+                {/* Create your next flow Card */}
+                <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 hover:border-gray-300 rounded-2xl bg-white hover:bg-gray-50/50 p-6 text-center min-h-[280px] transition-all group shadow-sm hover:shadow-md cursor-pointer"
+                >
+                    <div className="h-10 w-10 rounded-full bg-gray-50 group-hover:bg-gray-100 flex items-center justify-center border border-gray-200 text-gray-400 group-hover:text-gray-600 transition-colors shadow-sm">
+                        <Plus className="h-5 w-5" />
                     </div>
-                ))}
+                    <h3 className="text-sm font-bold text-gray-900 mt-4">Create your next flow</h3>
+                    <p className="text-xs text-gray-500 mt-1.5 max-w-[200px]">
+                        Start building another automation for your business.
+                    </p>
+                </button>
             </div>
 
             {showTemplatesModal && (

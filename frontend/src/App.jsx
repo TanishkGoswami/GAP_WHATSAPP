@@ -57,6 +57,7 @@ export default function App() {
                 <Route path="contacts" element={<Contacts />} />
                 <Route path="flow-builder" element={<FlowBuilder />} />
                 <Route path="templates" element={<Templates />} />
+                <Route path="templates/industries" element={<Templates defaultView="INDUSTRIES" />} />
                 <Route path="broadcast" element={<Broadcast />} />
                 <Route path="live-chat" element={<LiveChat />} />
                 <Route path="bot-agents" element={<BotAgents />} />
