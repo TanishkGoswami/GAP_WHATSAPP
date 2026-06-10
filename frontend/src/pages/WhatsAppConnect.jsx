@@ -3,13 +3,19 @@ import { Link } from 'react-router-dom'
 import {
     AlertCircle,
     ArrowRight,
+    BadgeCheck,
+    Building2,
     CheckCircle2,
     FileCheck2,
+    HelpCircle,
     KeyRound,
     Loader2,
+    MessageSquareText,
     PhoneCall,
     QrCode,
     ShieldCheck,
+    Smartphone,
+    Sparkles,
     Wallet,
     X,
 } from 'lucide-react'
@@ -238,8 +244,84 @@ export default function WhatsAppConnect() {
 
     return (
         <div className="mx-auto max-w-7xl space-y-6 pb-20">
-            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
-                <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <section className="overflow-hidden rounded-lg border border-[#b9dcfb] bg-white">
+                <div className="grid gap-0 lg:grid-cols-[minmax(0,1.25fr)_360px]">
+                    <div className="border-b border-[#d9ecfd] bg-[#eef7ff] p-5 sm:p-6 lg:border-b-0 lg:border-r">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-[#b9dcfb] bg-white px-3 py-1 text-xs font-semibold text-[#0064b7]">
+                            <Sparkles className="h-3.5 w-3.5" />
+                            Start here
+                        </div>
+                        <h1 className="mt-4 max-w-3xl text-3xl font-semibold leading-tight text-gray-950">Connect WhatsApp so your dashboard, chats, broadcasts and automations can start working.</h1>
+                        <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-700">
+                            Simple meaning: aapka business WhatsApp number is platform se link hoga. Connection ke baad messages sync honge, templates create honge, wallet billing track hogi, and AI/flows ko real inbox access milega.
+                        </p>
+                        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                            <button
+                                type="button"
+                                onClick={handleEmbeddedSignup}
+                                disabled={embedStatus === 'loading' || embedStatus === 'saving'}
+                                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#0070d1] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#0064b7] disabled:cursor-not-allowed disabled:bg-[#79b8ef]"
+                            >
+                                {embedStatus === 'loading' || embedStatus === 'saving' ? (
+                                    <>
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                        {embedStatus === 'saving' ? 'Saving account...' : 'Opening Meta signup...'}
+                                    </>
+                                ) : (
+                                    <>
+                                        <Smartphone className="h-4 w-4" />
+                                        Connect WhatsApp account
+                                    </>
+                                )}
+                            </button>
+                            <Link
+                                to="/whatsapp-number"
+                                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-6 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50"
+                            >
+                                <PhoneCall className="h-4 w-4" />
+                                I need a new number
+                            </Link>
+                        </div>
+                    </div>
+                    <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-1">
+                        <MiniMetric icon={Wallet} label="Wallet" value={formatINRFromPaise(walletBalance)} tone="green" />
+                        <MiniMetric icon={FileCheck2} label="This month spend" value={formatINRFromPaise(monthSpend)} tone="blue" />
+                    </div>
+                </div>
+            </section>
+
+            <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <GuideCard
+                    icon={Building2}
+                    title="Before you start"
+                    items={[
+                        'Facebook/Meta admin login ready rakhein.',
+                        'Business name, website and email accurate honi chahiye.',
+                        'Number par SMS/call OTP receive kar paana zaroori hai.',
+                    ]}
+                />
+                <GuideCard
+                    icon={BadgeCheck}
+                    title="Meta will verify"
+                    items={[
+                        'Business portfolio select ya create hoga.',
+                        'WhatsApp Business Account and phone number link hoga.',
+                        'Some accounts may need Meta review before full sending.',
+                    ]}
+                />
+                <GuideCard
+                    icon={MessageSquareText}
+                    title="After connection"
+                    items={[
+                        'Dashboard zero values real message data se replace honge.',
+                        'Templates, broadcasts, live chat and flows unlock honge.',
+                        'Diagnostics batayega number send-ready hai ya kya pending hai.',
+                    ]}
+                />
+            </section>
+
+            <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                     <div className="max-w-3xl">
                         <div className="inline-flex items-center gap-2 rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
                             <ShieldCheck className="h-3.5 w-3.5" />
@@ -250,15 +332,15 @@ export default function WhatsAppConnect() {
                             Existing business number connect karo, ya fresh dedicated number request karo. Meta admin login, OTP verification aur policy approval official process ka part hai; platform setup ko guided aur trackable banata hai.
                         </p>
                     </div>
-                    <div className="grid grid-cols-2 gap-3 sm:min-w-[360px]">
-                        <MiniMetric icon={Wallet} label="Wallet" value={formatINRFromPaise(walletBalance)} tone="green" />
-                        <MiniMetric icon={FileCheck2} label="This month spend" value={formatINRFromPaise(monthSpend)} tone="blue" />
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 lg:max-w-sm">
+                        <p className="font-semibold">Tip for first-time users</p>
+                        <p className="mt-1">Agar aapko WABA, token, phone number ID jaise words confusing lag rahe hain, bas recommended Meta button use karein. Manual token setup advanced users ke liye hai.</p>
                     </div>
                 </div>
             </section>
 
             <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-                <div className="rounded-2xl border border-green-200 bg-white shadow-sm lg:col-span-3">
+                <div className="rounded-lg border border-[#b9dcfb] bg-white lg:col-span-3">
                     <div className="border-b border-green-100 bg-green-50/80 p-5 sm:p-6">
                         <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-green-600 px-3 py-1 text-xs font-bold uppercase text-white">
                             <ShieldCheck className="h-3.5 w-3.5" />
@@ -289,8 +371,8 @@ export default function WhatsAppConnect() {
                                 </>
                             ) : (
                                 <>
-                                    <PhoneCall className="h-4 w-4" />
-                                    Connect with Meta
+                                    <Smartphone className="h-4 w-4" />
+                                    Connect WhatsApp with Meta
                                 </>
                             )}
                         </button>
@@ -312,7 +394,7 @@ export default function WhatsAppConnect() {
                     </div>
                 </div>
 
-                <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6 lg:col-span-2">
+                <div className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6 lg:col-span-2">
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <h2 className="text-lg font-semibold text-gray-950">Need a new business number?</h2>
@@ -333,7 +415,7 @@ export default function WhatsAppConnect() {
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <section className="rounded-lg border border-gray-200 bg-white">
                 <div className="flex flex-col gap-3 border-b border-gray-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                     <div>
                         <h2 className="text-lg font-semibold text-gray-950">Connected numbers</h2>
@@ -364,16 +446,31 @@ export default function WhatsAppConnect() {
                             ))}
                         </div>
                     ) : (
-                        <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-center">
+                        <div className="rounded-lg border border-dashed border-[#b9dcfb] bg-[#eef7ff] p-6 text-center">
                             <p className="text-sm font-semibold text-gray-950">No official Cloud API number connected yet.</p>
                             <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-gray-500">Connect with Meta for existing number, ya new dedicated number request karein.</p>
+                            <div className="mt-4 flex flex-col justify-center gap-3 sm:flex-row">
+                                <button
+                                    type="button"
+                                    onClick={handleEmbeddedSignup}
+                                    disabled={embedStatus === 'loading' || embedStatus === 'saving'}
+                                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0070d1] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0064b7] disabled:bg-[#79b8ef]"
+                                >
+                                    <Smartphone className="h-4 w-4" />
+                                    Connect now
+                                </button>
+                                <Link to="/whatsapp-number" className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50">
+                                    <PhoneCall className="h-4 w-4" />
+                                    New number
+                                </Link>
+                            </div>
                         </div>
                     )}
                 </div>
             </section>
 
             <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
                     <button
                         type="button"
                         onClick={() => setManualOpen(prev => !prev)}
@@ -433,7 +530,7 @@ export default function WhatsAppConnect() {
                     )}
                 </div>
 
-                <div className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="rounded-lg border border-amber-200 bg-white p-5 sm:p-6">
                     <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase text-amber-800">
                         <QrCode className="h-3.5 w-3.5" />
                         Testing only
@@ -445,6 +542,45 @@ export default function WhatsAppConnect() {
                     </div>
                 </div>
             </section>
+
+            <section className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <InfoBox title="Can I use my existing number?" text="Haan, but number WhatsApp Cloud API me migrate/link hoga. Agar number already WhatsApp mobile app me active hai, Meta flow ke during instructions follow karni padengi." />
+                <InfoBox title="Why templates are needed?" text="Customer ko first message ya broadcast bhejne ke liye Meta-approved templates required hote hain. Customer reply kare to normal service conversation open hoti hai." />
+                <InfoBox title="What if I am not technical?" text="Recommended Meta signup button use karein. Manual token section ko ignore kar sakte hain unless support team specifically bole." />
+            </section>
+        </div>
+    )
+}
+
+function GuideCard({ icon: Icon, title, items }) {
+    return (
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+            <div className="flex items-center gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#eef7ff] text-[#0064b7]">
+                    <Icon className="h-5 w-5" />
+                </span>
+                <h2 className="text-base font-semibold text-gray-950">{title}</h2>
+            </div>
+            <ul className="mt-4 space-y-2">
+                {items.map(item => (
+                    <li key={item} className="flex gap-2 text-sm leading-6 text-gray-600">
+                        <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-emerald-600" />
+                        <span>{item}</span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    )
+}
+
+function InfoBox({ title, text }) {
+    return (
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-950">
+                <HelpCircle className="h-4 w-4 text-[#0064b7]" />
+                {title}
+            </div>
+            <p className="mt-2 text-sm leading-6 text-gray-600">{text}</p>
         </div>
     )
 }

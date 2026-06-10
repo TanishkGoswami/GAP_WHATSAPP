@@ -84,6 +84,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
         const account = waAccounts.find(item => String(getAccountSwitchKey(item)) === String(selectedWaAccount))
         return account?.name || account?.display_phone_number || account?.phone_number_id || 'Selected account'
     }, [selectedWaAccount, waAccounts])
+    const shouldHighlightConnect = isOwner && waAccounts.length === 0
 
     useEffect(() => {
         let cancelled = false
@@ -213,6 +214,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
 
                 <nav className="flex-1 overflow-y-auto px-2 py-3">
                     <div className="space-y-1">
+<<<<<<< HEAD
                         {filteredNavigation.slice(0, 3).map(item => 
                             item.subItems ? (
                                 <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
@@ -220,12 +222,18 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
                                 <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
                             )
                         )}
+=======
+                        {filteredNavigation.slice(0, 3).map(item => (
+                            <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
+                        ))}
+>>>>>>> 555c4f909cec0d0d506b5b6296a217b118ab1f3d
                     </div>
 
                     {isOwner ? (
                         <>
                             <div className="my-2 h-px bg-gray-100" />
                             <div className="space-y-1">
+<<<<<<< HEAD
                                 {filteredNavigation.slice(3, 6).map(item => 
                                     item.subItems ? (
                                         <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
@@ -243,6 +251,17 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
                                         <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
                                     )
                                 )}
+=======
+                                {filteredNavigation.slice(3, 6).map(item => (
+                                    <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
+                                ))}
+                            </div>
+                            <div className="my-2 h-px bg-gray-100" />
+                            <div className="space-y-1">
+                                {filteredNavigation.slice(6).map(item => (
+                                    <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
+                                ))}
+>>>>>>> 555c4f909cec0d0d506b5b6296a217b118ab1f3d
                             </div>
                         </>
                     ) : null}
@@ -386,6 +405,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
 
                     <nav className="flex-1 overflow-y-auto px-3 py-4">
                         <div className="space-y-1">
+<<<<<<< HEAD
                             {filteredNavigation.map(item => 
                                 item.subItems ? (
                                     <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={false} onNavigate={handleMobileNavigate} />
@@ -393,6 +413,11 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
                                     <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={false} onNavigate={handleMobileNavigate} />
                                 )
                             )}
+=======
+                            {filteredNavigation.map(item => (
+                                <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={false} onNavigate={handleMobileNavigate} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
+                            ))}
+>>>>>>> 555c4f909cec0d0d506b5b6296a217b118ab1f3d
                         </div>
                         {isOwner ? (
                             <div className="mt-4 border-t border-gray-100 pt-4">
@@ -429,6 +454,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
 }
 
 function NavItem({ item, active, collapsed, onNavigate }) {
+function NavItem({ item, active, collapsed, onNavigate, attention }) {
     const Icon = item.icon
     const isExpanded = !collapsed
     return (
@@ -440,11 +466,19 @@ function NavItem({ item, active, collapsed, onNavigate }) {
                 'group flex h-9 items-center rounded-md text-[14px] font-medium transition-colors',
                 collapsed ? 'justify-center px-0' : 'gap-2 px-2',
                 active ? 'bg-[#f5f7fa] text-[#0064b7]' : 'text-gray-600 hover:bg-[#f5f7fa] hover:text-black'
+                active ? 'bg-[#f5f7fa] text-[#0064b7]' : 'text-gray-600 hover:bg-[#f5f7fa] hover:text-black',
+                attention && !active ? 'border border-[#b9dcfb] bg-[#eef7ff] text-[#0064b7] hover:bg-[#e2f2ff]' : ''
             )}
         >
             <Icon className={clsx('h-4 w-4 shrink-0 stroke-[1.9]', active ? 'text-[#0064b7]' : 'text-gray-500 group-hover:text-gray-700')} />
+            <Icon className={clsx('h-4 w-4 shrink-0 stroke-[1.9]', active || attention ? 'text-[#0064b7]' : 'text-gray-500 group-hover:text-gray-700')} />
             <span className={labelTransition(isExpanded, 'flex min-w-0 flex-1 items-center')}>
                 <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                {attention && !item.badge ? (
+                    <span className="ml-2 rounded-full bg-white px-1.5 py-0.5 text-[10px] font-semibold leading-none text-[#0064b7] ring-1 ring-[#cfe5fb]">
+                        Start
+                    </span>
+                ) : null}
                 {item.badge ? (
                     <span className="ml-2 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-[#0064b7]">
                         {item.badge}

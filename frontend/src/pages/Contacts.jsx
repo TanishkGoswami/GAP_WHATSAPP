@@ -11,7 +11,6 @@ import {
     ClipboardList,
     CreditCard,
     Database,
-    Edit3,
     FileText,
     Filter,
     IndianRupee,
@@ -261,6 +260,21 @@ export default function Contacts() {
         .split(',')
         .map(tag => tag.trim())
         .filter(Boolean)
+
+    const setDraftTags = (tags) => {
+        const uniqueTags = Array.from(new Set(tags.map(tag => String(tag || '').trim()).filter(Boolean)))
+        setDraft(prev => ({ ...prev, tagsText: uniqueTags.join(', ') }))
+    }
+
+    const addDraftTag = (tag) => {
+        const cleanTag = String(tag || '').trim()
+        if (!cleanTag) return
+        setDraftTags([...parseTags(draft.tagsText), cleanTag])
+    }
+
+    const removeDraftTag = (tagToRemove) => {
+        setDraftTags(parseTags(draft.tagsText).filter(tag => tag !== tagToRemove))
+    }
 
     const fieldsToObject = (fields) => fields.reduce((acc, field) => {
         const key = String(field.key || '').trim()
@@ -696,7 +710,45 @@ export default function Contacts() {
                                                 </Field>
                                             </div>
                                             <Field label="Tags" className="mt-4">
-                                                <input value={draft.tagsText} onChange={event => updateDraft({ tagsText: event.target.value })} className="field-input" placeholder="lead, vip, renewal" />
+                                                <div className="space-y-3">
+                                                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_220px]">
+                                                        <input
+                                                            value={draft.tagsText}
+                                                            onChange={event => updateDraft({ tagsText: event.target.value })}
+                                                            className="field-input"
+                                                            placeholder="lead, vip, renewal"
+                                                        />
+                                                        <CustomSelect
+                                                            value=""
+                                                            onChange={(value) => addDraftTag(value)}
+                                                            options={[
+                                                                { value: '', label: allTags.length ? 'Select existing tag' : 'No saved tags yet' },
+                                                                ...allTags
+                                                                    .filter(tag => !parseTags(draft.tagsText).includes(tag))
+                                                                    .map(tag => ({ value: tag, label: tag }))
+                                                            ]}
+                                                        />
+                                                    </div>
+                                                    {parseTags(draft.tagsText).length ? (
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {parseTags(draft.tagsText).map(tag => (
+                                                                <span key={tag} className="inline-flex items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                                                                    {tag}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => removeDraftTag(tag)}
+                                                                        className="rounded-full p-0.5 text-blue-500 hover:bg-blue-100 hover:text-blue-800"
+                                                                        aria-label={`Remove ${tag}`}
+                                                                    >
+                                                                        <X className="h-3 w-3" />
+                                                                    </button>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <p className="text-xs text-gray-500">Existing tags dropdown se select karein ya comma separated custom tags type karein.</p>
+                                                    )}
+                                                </div>
                                             </Field>
                                         </section>
 
@@ -710,10 +762,6 @@ export default function Contacts() {
                                         <button type="button" onClick={() => deleteMutation.mutate(activeContact)} disabled={deleteMutation.isPending} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">
                                             <Trash2 className="h-4 w-4" />
                                             Delete
-                                        </button>
-                                        <button type="button" onClick={() => { setDraft(hydrateDraft(activeContact)); setDrawerMode('edit') }} className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800">
-                                            <Edit3 className="h-4 w-4" />
-                                            Edit contact
                                         </button>
                                     </div>
                                 ) : (

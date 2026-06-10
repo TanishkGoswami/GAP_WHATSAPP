@@ -1,10 +1,31 @@
 import { useState, useEffect, useRef } from 'react'
-import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play } from 'lucide-react'
+import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { useNotificationSound } from '../hooks/useNotificationSound'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
+const DESKTOP_NOTIFICATION_KEY = 'gap_desktop_notifications_enabled'
+const QUIET_HOURS_ENABLED_KEY = 'gap_notification_quiet_hours_enabled'
+const QUIET_HOURS_FROM_KEY = 'gap_notification_quiet_hours_from'
+const QUIET_HOURS_TO_KEY = 'gap_notification_quiet_hours_to'
+
+const readStoredBoolean = (key, fallback) => {
+    try {
+        const stored = localStorage.getItem(key)
+        return stored == null ? fallback : stored === 'true'
+    } catch {
+        return fallback
+    }
+}
+
+const readStoredText = (key, fallback) => {
+    try {
+        return localStorage.getItem(key) || fallback
+    } catch {
+        return fallback
+    }
+}
 
 export default function Settings() {
     const { session, userRole, loginType } = useAuth()
@@ -55,10 +76,71 @@ export default function Settings() {
         vertical: '',
         profile_picture_url: ''
     })
+    const [testSoundStatus, setTestSoundStatus] = useState('')
+    const [desktopNotificationsEnabled, setDesktopNotificationsEnabled] = useState(() => readStoredBoolean(DESKTOP_NOTIFICATION_KEY, false))
+    const [quietHoursEnabled, setQuietHoursEnabled] = useState(() => readStoredBoolean(QUIET_HOURS_ENABLED_KEY, false))
+    const [quietHours, setQuietHours] = useState(() => ({
+        from: readStoredText(QUIET_HOURS_FROM_KEY, '22:00'),
+        to: readStoredText(QUIET_HOURS_TO_KEY, '09:00')
+    }))
+    const [browserPermission, setBrowserPermission] = useState(() => {
+        if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported'
+        return window.Notification.permission
+    })
 
     const authHeaders = {
         Authorization: `Bearer ${session?.access_token || ''}`,
         'X-Auth-Portal': loginType || 'owner'
+    }
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(DESKTOP_NOTIFICATION_KEY, String(desktopNotificationsEnabled))
+        } catch {
+            // Browser storage can fail in private mode; settings still work for this session.
+        }
+    }, [desktopNotificationsEnabled])
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(QUIET_HOURS_ENABLED_KEY, String(quietHoursEnabled))
+            localStorage.setItem(QUIET_HOURS_FROM_KEY, quietHours.from)
+            localStorage.setItem(QUIET_HOURS_TO_KEY, quietHours.to)
+        } catch {
+            // Non-critical preference persistence.
+        }
+    }, [quietHoursEnabled, quietHours])
+
+    const handleTestNotificationSound = async () => {
+        setTestSoundStatus('playing')
+        const didPlay = await playNotification({ force: true, messageId: `test-${Date.now()}` })
+        setTestSoundStatus(didPlay ? 'played' : 'blocked')
+        window.setTimeout(() => setTestSoundStatus(''), 3500)
+    }
+
+    const handleSoundSelect = async (soundId) => {
+        setSelectedSoundId(soundId)
+        setTestSoundStatus('playing')
+        window.setTimeout(async () => {
+            const didPlay = await playNotification({ force: true, messageId: `preview-${soundId}-${Date.now()}` })
+            setTestSoundStatus(didPlay ? 'previewed' : 'blocked')
+            window.setTimeout(() => setTestSoundStatus(''), 2500)
+        }, 50)
+    }
+
+    const requestDesktopNotificationPermission = async () => {
+        if (typeof window === 'undefined' || !('Notification' in window)) {
+            setBrowserPermission('unsupported')
+            return
+        }
+        if (window.Notification.permission === 'granted') {
+            setBrowserPermission('granted')
+            setDesktopNotificationsEnabled(true)
+            return
+        }
+        const permission = await window.Notification.requestPermission()
+        setBrowserPermission(permission)
+        setDesktopNotificationsEnabled(permission === 'granted')
     }
 
     const formatKnowledgeDate = (value) => {
@@ -750,92 +832,228 @@ export default function Settings() {
                     </div>
                 )}
                 {activeTab === 'notifications' && (
-                    <div className="p-8">
-                        <div className="mb-8 flex items-start justify-between gap-4">
-                            <div>
-                                <h2 className="text-lg font-semibold text-gray-900">Notifications</h2>
-                                <p className="mt-1 text-sm text-gray-500">Choose the sound agents hear when a different chat receives a new client message.</p>
+                    <div className="bg-gray-50/60">
+                        <div className="border-b border-gray-200 bg-white px-4 py-5 sm:px-8 sm:py-6">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div className="max-w-3xl">
+                                    <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                                        <Sparkles className="h-3.5 w-3.5" />
+                                        Agent alert center
+                                    </div>
+                                    <h2 className="mt-3 text-2xl font-semibold text-gray-950">Notifications</h2>
+                                    <p className="mt-2 text-sm leading-6 text-gray-600">
+                                        Jab customer ka new WhatsApp message kisi aur chat me aaye, agents ko yahan selected sound alert milega. Ye settings is browser/device ke liye save hoti hain.
+                                    </p>
+                                </div>
+                                <div className="flex flex-col gap-2 sm:flex-row">
+                                    <button
+                                        type="button"
+                                        onClick={handleTestNotificationSound}
+                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#0070d1] px-5 text-sm font-semibold text-white hover:bg-[#0064b7]"
+                                    >
+                                        <Play className="h-4 w-4" />
+                                        Test sound
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={requestDesktopNotificationPermission}
+                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                    >
+                                        <MonitorCheck className="h-4 w-4" />
+                                        Browser permission
+                                    </button>
+                                </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => playNotification({ force: true, messageId: `test-${Date.now()}` })}
-                                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-                            >
-                                <Play className="h-4 w-4" />
-                                Test sound
-                            </button>
+                            {testSoundStatus ? (
+                                <div className={`mt-4 flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${testSoundStatus === 'blocked' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                                    {testSoundStatus === 'blocked' ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <Check className="mt-0.5 h-4 w-4 shrink-0" />}
+                                    <span>
+                                        {testSoundStatus === 'playing' && 'Playing notification preview...'}
+                                        {testSoundStatus === 'played' && 'Sound test successful. Incoming message alerts should be audible.'}
+                                        {testSoundStatus === 'previewed' && 'Sound preview played. This style is selected now.'}
+                                        {testSoundStatus === 'blocked' && 'Browser blocked audio. Click anywhere in the app once, then press Test sound again.'}
+                                    </span>
+                                </div>
+                            ) : null}
                         </div>
 
-                        <div className="space-y-6">
-                            <section className="rounded-xl border border-gray-200 bg-white p-6">
-                                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="space-y-6 p-4 sm:p-8">
+                            <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                                <NotificationStatusCard
+                                    icon={notificationSoundEnabled ? Volume2 : VolumeX}
+                                    title="Message sound"
+                                    value={notificationSoundEnabled ? 'Enabled' : 'Muted'}
+                                    text="Only new client messages from chats not currently open will trigger sound."
+                                    tone={notificationSoundEnabled ? 'green' : 'gray'}
+                                />
+                                <NotificationStatusCard
+                                    icon={MonitorCheck}
+                                    title="Browser alerts"
+                                    value={browserPermission === 'granted' && desktopNotificationsEnabled ? 'Allowed' : formatPermission(browserPermission)}
+                                    text={browserPermission === 'granted' && desktopNotificationsEnabled ? 'Browser permission is ready for future desktop pop-up alerts.' : 'Use Browser permission if you want this browser ready for desktop pop-up alerts later.'}
+                                    tone={browserPermission === 'granted' ? 'green' : browserPermission === 'denied' ? 'amber' : 'blue'}
+                                />
+                                <NotificationStatusCard
+                                    icon={CalendarClock}
+                                    title="Quiet hours"
+                                    value={quietHoursEnabled ? `${quietHours.from} - ${quietHours.to}` : 'Off'}
+                                    text="Use this as an operating guideline for team shift handovers."
+                                    tone={quietHoursEnabled ? 'amber' : 'blue'}
+                                />
+                            </section>
+
+                            <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+                                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                                     <div className="flex items-start gap-3">
-                                        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${notificationSoundEnabled ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
-                                            {notificationSoundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+                                        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${notificationSoundEnabled ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                                            {notificationSoundEnabled ? <BellRing className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
                                         </div>
                                         <div>
-                                            <h3 className="text-sm font-semibold text-gray-900">Message sound</h3>
-                                            <p className="mt-1 text-sm text-gray-500">Sound plays only for incoming client messages from chats that are not currently open.</p>
+                                            <h3 className="text-sm font-semibold text-gray-900">Incoming message sound</h3>
+                                            <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">
+                                                Recommended ON for live support teams. Agar agent same chat open karke baitha hai, duplicate sound avoid karne ke liye alert nahi bajta.
+                                            </p>
                                         </div>
                                     </div>
                                     <button
                                         type="button"
                                         onClick={() => setNotificationSoundEnabled(prev => !prev)}
-                                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${notificationSoundEnabled ? 'bg-green-600' : 'bg-gray-300'}`}
+                                        className={`relative inline-flex h-8 w-14 shrink-0 items-center rounded-full transition-colors ${notificationSoundEnabled ? 'bg-[#0070d1]' : 'bg-gray-300'}`}
                                         aria-pressed={notificationSoundEnabled}
                                     >
-                                        <span className={`inline-block h-5 w-5 rounded-full bg-white shadow transition-transform ${notificationSoundEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        <span className={`inline-block h-6 w-6 rounded-full bg-white transition-transform ${notificationSoundEnabled ? 'translate-x-7' : 'translate-x-1'}`} />
                                     </button>
                                 </div>
                             </section>
 
-                            <section className="rounded-xl border border-gray-200 bg-white p-6">
-                                <div className="mb-5">
-                                    <h3 className="text-sm font-semibold text-gray-900">Sound style</h3>
-                                    <p className="mt-1 text-xs text-gray-500">Select one of the notification files saved in the project.</p>
+                            <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+                                <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-gray-900">Sound style</h3>
+                                        <p className="mt-1 text-sm text-gray-500">Har sound ko click karte hi preview bhi bajega, so agent comfortable alert choose kar sakta hai.</p>
+                                    </div>
+                                    <span className="inline-flex items-center gap-2 rounded-full bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600">
+                                        <Headphones className="h-3.5 w-3.5" />
+                                        Selected: {notificationSounds.find(sound => sound.id === selectedSoundId)?.label || 'Default'}
+                                    </span>
                                 </div>
                                 <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                                    {notificationSounds.map(sound => (
-                                        <button
-                                            key={sound.id}
-                                            type="button"
-                                            onClick={() => setSelectedSoundId(sound.id)}
-                                            className={`flex items-center justify-between rounded-lg border p-4 text-left transition-colors ${selectedSoundId === sound.id ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
-                                        >
-                                            <div className="min-w-0">
-                                                <div className="truncate text-sm font-semibold text-gray-900">{sound.label}</div>
-                                                <div className="truncate text-xs text-gray-500">{sound.src.split('/').pop()}</div>
-                                            </div>
-                                            <span className={`ml-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selectedSoundId === sound.id ? 'border-green-600 bg-green-600 text-white' : 'border-gray-300 text-transparent'}`}>
-                                                <Check className="h-3.5 w-3.5" />
-                                            </span>
-                                        </button>
-                                    ))}
+                                    {notificationSounds.map(sound => {
+                                        const selected = selectedSoundId === sound.id
+                                        return (
+                                            <button
+                                                key={sound.id}
+                                                type="button"
+                                                onClick={() => handleSoundSelect(sound.id)}
+                                                className={`flex items-start justify-between rounded-lg border p-4 text-left transition-colors ${selected ? 'border-[#0070d1] bg-[#eef7ff]' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                                            >
+                                                <div className="min-w-0">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <div className="truncate text-sm font-semibold text-gray-900">{sound.label}</div>
+                                                        {selected ? <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[#0064b7] ring-1 ring-[#cfe5fb]">Active</span> : null}
+                                                    </div>
+                                                    <div className="mt-1 truncate text-xs text-gray-500">{sound.src.split('/').pop()}</div>
+                                                    <div className="mt-2 text-xs leading-5 text-gray-500">{getSoundDescription(sound.id)}</div>
+                                                </div>
+                                                <span className={`ml-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-[#0070d1] bg-[#0070d1] text-white' : 'border-gray-300 text-transparent'}`}>
+                                                    <Check className="h-3.5 w-3.5" />
+                                                </span>
+                                            </button>
+                                        )
+                                    })}
                                 </div>
                             </section>
 
-                            <section className="rounded-xl border border-gray-200 bg-white p-6">
-                                <div className="mb-5 flex items-center justify-between gap-4">
-                                    <div>
-                                        <h3 className="text-sm font-semibold text-gray-900">Volume</h3>
-                                        <p className="mt-1 text-xs text-gray-500">Set a comfortable alert level for this browser.</p>
+                            <section className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+                                <div className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+                                    <div className="mb-5 flex items-center justify-between gap-4">
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-gray-900">Volume</h3>
+                                            <p className="mt-1 text-sm text-gray-500">Set a comfortable alert level for this browser.</p>
+                                        </div>
+                                        <span className="text-sm font-semibold text-gray-700">{Math.round(notificationVolume * 100)}%</span>
                                     </div>
-                                    <span className="text-sm font-semibold text-gray-700">{Math.round(notificationVolume * 100)}%</span>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.05"
+                                        value={notificationVolume}
+                                        onChange={(e) => setNotificationVolume(e.target.value)}
+                                        className="w-full accent-[#0070d1]"
+                                    />
+                                    <div className="mt-4 grid grid-cols-3 gap-2">
+                                        {[0.35, 0.7, 1].map(level => (
+                                            <button
+                                                key={level}
+                                                type="button"
+                                                onClick={() => setNotificationVolume(level)}
+                                                className={`rounded-lg border px-3 py-2 text-xs font-semibold ${Math.abs(notificationVolume - level) < 0.01 ? 'border-[#0070d1] bg-[#eef7ff] text-[#0064b7]' : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'}`}
+                                            >
+                                                {level === 0.35 ? 'Soft' : level === 0.7 ? 'Balanced' : 'Loud'}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                                <input
-                                    type="range"
-                                    min="0"
-                                    max="1"
-                                    step="0.05"
-                                    value={notificationVolume}
-                                    onChange={(e) => setNotificationVolume(e.target.value)}
-                                    className="w-full accent-green-600"
-                                />
+
+                                <div className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+                                    <div className="mb-4 flex items-start justify-between gap-4">
+                                        <div>
+                                            <h3 className="text-sm font-semibold text-gray-900">Quiet hours note</h3>
+                                            <p className="mt-1 text-sm leading-6 text-gray-500">Team ko bataane ke liye shift timing save karein. Live sound mute karna ho to Message sound toggle OFF karein.</p>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setQuietHoursEnabled(prev => !prev)}
+                                            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${quietHoursEnabled ? 'bg-[#0070d1]' : 'bg-gray-300'}`}
+                                            aria-pressed={quietHoursEnabled}
+                                        >
+                                            <span className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${quietHoursEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <label className="block">
+                                            <span className="text-xs font-medium text-gray-600">From</span>
+                                            <input
+                                                type="time"
+                                                value={quietHours.from}
+                                                onChange={(e) => setQuietHours(prev => ({ ...prev, from: e.target.value }))}
+                                                className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 text-sm focus:border-[#0070d1] focus:outline-none focus:ring-2 focus:ring-[#0070d1]/10"
+                                            />
+                                        </label>
+                                        <label className="block">
+                                            <span className="text-xs font-medium text-gray-600">To</span>
+                                            <input
+                                                type="time"
+                                                value={quietHours.to}
+                                                onChange={(e) => setQuietHours(prev => ({ ...prev, to: e.target.value }))}
+                                                className="mt-1 h-10 w-full rounded-lg border border-gray-200 px-3 text-sm focus:border-[#0070d1] focus:outline-none focus:ring-2 focus:ring-[#0070d1]/10"
+                                            />
+                                        </label>
+                                    </div>
+                                </div>
                             </section>
 
-                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                                Browser audio starts after the first click or key press in the app. Use Test sound once after opening the dashboard if the browser has blocked audio.
-                            </div>
+                            <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                                <div className="rounded-lg border border-blue-100 bg-blue-50 p-5 text-sm text-blue-900">
+                                    <div className="flex items-start gap-3">
+                                        <Info className="mt-0.5 h-5 w-5 shrink-0" />
+                                        <div>
+                                            <p className="font-semibold">How alerts work</p>
+                                            <p className="mt-1 leading-6">Sound sirf incoming customer messages ke liye hai. Agent ke apne sent messages, same open chat ke messages, aur duplicate socket events avoid kiye jaate hain.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+                                    <div className="flex items-start gap-3">
+                                        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
+                                        <div>
+                                            <p className="font-semibold">If sound does not play</p>
+                                            <p className="mt-1 leading-6">Browser audio first click/key press ke baad start hota hai. App open karne ke baad ek baar Test sound press karein, tab future alerts reliable rahenge.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
                         </div>
                     </div>
                 )}
@@ -1279,4 +1497,46 @@ export default function Settings() {
             </div>
         </div>
     )
+}
+
+function NotificationStatusCard({ icon: Icon, title, value, text, tone }) {
+    const toneClass = {
+        green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+        amber: 'bg-amber-50 text-amber-800 border-amber-100',
+        blue: 'bg-blue-50 text-blue-700 border-blue-100',
+        gray: 'bg-gray-50 text-gray-600 border-gray-200'
+    }[tone] || 'bg-gray-50 text-gray-600 border-gray-200'
+
+    return (
+        <div className="rounded-lg border border-gray-200 bg-white p-5">
+            <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-950">{title}</p>
+                    <p className="mt-1 text-2xl font-light leading-none text-gray-950">{value}</p>
+                </div>
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${toneClass}`}>
+                    <Icon className="h-5 w-5" />
+                </span>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-gray-500">{text}</p>
+        </div>
+    )
+}
+
+function formatPermission(permission) {
+    if (permission === 'granted') return 'Allowed'
+    if (permission === 'denied') return 'Blocked'
+    if (permission === 'unsupported') return 'Not supported'
+    return 'Not asked'
+}
+
+function getSoundDescription(soundId) {
+    const descriptions = {
+        'dragon-studio': 'Soft and professional, best for long support shifts.',
+        'universfield-033': 'Short pop, good when agents are active on multiple tabs.',
+        'universfield-038': 'Brighter ping for busy teams who need noticeable alerts.',
+        'universfield-056': 'Clean tap with low distraction.',
+        'universfield-09': 'Very short alert for quiet workspaces.'
+    }
+    return descriptions[soundId] || 'Notification preview sound.'
 }

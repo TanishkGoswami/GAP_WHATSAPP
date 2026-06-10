@@ -13,9 +13,11 @@ import {
     Gauge,
     Grid2X2,
     MessageSquareText,
+    PhoneCall,
     RefreshCw,
     Send,
     Smartphone,
+    Sparkles,
     TrendingUp,
     UserRoundCheck,
     Users,
@@ -143,6 +145,7 @@ export default function Dashboard() {
 
     const rangeLabel = ranges.find(item => item.value === range)?.label || 'Today'
     const healthLabel = model.failedRate > 15 ? 'Needs review' : model.failedRate > 5 ? 'Monitor' : 'Healthy'
+    const hasConnectedAccount = n(model.accounts.active) > 0
 
     return (
         <div className="min-h-full bg-[#f5f7fa]">
@@ -160,6 +163,8 @@ export default function Dashboard() {
                         {error.message}
                     </div>
                 ) : null}
+
+                {!isLoading && !hasConnectedAccount ? <FirstRunOnboarding /> : null}
 
                 <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <MetricCard icon={MessageSquareText} label="Messages" value={fmt(model.totalMessages)} detail={`${rangeLabel} synced`} loading={isLoading} />
@@ -219,6 +224,15 @@ export default function Dashboard() {
 
                     <Panel title="Quick actions" subtitle="Shortcuts for daily operations." action={<Zap className="h-4 w-4 text-[#0070d1]" />}>
                         <div className="space-y-2.5">
+                            {!hasConnectedAccount ? (
+                                <QuickAction
+                                    to="/whatsapp-connect"
+                                    icon={Smartphone}
+                                    title="Connect WhatsApp first"
+                                    text="Required before chats, templates and automations can work."
+                                    primary
+                                />
+                            ) : null}
                             <QuickAction to="/live-chat" icon={MessageSquareText} title="Open chats" text="Reply and review summaries." />
                             <QuickAction to="/bot-agents" icon={Bot} title="Manage AI agents" text="Tune replies and handoff rules." />
                             <QuickAction to="/broadcast" icon={Send} title="Create broadcast" text="Send campaigns with quality in view." />
@@ -251,6 +265,76 @@ export default function Dashboard() {
                 </section>
             </div>
         </div>
+    )
+}
+
+function FirstRunOnboarding() {
+    const steps = [
+        {
+            icon: Smartphone,
+            title: 'Connect WhatsApp',
+            text: 'Apna business number official Meta Cloud API se link karein. Ye sabse pehla aur most important step hai.',
+        },
+        {
+            icon: Wallet,
+            title: 'Add wallet balance',
+            text: 'WhatsApp conversations ke charges wallet se deduct honge. Low balance hone par sending stop ho sakti hai.',
+        },
+        {
+            icon: FileText,
+            title: 'Create templates',
+            text: 'Broadcasts and proactive messages ke liye Meta-approved templates required hote hain.',
+        },
+        {
+            icon: Bot,
+            title: 'Enable AI/flows',
+            text: 'Number connect hone ke baad chats, agents, flows and broadcasts meaningful data dikhayenge.',
+        },
+    ]
+
+    return (
+        <section className="overflow-hidden rounded-lg border border-[#b9dcfb] bg-white">
+            <div className="grid gap-0 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+                <div className="border-b border-[#d9ecfd] bg-[#eef7ff] p-5 sm:p-6 xl:border-b-0 xl:border-r">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-[#b9dcfb] bg-white px-3 py-1 text-xs font-semibold text-[#0064b7]">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        First-time setup
+                    </div>
+                    <h2 className="mt-4 text-2xl font-semibold leading-tight text-black">Dashboard empty hai because WhatsApp account abhi connected nahi hai.</h2>
+                    <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-700">
+                        Non-tech flow simple hai: pehle WhatsApp business number connect karo, phir wallet/templates setup karo. Uske baad chats, delivery reports, broadcasts and AI automation yahin real data ke saath show honge.
+                    </p>
+                    <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                        <Link
+                            to="/whatsapp-connect"
+                            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[#0070d1] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#0064b7]"
+                        >
+                            <Smartphone className="h-4 w-4" />
+                            Connect WhatsApp account
+                            <ArrowRight className="h-4 w-4" />
+                        </Link>
+                        <Link
+                            to="/whatsapp-number"
+                            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50"
+                        >
+                            <PhoneCall className="h-4 w-4" />
+                            Need a new number?
+                        </Link>
+                    </div>
+                </div>
+                <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
+                    {steps.map(step => (
+                        <div key={step.title} className="rounded-lg border border-gray-200 bg-[#fbfcfd] p-4">
+                            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-[#0064b7] ring-1 ring-gray-200">
+                                {createElement(step.icon, { className: 'h-4 w-4' })}
+                            </span>
+                            <h3 className="mt-3 text-sm font-semibold text-black">{step.title}</h3>
+                            <p className="mt-1 text-xs leading-5 text-gray-600">{step.text}</p>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </section>
     )
 }
 
@@ -528,10 +612,10 @@ function InfoLine({ icon, label, value }) {
     )
 }
 
-function QuickAction({ to, icon, title, text }) {
+function QuickAction({ to, icon, title, text, primary }) {
     return (
-        <Link to={to} className="group flex items-center gap-3 rounded-lg bg-[#f5f7fa] p-4 transition-colors hover:bg-gray-100">
-            <span className="rounded-lg bg-white p-2 text-[#0064b7]">{createElement(icon, { className: 'h-4 w-4' })}</span>
+        <Link to={to} className={`group flex items-center gap-3 rounded-lg p-4 transition-colors ${primary ? 'border border-[#b9dcfb] bg-[#eef7ff] hover:bg-[#e2f2ff]' : 'bg-[#f5f7fa] hover:bg-gray-100'}`}>
+            <span className={`rounded-lg bg-white p-2 ${primary ? 'text-[#0070d1] ring-1 ring-[#cfe5fb]' : 'text-[#0064b7]'}`}>{createElement(icon, { className: 'h-4 w-4' })}</span>
             <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-black">{title}</span>
                 <span className="mt-0.5 block truncate text-xs text-gray-600">{text}</span>
