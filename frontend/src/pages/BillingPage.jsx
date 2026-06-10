@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Check, CreditCard, Loader2, Megaphone, ReceiptText, ShieldCheck, Wallet } from 'lucide-react'
+import { AlertCircle, Check, ChevronDown, CreditCard, Loader2, Megaphone, ReceiptText, ShieldCheck, Wallet } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../supabaseClient'
 import {
@@ -48,6 +49,7 @@ export default function BillingPage() {
     const [error, setError] = useState('')
     const [upgrading, setUpgrading] = useState(null)
     const [recharging, setRecharging] = useState(null)
+    const [isMessageBillingOpen, setIsMessageBillingOpen] = useState(false)
 
     useEffect(() => {
         let cancelled = false
@@ -73,6 +75,30 @@ export default function BillingPage() {
     const categorySpend = overview?.spend?.categories || []
     const currentPlan = overview?.current_plan || plans.find(plan => plan.id === 'free')
     const wallet = overview?.wallet || { balance_paise: 0, currency: 'INR', low_balance_threshold_paise: 10000 }
+    const walletTransactions = (overview?.recent_wallet_transactions || overview?.recent_transactions || [])
+        .filter(tx => !['message_debit', 'failed_debit'].includes(String(tx.type || '')))
+    const messageChargeRows = overview?.recent_message_charges?.length
+        ? overview.recent_message_charges
+        : (overview?.recent_transactions || []).filter(tx => ['message_debit', 'failed_debit'].includes(String(tx.type || '')))
+    const messageCharges = messageChargeRows
+        .filter(tx => ['message_debit', 'failed_debit'].includes(String(tx.type || '')))
+        .map(tx => ({
+            id: tx.id,
+            source: tx.reference_type || 'message',
+            category: tx.metadata?.category,
+            template_name: tx.metadata?.template_name,
+            campaign_id: tx.metadata?.campaign_id || tx.reference_id,
+            charged_amount_paise: Math.abs(Number(tx.amount_paise || 0)),
+            billing_status: tx.status === 'completed' ? 'charged' : tx.status,
+            created_at: tx.created_at,
+        }))
+        .concat(messageChargeRows
+            .filter(tx => !['message_debit', 'failed_debit'].includes(String(tx.type || '')))
+            .map(tx => ({
+                ...tx,
+                charged_amount_paise: Math.abs(Number(tx.charged_amount_paise || 0)),
+            })))
+    const messageChargesTotalPaise = messageCharges.reduce((sum, charge) => sum + Number(charge.charged_amount_paise || 0), 0)
 
     const rateMap = useMemo(() => {
         return rateCards.reduce((acc, rate) => {
@@ -293,6 +319,75 @@ export default function BillingPage() {
                     </div>
                 </section>
 
+                <section className="rounded-xl border border-gray-200 bg-white">
+                    <button
+                        type="button"
+                        onClick={() => setIsMessageBillingOpen(prev => !prev)}
+                        className="flex w-full flex-col gap-3 p-5 text-left transition-colors hover:bg-gray-50 sm:flex-row sm:items-start sm:justify-between"
+                        aria-expanded={isMessageBillingOpen}
+                    >
+                        <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h2 className="text-base font-semibold text-gray-950">Message Billing Activity</h2>
+                                <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                                    Latest {messageCharges.length} records
+                                </span>
+                            </div>
+                            <p className="mt-1 text-sm text-gray-500">
+                                Broadcast/template usage charges ka compact preview. Full campaign history Broadcasts page me milegi.
+                            </p>
+                        </div>
+                        <span className="inline-flex w-fit items-center gap-3 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700">
+                            <Megaphone className="h-3.5 w-3.5 text-blue-600" />
+                            {formatINRFromPaise(messageChargesTotalPaise)}
+                            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isMessageBillingOpen ? 'rotate-180' : ''}`} />
+                        </span>
+                    </button>
+                    {isMessageBillingOpen ? (
+                        <div className="divide-y divide-gray-100 border-t border-gray-100">
+                            {messageCharges.length === 0 ? (
+                                <p className="p-5 text-sm text-gray-500">Abhi message billing activity empty hai. Broadcast ya paid template send hone ke baad charges yahan aayenge.</p>
+                            ) : messageCharges.map(charge => (
+                                <div key={charge.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <p className="text-sm font-semibold text-gray-900">{getMessageChargeTitle(charge)}</p>
+                                            <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${charge.billing_status === 'charged' ? 'bg-green-50 text-green-700 ring-green-600/20' : charge.billing_status === 'failed' ? 'bg-red-50 text-red-700 ring-red-600/10' : 'bg-gray-50 text-gray-600 ring-gray-200'}`}>
+                                                {String(charge.billing_status || 'recorded').replaceAll('_', ' ')}
+                                            </span>
+                                        </div>
+                                        <p className="mt-1 truncate text-xs text-gray-500">
+                                            {charge.template_name ? `Template: ${charge.template_name}` : 'No template name'}{charge.campaign_id ? ` - Campaign ${String(charge.campaign_id).slice(0, 8)}` : ''}
+                                        </p>
+                                    </div>
+                                    <div className="shrink-0 text-left sm:text-right">
+                                        <p className={`text-sm font-semibold ${charge.billing_status === 'failed' ? 'text-red-600' : 'text-gray-950'}`}>
+                                            {formatINRFromPaise(charge.charged_amount_paise)}
+                                        </p>
+                                        <p className="mt-1 text-xs text-gray-500">{new Date(charge.created_at).toLocaleDateString('en-IN')}</p>
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="flex flex-col gap-3 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                                <p className="text-sm text-gray-600">
+                                    Yahan sirf latest usage charges preview hain. Baki broadcast/campaign details history me available hain.
+                                </p>
+                                <Link
+                                    to="/broadcast"
+                                    className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-100"
+                                >
+                                    Open broadcast history
+                                    <Megaphone className="h-4 w-4 text-blue-600" />
+                                </Link>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="border-t border-gray-100 px-5 py-3 text-sm text-gray-500">
+                            Details hidden. Ye compact latest usage preview hai; full broadcast history Broadcasts page me milegi.
+                        </div>
+                    )}
+                </section>
+
                 <section className="rounded-xl border border-gray-200 bg-white p-5">
                     <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                         <div>
@@ -360,11 +455,12 @@ export default function BillingPage() {
                 <section className="rounded-xl border border-gray-200 bg-white">
                     <div className="border-b border-gray-100 p-5">
                         <h2 className="text-base font-semibold text-gray-950">Recent Wallet Transactions</h2>
+                        <p className="mt-1 text-sm text-gray-500">Sirf wallet recharge, refund, adjustment ya payment entries. Broadcast/message usage upar separate section me hai.</p>
                     </div>
                     <div className="divide-y divide-gray-100">
-                        {(overview?.recent_transactions || []).length === 0 ? (
-                            <p className="p-5 text-sm text-gray-500">Abhi wallet transaction history empty hai.</p>
-                        ) : overview.recent_transactions.map(tx => {
+                        {walletTransactions.length === 0 ? (
+                            <p className="p-5 text-sm text-gray-500">Abhi wallet recharge/refund transaction history empty hai.</p>
+                        ) : walletTransactions.map(tx => {
                             const isPending = tx.status === 'pending';
                             const isCompleted = tx.status === 'completed';
                             return (
@@ -526,4 +622,14 @@ export default function BillingPage() {
             </div>
         </div>
     )
+}
+
+function getMessageChargeTitle(charge) {
+    const source = String(charge.source || '').toLowerCase()
+    const category = String(charge.category || 'message').replaceAll('_', ' ')
+    if (source === 'broadcast') return `Broadcast ${category} charge`
+    if (source === 'flow') return `Flow automation ${category} charge`
+    if (source === 'ai_agent') return `AI agent ${category} charge`
+    if (source === 'manual') return `Manual message ${category} charge`
+    return `WhatsApp ${category} charge`
 }

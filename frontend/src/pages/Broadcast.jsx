@@ -724,110 +724,131 @@ export default function Broadcast() {
             ) : (
                 <div className="space-y-10">
                     {/* Progress Steps */}
-                    <div className="relative">
-                        <div className="absolute top-1/2 left-0 w-full h-1 bg-gray-100 -translate-y-1/2 rounded-full"></div>
-                        <div className="absolute top-1/2 left-0 h-1 bg-indigo-600 -translate-y-1/2 rounded-full transition-all duration-500 ease-in-out" style={{ width: `${((currentStep - 1) / (STEPS.length - 1)) * 100}%` }}></div>
-                        
-                        <div className="relative z-10 flex justify-between">
+                    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+                        <div className="relative">
+                            <div className="absolute left-8 right-8 top-5 h-0.5 bg-gray-200"></div>
+                            <div className="absolute left-8 top-5 h-0.5 bg-[#0070d1] transition-all duration-500 ease-in-out" style={{ width: `calc(${((currentStep - 1) / (STEPS.length - 1)) * 100}% - ${currentStep === 1 ? '0px' : '4rem'})` }}></div>
+                            <div className="relative z-10 grid grid-cols-4 gap-2">
                             {STEPS.map((step) => {
                                 const isActive = step.id === currentStep
                                 const isCompleted = step.id < currentStep
                                 return (
-                                    <div 
+                                    <button
+                                        type="button"
                                         key={step.id} 
-                                        className={`flex flex-col items-center bg-transparent ${isCompleted ? 'cursor-pointer hover:scale-105 transition-transform' : ''}`}
+                                        className={`flex flex-col items-center rounded-xl px-2 py-1 text-center transition-colors ${isCompleted ? 'cursor-pointer hover:bg-gray-50' : ''}`}
                                         onClick={() => {
                                             if (isCompleted) {
                                                 setCurrentStep(step.id)
                                             }
                                         }}
+                                        disabled={!isCompleted && !isActive}
                                     >
-                                        <div className={`flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm transition-all duration-300 ${
-                                                isActive ? 'bg-indigo-600 text-white ring-4 ring-indigo-100 scale-110' :
-                                                isCompleted ? 'bg-emerald-500 text-white border-2 border-emerald-500' :
-                                                'bg-white text-gray-400 border-2 border-gray-200'
+                                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-all ${
+                                                isActive ? 'border-[#0070d1] bg-[#0070d1] text-white shadow-sm' :
+                                                isCompleted ? 'border-emerald-500 bg-emerald-500 text-white' :
+                                                'border-gray-200 bg-white text-gray-400'
                                             }`}>
-                                            <step.icon className={`h-6 w-6 ${isActive || isCompleted ? '' : 'opacity-70'}`} />
+                                            <step.icon className="h-5 w-5" />
                                         </div>
-                                        <span className={`mt-4 text-sm font-bold tracking-wide uppercase transition-colors ${isActive ? 'text-indigo-700' : isCompleted ? 'text-emerald-600' : 'text-gray-400'}`}>
+                                        <span className={`mt-2 text-xs font-bold uppercase tracking-wide transition-colors ${isActive ? 'text-[#0064b7]' : isCompleted ? 'text-emerald-600' : 'text-gray-400'}`}>
                                             {step.name}
                                         </span>
-                                    </div>
+                                    </button>
                                 )
                             })}
+                            </div>
                         </div>
                     </div>
 
                     {/* Step Content */}
-                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 min-h-[400px]">
+                    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
                         {currentStep === 1 && (
-                            <div className="max-w-md mx-auto space-y-6">
-                                <div className="text-center mb-8">
-                                    <h2 className="text-lg font-medium text-gray-900">Campaign Details</h2>
-                                    <p className="text-sm text-gray-500">Give your campaign a name and schedule it.</p>
+                            <div className="grid gap-0 lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
+                                <div className="border-b border-gray-100 bg-gray-50 p-6 lg:border-b-0 lg:border-r lg:p-8">
+                                    <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#eef7ff] text-[#0064b7]">
+                                        <LayoutGrid className="h-5 w-5" />
+                                    </div>
+                                    <h2 className="mt-4 text-xl font-semibold text-gray-950">Campaign Details</h2>
+                                    <p className="mt-2 text-sm leading-6 text-gray-600">Campaign ka naam, WhatsApp account, aur optional schedule set karein. Agar schedule empty hai to campaign immediately launch hoga.</p>
+                                    <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
+                                        Broadcasts ke liye sirf official Meta API account use hoga. QR session accounts inbox testing ke liye hain.
+                                    </div>
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Campaign Name <span className="text-red-500">*</span></label>
-                                    <input
-                                        type="text"
-                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                        placeholder="e.g. Summer Sale Announcement"
-                                        value={campaign.name}
-                                        onChange={e => setCampaign({ ...campaign, name: e.target.value })}
-                                    />
-                                </div>
+                                <div className="space-y-5 p-6 lg:p-8">
+                                    <div>
+                                        <label className="mb-1.5 block text-sm font-semibold text-gray-800">Campaign Name <span className="text-red-500">*</span></label>
+                                        <input
+                                            type="text"
+                                            className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-[#0070d1] focus:ring-2 focus:ring-[#0070d1]/10"
+                                            placeholder="e.g. Summer Sale Announcement"
+                                            value={campaign.name}
+                                            onChange={e => setCampaign({ ...campaign, name: e.target.value })}
+                                        />
+                                    </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">WhatsApp Account <span className="text-red-500">*</span></label>
-                                    {isLoading.accounts ? (
-                                        <div className="text-sm text-gray-500 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin"/> Loading accounts...</div>
-                                    ) : (
-                                        <select 
-                                            className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                            value={campaign.wa_account_id}
-                                            onChange={e => setCampaign({ ...campaign, wa_account_id: e.target.value })}
-                                        >
-                                            <option value="">Select an account</option>
-                                            {waAccounts.map(acc => {
-                                                const isMeta = Boolean(acc.whatsapp_business_account_id);
-                                                return (
-                                                    <option key={acc.id} value={acc.id} disabled={!isMeta}>
-                                                        {acc.display_phone_number || acc.name} {isMeta ? 'Meta API' : 'QR Session - broadcast unavailable'}
-                                                    </option>
-                                                );
-                                            })}
-                                        </select>
-                                    )}
-                                    <p className="mt-2 text-xs leading-5 text-gray-500">
-                                        Broadcast campaigns require a Meta API account with approved templates. QR Session numbers are for inbox and inbound flow testing only.
-                                    </p>
-                                </div>
+                                    <div>
+                                        <label className="mb-1.5 block text-sm font-semibold text-gray-800">WhatsApp Account <span className="text-red-500">*</span></label>
+                                        {isLoading.accounts ? (
+                                            <div className="flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin"/> Loading accounts...</div>
+                                        ) : (
+                                            <div className="relative">
+                                                <select
+                                                    className="h-11 w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 pr-10 text-sm text-gray-950 outline-none transition focus:border-[#0070d1] focus:ring-2 focus:ring-[#0070d1]/10"
+                                                    value={campaign.wa_account_id}
+                                                    onChange={e => setCampaign({ ...campaign, wa_account_id: e.target.value })}
+                                                >
+                                                    <option value="">Select an account</option>
+                                                    {waAccounts.map(acc => {
+                                                        const isMeta = Boolean(acc.whatsapp_business_account_id);
+                                                        return (
+                                                            <option key={acc.id} value={acc.id} disabled={!isMeta}>
+                                                                {acc.display_phone_number || acc.name} {isMeta ? 'Meta API' : 'QR Session - broadcast unavailable'}
+                                                            </option>
+                                                        );
+                                                    })}
+                                                </select>
+                                                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                            </div>
+                                        )}
+                                        <p className="mt-2 text-xs leading-5 text-gray-500">
+                                            Approved templates ke saath Meta API account required hai.
+                                        </p>
+                                    </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Schedule (Optional)</label>
-                                    <input
-                                        type="datetime-local"
-                                        className="w-full rounded-lg border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                        value={campaign.scheduled_at}
-                                        onChange={e => setCampaign({ ...campaign, scheduled_at: e.target.value })}
-                                    />
-                                    <p className="text-xs text-gray-500 mt-1">Leave empty to send immediately.</p>
+                                    <div>
+                                        <label className="mb-1.5 block text-sm font-semibold text-gray-800">Schedule <span className="font-medium text-gray-400">(Optional)</span></label>
+                                        <div className="relative">
+                                            <input
+                                                type="datetime-local"
+                                                className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-[#0070d1] focus:ring-2 focus:ring-[#0070d1]/10"
+                                                value={campaign.scheduled_at}
+                                                onChange={e => setCampaign({ ...campaign, scheduled_at: e.target.value })}
+                                            />
+                                        </div>
+                                        <p className="mt-2 text-xs text-gray-500">Leave empty to send immediately.</p>
+                                    </div>
                                 </div>
                             </div>
                         )}
 
                         {currentStep === 2 && (
-                            <div className="max-w-3xl mx-auto space-y-6">
-                                <div className="text-center mb-8">
-                                    <h2 className="text-lg font-medium text-gray-900">Select Audience</h2>
-                                    <p className="text-sm text-gray-500">Who should receive this message?</p>
+                            <div className="p-6 lg:p-8">
+                                <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                                    <div>
+                                        <h2 className="text-xl font-semibold text-gray-950">Select Audience</h2>
+                                        <p className="mt-1 text-sm text-gray-500">Choose exactly who should receive this broadcast.</p>
+                                    </div>
+                                    <div className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm font-semibold text-gray-700">
+                                        {filteredContacts.length} recipients selected
+                                    </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                                     <label className={`
-                                        relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-colors
-                                        ${campaign.audience_type === 'saved' ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
+                                        relative flex cursor-pointer rounded-lg border p-4 focus:outline-none transition-colors
+                                        ${campaign.audience_type === 'saved' ? 'border-[#0070d1] bg-[#eef7ff] ring-1 ring-[#0070d1]/20' : 'border-gray-200 bg-white hover:bg-gray-50'}
                                     `}>
                                         <input
                                             type="radio"
@@ -838,7 +859,7 @@ export default function Broadcast() {
                                         />
                                         <span className="flex flex-1">
                                             <span className="flex flex-col">
-                                                <span className="block text-sm font-medium text-gray-900">Saved Contacts Only <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">Recommended</span></span>
+                                                <span className="block text-sm font-semibold text-gray-950">Saved Contacts Only <span className="ml-2 inline-flex items-center rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-[#0064b7] ring-1 ring-[#cfe5fb]">Recommended</span></span>
                                                 <span className="mt-1 flex items-center text-sm text-gray-500">
                                                     <Users className="h-4 w-4 mr-1" />
                                                     {isLoading.contacts ? <Loader2 className="w-3 h-3 animate-spin mr-1"/> : null}
@@ -846,12 +867,12 @@ export default function Broadcast() {
                                                 </span>
                                             </span>
                                         </span>
-                                        <Check className={`h-5 w-5 ${campaign.audience_type === 'saved' ? 'text-indigo-600' : 'invisible'}`} />
+                                        <Check className={`h-5 w-5 ${campaign.audience_type === 'saved' ? 'text-[#0070d1]' : 'invisible'}`} />
                                     </label>
 
                                     <label className={`
-                                        relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-colors
-                                        ${campaign.audience_type === 'all' ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
+                                        relative flex cursor-pointer rounded-lg border p-4 focus:outline-none transition-colors
+                                        ${campaign.audience_type === 'all' ? 'border-[#0070d1] bg-[#eef7ff] ring-1 ring-[#0070d1]/20' : 'border-gray-200 bg-white hover:bg-gray-50'}
                                     `}>
                                         <input
                                             type="radio"
@@ -862,7 +883,7 @@ export default function Broadcast() {
                                         />
                                         <span className="flex flex-1">
                                             <span className="flex flex-col">
-                                                <span className="block text-sm font-medium text-gray-900">All Contacts <span className="text-xs font-normal text-gray-400">(Includes Synced)</span></span>
+                                                <span className="block text-sm font-semibold text-gray-950">All Contacts <span className="text-xs font-normal text-gray-400">(includes synced)</span></span>
                                                 <span className="mt-1 flex items-center text-sm text-gray-500">
                                                     <Users className="h-4 w-4 mr-1" />
                                                     {isLoading.contacts ? <Loader2 className="w-3 h-3 animate-spin mr-1"/> : null}
@@ -870,12 +891,12 @@ export default function Broadcast() {
                                                 </span>
                                             </span>
                                         </span>
-                                        <Check className={`h-5 w-5 ${campaign.audience_type === 'all' ? 'text-indigo-600' : 'invisible'}`} />
+                                        <Check className={`h-5 w-5 ${campaign.audience_type === 'all' ? 'text-[#0070d1]' : 'invisible'}`} />
                                     </label>
                                     
                                     <label className={`
-                                        relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-colors
-                                        ${campaign.audience_type === 'CSV_UPLOAD' ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
+                                        relative flex cursor-pointer rounded-lg border p-4 focus:outline-none transition-colors
+                                        ${campaign.audience_type === 'CSV_UPLOAD' ? 'border-[#0070d1] bg-[#eef7ff] ring-1 ring-[#0070d1]/20' : 'border-gray-200 bg-white hover:bg-gray-50'}
                                     `}>
                                         <input
                                             type="radio"
@@ -886,14 +907,14 @@ export default function Broadcast() {
                                         />
                                         <span className="flex flex-1">
                                             <span className="flex flex-col">
-                                                <span className="block text-sm font-medium text-gray-900">Upload CSV File</span>
+                                                <span className="block text-sm font-semibold text-gray-950">Upload CSV File</span>
                                                 <span className="mt-1 flex items-center text-sm text-gray-500">
                                                     <FileText className="h-4 w-4 mr-1" />
                                                     {csvData ? `${csvData.length} contacts loaded` : 'Custom File Upload'}
                                                 </span>
                                             </span>
                                         </span>
-                                        <Check className={`h-5 w-5 ${campaign.audience_type === 'CSV_UPLOAD' ? 'text-indigo-600' : 'invisible'}`} />
+                                        <Check className={`h-5 w-5 ${campaign.audience_type === 'CSV_UPLOAD' ? 'text-[#0070d1]' : 'invisible'}`} />
                                     </label>
 
                                     {isLoading.tags ? (
@@ -904,8 +925,8 @@ export default function Broadcast() {
                                         const tagCount = contacts.filter(c => Array.isArray(c.tags) && c.tags.includes(tag)).length;
                                         return (
                                             <label key={tag} className={`
-                                                relative flex cursor-pointer rounded-lg border p-4 shadow-sm focus:outline-none transition-colors
-                                                ${campaign.audience_type === 'tag' && campaign.audience_tag === tag ? 'border-indigo-500 ring-1 ring-indigo-500 bg-indigo-50' : 'border-gray-300 bg-white hover:bg-gray-50'}
+                                                relative flex cursor-pointer rounded-lg border p-4 focus:outline-none transition-colors
+                                                ${campaign.audience_type === 'tag' && campaign.audience_tag === tag ? 'border-[#0070d1] bg-[#eef7ff] ring-1 ring-[#0070d1]/20' : 'border-gray-200 bg-white hover:bg-gray-50'}
                                             `}>
                                                 <input
                                                     type="radio"
@@ -916,26 +937,26 @@ export default function Broadcast() {
                                                 />
                                                 <span className="flex flex-1">
                                                     <span className="flex flex-col">
-                                                        <span className="block text-sm font-medium text-gray-900">{tag}</span>
+                                                        <span className="block text-sm font-semibold text-gray-950">{tag}</span>
                                                         <span className="mt-1 flex items-center text-sm text-gray-500">
                                                             <Users className="h-4 w-4 mr-1" />
                                                             {tagCount} contacts
                                                         </span>
                                                     </span>
                                                 </span>
-                                                <Check className={`h-5 w-5 ${campaign.audience_type === 'tag' && campaign.audience_tag === tag ? 'text-indigo-600' : 'invisible'}`} />
+                                                <Check className={`h-5 w-5 ${campaign.audience_type === 'tag' && campaign.audience_tag === tag ? 'text-[#0070d1]' : 'invisible'}`} />
                                             </label>
                                         )
                                     })}
 
                                     {campaign.audience_type === 'CSV_UPLOAD' && (
-                                        <div className="col-span-2 mt-4 p-8 border-2 border-dashed border-gray-300 rounded-xl text-center bg-gray-50 transition-colors hover:border-indigo-400">
+                                        <div className="mt-2 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-6 text-center transition-colors hover:border-[#0070d1] lg:col-span-2">
                                             <input type="file" accept=".csv" className="hidden" id="csv-upload" onChange={handleFileUpload} />
                                             <label htmlFor="csv-upload" className="cursor-pointer">
-                                                <div className="mx-auto h-12 w-12 text-indigo-500 bg-indigo-100 rounded-full flex items-center justify-center mb-3">
+                                                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#eef7ff] text-[#0064b7]">
                                                     <FileText className="h-6 w-6" />
                                                 </div>
-                                                <span className="text-indigo-600 font-bold hover:text-indigo-800 text-lg">Click here to upload CSV</span>
+                                                <span className="text-lg font-bold text-[#0064b7] hover:text-[#005ca8]">Click here to upload CSV</span>
                                                 <p className="text-sm text-gray-500 mt-2">Make sure it has a "Phone" and "Name" column.</p>
                                             </label>
                                             {csvFileName && (
@@ -947,13 +968,16 @@ export default function Broadcast() {
                                     )}
                                 </div>
 
-                                <div className="mt-8">
-                                    <h3 className="text-sm font-medium text-gray-700 mb-3">Preview Audience ({filteredContacts.length})</h3>
-                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-2">
+                                <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50">
+                                    <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
+                                        <h3 className="text-sm font-semibold text-gray-800">Preview Audience</h3>
+                                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 ring-1 ring-gray-200">{filteredContacts.length} contacts</span>
+                                    </div>
+                                    <div className="space-y-2 p-4">
                                         {filteredContacts.slice(0, 5).map((c, i) => (
-                                            <div key={c.id || i} className="flex justify-between text-sm">
-                                                <span className="font-medium text-gray-900">{c.custom_name || c.name || 'Unknown'}</span>
-                                                <span className="text-gray-500">{c.phone || c.wa_id}</span>
+                                            <div key={c.id || i} className="flex items-center justify-between gap-4 rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-gray-100">
+                                                <span className="truncate font-semibold text-gray-900">{c.custom_name || c.name || 'Unknown'}</span>
+                                                <span className="shrink-0 font-mono text-xs text-gray-500">{c.phone || c.wa_id}</span>
                                             </div>
                                         ))}
                                         {filteredContacts.length > 5 && (
@@ -970,7 +994,7 @@ export default function Broadcast() {
                         )}
 
                         {currentStep === 3 && (
-                            <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-6 md:grid-cols-2 lg:p-8">
                                 <div>
                                     <h2 className="text-lg font-medium text-gray-900 mb-4">Select Template</h2>
                                     {isLoading.templates ? (
@@ -1160,7 +1184,7 @@ export default function Broadcast() {
                         )}
 
                         {currentStep === 4 && (
-                            <div className="max-w-lg mx-auto text-center space-y-6">
+                            <div className="mx-auto max-w-lg space-y-6 p-6 text-center lg:p-8">
                                 <div className="mx-auto h-16 w-16 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
                                     <Send className="h-8 w-8 ml-1" />
                                 </div>
