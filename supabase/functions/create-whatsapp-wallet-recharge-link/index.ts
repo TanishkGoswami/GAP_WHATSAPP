@@ -1,4 +1,3 @@
-// create-whatsapp-payment-link/index.ts
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -9,18 +8,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Pricing in paise (INR × 100)
-const PRICING: Record<string, Record<number, number>> = {
-  starter: { 1: 99900, 12: 999000 },
-  growth:  { 1: 199900, 12: 1999000 },
-  pro:     { 1: 349900, 12: 3499000 },
-};
-
-const PLAN_LABELS: Record<string, string> = {
-  starter: "Starter",
-  growth:  "Growth",
-  pro:     "Pro",
-};
+const MIN_RECHARGE_PAISE = 10000;
+const MAX_RECHARGE_PAISE = 100000000;
 
 function getRazorpayCredentialPairs() {
   const mode = (Deno.env.get("RAZORPAY_MODE") || "live").toLowerCase();
@@ -67,7 +56,7 @@ async function createRazorpayPaymentLink(payload: Record<string, unknown>) {
 
     lastError = data.error?.description || data.error?.reason || lastError;
     if (!/auth/i.test(lastError)) throw new Error(lastError);
-    console.warn(`[create-whatsapp-payment-link] Razorpay ${pair.label} credentials failed authentication`);
+    console.warn(`[create-whatsapp-wallet-recharge-link] Razorpay ${pair.label} credentials failed authentication`);
   }
 
   throw new Error(lastError);
@@ -79,63 +68,63 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { planId, interval = 1, userId, customerName, customerEmail, customerContact } = await req.json();
+    const { organizationId, userId, amountPaise, customerName, customerEmail, customerContact } = await req.json();
+    const amount = Number(amountPaise);
 
-    if (!userId || !planId) throw new Error("userId and planId are required");
-    if (!PRICING[planId]) throw new Error(`Invalid planId: ${planId}`);
-
-    const priceMap = PRICING[planId];
-    const amount = priceMap[interval] ?? priceMap[1];
-    const planLabel = PLAN_LABELS[planId];
-    const description = `WhatsApp ${planLabel} Subscription (${interval} Month${interval > 1 ? "s" : ""})`;
-
+    if (!organizationId || !userId) throw new Error("organizationId and userId are required");
+    if (!Number.isFinite(amount) || amount < MIN_RECHARGE_PAISE || amount > MAX_RECHARGE_PAISE) {
+      throw new Error("Recharge amount must be between ₹100 and ₹10,00,000");
+    }
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+    await supabase.from("whatsapp_wallets").upsert(
+      { organization_id: organizationId, currency: "INR" },
+      { onConflict: "organization_id" },
+    );
 
     const razorpayData = await createRazorpayPaymentLink({
       amount,
       currency: "INR",
       accept_partial: false,
-      description,
+      description: `WhatsApp Message Wallet Recharge (${new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(amount / 100)})`,
       customer: {
-        name:    customerName || "Customer",
-        email:   customerEmail,
+        name: customerName || "Customer",
+        email: customerEmail,
         contact: customerContact,
       },
-      notify:          { sms: false, email: true },
+      notify: { sms: false, email: true },
       reminder_enable: true,
       notes: {
-        user_id:  userId,
-        plan:     planId,
-        interval: interval.toString(),
-        product:  "whatsapp",
+        user_id: userId,
+        organization_id: organizationId,
+        product: "whatsapp_wallet",
+        amount_paise: String(amount),
       },
-      callback_url:    `${req.headers.get("origin") || "https://wb.getaipilot.in"}/payment-success`,
+      callback_url: `${req.headers.get("origin") || "https://wb.getaipilot.in"}/payment-success?kind=wallet`,
       callback_method: "get",
     });
 
-    // Store in whatsapp_payments table
-    await supabase.from("whatsapp_payments").insert({
-      user_id:                  userId,
-      razorpay_payment_link_id: razorpayData.id,
-      plan:                     planLabel,
-      plan_id:                  planId,
-      amount,
-      interval_months:          interval,
-      status:                   "pending",
-    }).then(({ error }) => {
-      if (error) console.error("DB insert error:", error.message);
+    await supabase.from("whatsapp_wallet_transactions").insert({
+      organization_id: organizationId,
+      user_id: userId,
+      type: "recharge",
+      amount_paise: amount,
+      currency: "INR",
+      status: "pending",
+      reference_type: "razorpay_payment_link",
+      reference_id: razorpayData.id,
+      description: "Wallet recharge initiated",
+      metadata: { razorpay_payment_link_id: razorpayData.id, short_url: razorpayData.short_url },
     });
 
     return new Response(
-      JSON.stringify({ success: true, payment_link: razorpayData.short_url }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ success: true, payment_link: razorpayData.short_url, razorpay_payment_link_id: razorpayData.id }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
-
   } catch (error: any) {
-    console.error("[create-whatsapp-payment-link] Error:", error.message);
+    console.error("[create-whatsapp-wallet-recharge-link] Error:", error.message);
     return new Response(
       JSON.stringify({ success: false, error: error.message }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 }
+      { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 400 },
     );
   }
 });

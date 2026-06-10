@@ -20,6 +20,7 @@ import AcceptInvite from './pages/AcceptInvite'
 import HelpCenter from './pages/HelpCenter'
 import BillingPage from './pages/BillingPage'
 import PaymentSuccessPage from './pages/PaymentSuccessPage'
+import WhatsAppNumberPage from './pages/WhatsAppNumberPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -45,16 +46,19 @@ export default function App() {
               <Route path="/accept-invite" element={<AcceptInvite />} />
               <Route path="/signup" element={<Signup />} />
               <Route path="/sso" element={<SSOLogin />} />
+              <Route path="/payment-success" element={<PaymentSuccessPage />} />
               <Route path="/" element={<Layout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="whatsapp-connect" element={<WhatsAppConnect />} />
+                <Route path="whatsapp-number" element={<WhatsAppNumberPage />} />
                 <Route path="contacts" element={<Contacts />} />
                 <Route path="flow-builder" element={<FlowBuilder />} />
                 <Route path="templates" element={<Templates />} />
                 <Route path="broadcast" element={<Broadcast />} />
                 <Route path="live-chat" element={<LiveChat />} />
                 <Route path="bot-agents" element={<BotAgents />} />
+                <Route path="billing" element={<BillingPage />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="help" element={<HelpCenter />} />
               </Route>

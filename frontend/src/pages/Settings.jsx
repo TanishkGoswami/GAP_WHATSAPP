@@ -170,6 +170,41 @@ export default function Settings() {
         }
     }
 
+    const handleDisconnectAccount = async (e, id) => {
+        e.stopPropagation() // Prevent selecting the account when clicking disconnect
+        if (!session?.access_token) return
+
+        const confirmed = await confirmDialog('Are you sure you want to disconnect this account? This will stop all bots and automations for this number.', {
+            title: 'Disconnect WhatsApp Account',
+            tone: 'danger',
+            confirmLabel: 'Disconnect',
+        })
+        if (!confirmed) return
+
+        setProfileError('')
+        setProfileSuccess('')
+        try {
+            const res = await fetch(`${BACKEND_BASE}/api/whatsapp/accounts/${id}`, {
+                method: 'DELETE',
+                headers: authHeaders
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data?.error || 'Failed to disconnect account')
+            
+            setProfileSuccess('Account disconnected successfully.')
+            if (selectedAccountId === id) {
+                setSelectedAccountId('')
+                setBusinessProfile({
+                    local_name: '', about: '', description: '', email: '', address: '', websites: '', vertical: '', profile_picture_url: ''
+                })
+            }
+            await fetchAccounts()
+        } catch (e) {
+            console.error('Failed to disconnect account', e)
+            setProfileError(e?.message || 'Failed to disconnect account.')
+        }
+    }
+
     const loadBusinessProfile = async (accountId = selectedAccountId) => {
         if (!session?.access_token || !accountId) return
         setIsLoadingProfile(true)
@@ -505,8 +540,18 @@ export default function Settings() {
                                                 </div>
                                             </div>
                                             <div className="mt-3 flex items-center justify-between text-xs">
-                                                <span className="rounded-full bg-white px-2 py-1 text-gray-600 ring-1 ring-gray-200">{account.status || 'connected'}</span>
-                                                <span className="text-gray-400">ID {String(account.phone_number_id || '').slice(-5)}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="rounded-full bg-white px-2 py-1 text-gray-600 ring-1 ring-gray-200">{account.status || 'connected'}</span>
+                                                    <span className="text-gray-400">ID {String(account.phone_number_id || '').slice(-5)}</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleDisconnectAccount(e, account.id)}
+                                                    className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                    title="Disconnect Account"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </button>
                                             </div>
                                         </button>
                                     ))}

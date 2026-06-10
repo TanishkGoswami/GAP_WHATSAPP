@@ -19,10 +19,12 @@ import {
     TrendingUp,
     UserRoundCheck,
     Users,
+    Wallet,
     Workflow,
     Zap,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { formatINRFromPaise } from '../config/whatsappPricing'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
@@ -83,6 +85,19 @@ export default function Dashboard() {
         },
         staleTime: 1000 * 30,
         refetchInterval: 15000,
+        enabled: !!session?.access_token,
+    })
+
+    const { data: billingOverview } = useQuery({
+        queryKey: ['billing-overview-compact', session?.access_token],
+        queryFn: async () => {
+            const res = await apiCall(`${API_BASE}/billing/overview`)
+            const body = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(body?.error || 'Failed to fetch billing overview')
+            return body
+        },
+        staleTime: 1000 * 60,
+        refetchInterval: 60000,
         enabled: !!session?.access_token,
     })
 
@@ -152,6 +167,8 @@ export default function Dashboard() {
                     <MetricCard icon={Bot} label="AI + team replies" value={fmt(n(model.metrics.aiAgent) + n(model.metrics.humanAgent))} detail={`${fmt(model.metrics.aiAgent)} AI / ${fmt(model.metrics.humanAgent)} human`} loading={isLoading} />
                     <MetricCard icon={AlertTriangle} label="Failed delivery" value={`${model.failedRate.toFixed(1)}%`} detail={`${fmt(model.failed)} messages`} warning={model.failedRate > 5} loading={isLoading} />
                 </section>
+
+                <BillingOverviewStrip overview={billingOverview} />
 
                 <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.55fr)]">
                     <Panel
@@ -275,6 +292,46 @@ function Header({ range, setRange, isFetching, refetch, freshness }) {
                 </span>
             </div>
         </div>
+    )
+}
+
+function BillingOverviewStrip({ overview }) {
+    const categories = overview?.spend?.categories || []
+    const marketing = categories.find(item => item.category === 'marketing')
+    const utility = categories.find(item => item.category === 'utility')
+
+    return (
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr_1fr_auto]">
+            <div className="rounded-lg border border-gray-200 bg-white p-5">
+                <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium text-gray-600">Wallet balance</p>
+                    <Wallet className="h-5 w-5 text-emerald-600" />
+                </div>
+                <p className="mt-2 text-[28px] font-light leading-none text-black">{formatINRFromPaise(overview?.wallet?.balance_paise)}</p>
+                <p className="mt-3 text-sm text-gray-600">Message charges yahin se deduct honge.</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-5">
+                <p className="text-sm font-medium text-gray-600">This month message spend</p>
+                <p className="mt-2 text-[28px] font-light leading-none text-black">{formatINRFromPaise(overview?.spend?.month_spend_paise)}</p>
+                <p className="mt-3 text-sm text-gray-600">Marketing, utility, auth, and service usage.</p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-5">
+                <p className="text-sm font-medium text-gray-600">Marketing / Utility</p>
+                <p className="mt-2 text-[28px] font-light leading-none text-black">
+                    {formatINRFromPaise(marketing?.charged_amount_paise)} / {formatINRFromPaise(utility?.charged_amount_paise)}
+                </p>
+                <p className="mt-3 text-sm text-gray-600">
+                    {fmt(marketing?.message_count)} marketing, {fmt(utility?.message_count)} utility messages.
+                </p>
+            </div>
+            <Link
+                to="/billing"
+                className="flex items-center justify-center gap-2 rounded-lg border border-gray-900 bg-black px-5 py-4 text-sm font-semibold text-white transition-colors hover:bg-gray-800"
+            >
+                Billing details
+                <ArrowRight className="h-4 w-4" />
+            </Link>
+        </section>
     )
 }
 
