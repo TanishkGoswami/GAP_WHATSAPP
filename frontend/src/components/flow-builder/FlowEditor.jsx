@@ -5,6 +5,7 @@ import ReactFlow, {
     useNodesState,
     useEdgesState,
     Controls,
+    Background,
     MarkerType,
     Panel,
     BaseEdge,
@@ -400,6 +401,7 @@ function FlowEditorContent({ flow, waAccounts = [], onClose }) {
                         maxZoom={2}
                     >
                         <Controls className="flow-controls bg-white border border-gray-200 rounded-lg" />
+                        <Background variant="dots" gap={18} size={1.2} color="#cbd5e1" />
 
                         {/* Empty State */}
                         {nodes.length === 0 && (
