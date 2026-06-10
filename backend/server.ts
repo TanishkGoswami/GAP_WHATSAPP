@@ -993,7 +993,9 @@ app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
             rateCardsResult,
             monthUsageResult,
             todayUsageResult,
-            transactionsResult
+            walletTransactionsResult,
+            messageDebitTransactionsResult,
+            messageChargesResult
         ] = await Promise.all([
             supabase
                 .from('organizations')
@@ -1031,8 +1033,22 @@ app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
                 .from('whatsapp_wallet_transactions')
                 .select('id, type, amount_paise, balance_after_paise, currency, status, description, reference_type, reference_id, created_at')
                 .eq('organization_id', orgId)
+                .filter('type', 'not.in', '("message_debit","failed_debit")')
                 .order('created_at', { ascending: false })
-                .limit(8)
+                .limit(20),
+            supabase
+                .from('whatsapp_wallet_transactions')
+                .select('id, type, amount_paise, balance_after_paise, currency, status, description, reference_type, reference_id, created_at, metadata')
+                .eq('organization_id', orgId)
+                .filter('type', 'in', '("message_debit","failed_debit")')
+                .order('created_at', { ascending: false })
+                .limit(20),
+            supabase
+                .from('whatsapp_message_usage_logs')
+                .select('id, source, category, template_name, campaign_id, wa_message_id, charged_amount_paise, billing_status, delivery_status, created_at')
+                .eq('organization_id', orgId)
+                .order('created_at', { ascending: false })
+                .limit(12)
         ]);
 
         let walletData = walletResult.data;
@@ -1093,6 +1109,23 @@ app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
 
         const monthSpendPaise = Object.values(categoryStats).reduce((sum: number, item: any) => sum + Number(item.charged_amount_paise || 0), 0);
         const todaySpendPaise = todayUsageRows.reduce((sum: number, row: any) => sum + Number(row.charged_amount_paise || 0), 0);
+        const walletTransactions = walletTransactionsResult.error ? [] : (walletTransactionsResult.data || []);
+        const usageLogCharges = messageChargesResult.error ? [] : (messageChargesResult.data || []);
+        const legacyMessageDebitCharges = messageDebitTransactionsResult.error
+            ? []
+            : (messageDebitTransactionsResult.data || []).map((tx: any) => ({
+                id: tx.id,
+                source: tx.reference_type || 'message',
+                category: tx.metadata?.category || null,
+                template_name: tx.metadata?.template_name || null,
+                campaign_id: tx.metadata?.campaign_id || (tx.reference_type === 'broadcast' ? tx.reference_id : null),
+                wa_message_id: tx.reference_id || null,
+                charged_amount_paise: Math.abs(Number(tx.amount_paise || 0)),
+                billing_status: tx.status === 'completed' ? 'charged' : tx.status,
+                delivery_status: null,
+                created_at: tx.created_at,
+            }));
+        const messageCharges = usageLogCharges.length ? usageLogCharges : legacyMessageDebitCharges;
 
         const planId = orgResult.data?.plan_id || 'free';
         const currentPlan = plans.find((plan: any) => plan.id === planId) || plans.find((plan: any) => plan.id === 'free') || null;
@@ -1115,7 +1148,9 @@ app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
                 categories: Object.values(categoryStats)
             },
             rate_cards: rateCards,
-            recent_transactions: transactionsResult.error ? [] : (transactionsResult.data || []),
+            recent_transactions: walletTransactions,
+            recent_wallet_transactions: walletTransactions,
+            recent_message_charges: messageCharges,
             warnings: {
                 plans_table_missing: !!plansResult.error,
                 wallet_table_missing: !!walletResult.error,
