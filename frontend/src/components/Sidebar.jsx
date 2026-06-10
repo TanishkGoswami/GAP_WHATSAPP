@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
     Blocks,
+    ChevronDown,
     ChevronsUpDown,
     Briefcase,
     CreditCard,
@@ -31,7 +32,15 @@ const navigation = [
     { name: 'Contacts', href: '/contacts', icon: Users },
     { name: 'AI Agents', href: '/bot-agents', icon: Briefcase },
     { name: 'Flows', href: '/flow-builder', icon: GitFork },
-    { name: 'Templates', href: '/templates', icon: FileText },
+    { 
+        name: 'Templates', 
+        href: '/templates', 
+        icon: FileText,
+        subItems: [
+            { name: 'My Templates', href: '/templates' },
+            { name: 'Industry Library', href: '/templates/industries' }
+        ]
+    },
     { name: 'Broadcasts', href: '/broadcast', icon: Megaphone },
     { name: 'Billing', href: '/billing', icon: CreditCard },
 ]
@@ -204,24 +213,36 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
 
                 <nav className="flex-1 overflow-y-auto px-2 py-3">
                     <div className="space-y-1">
-                        {filteredNavigation.slice(0, 3).map(item => (
-                            <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
-                        ))}
+                        {filteredNavigation.slice(0, 3).map(item => 
+                            item.subItems ? (
+                                <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
+                            ) : (
+                                <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
+                            )
+                        )}
                     </div>
 
                     {isOwner ? (
                         <>
                             <div className="my-2 h-px bg-gray-100" />
                             <div className="space-y-1">
-                                {filteredNavigation.slice(3, 6).map(item => (
-                                    <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
-                                ))}
+                                {filteredNavigation.slice(3, 6).map(item => 
+                                    item.subItems ? (
+                                        <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
+                                    ) : (
+                                        <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
+                                    )
+                                )}
                             </div>
                             <div className="my-2 h-px bg-gray-100" />
                             <div className="space-y-1">
-                                {filteredNavigation.slice(6).map(item => (
-                                    <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
-                                ))}
+                                {filteredNavigation.slice(6).map(item => 
+                                    item.subItems ? (
+                                        <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
+                                    ) : (
+                                        <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} />
+                                    )
+                                )}
                             </div>
                         </>
                     ) : null}
@@ -365,9 +386,13 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
 
                     <nav className="flex-1 overflow-y-auto px-3 py-4">
                         <div className="space-y-1">
-                            {filteredNavigation.map(item => (
-                                <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={false} onNavigate={handleMobileNavigate} />
-                            ))}
+                            {filteredNavigation.map(item => 
+                                item.subItems ? (
+                                    <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={false} onNavigate={handleMobileNavigate} />
+                                ) : (
+                                    <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={false} onNavigate={handleMobileNavigate} />
+                                )
+                            )}
                         </div>
                         {isOwner ? (
                             <div className="mt-4 border-t border-gray-100 pt-4">
@@ -427,6 +452,61 @@ function NavItem({ item, active, collapsed, onNavigate }) {
                 ) : null}
             </span>
         </Link>
+    )
+}
+
+function ExpandableNavItem({ item, active, collapsed, onNavigate }) {
+    const location = useLocation()
+    const Icon = item.icon
+    const [isOpen, setIsOpen] = useState(() => location.pathname.startsWith(item.href))
+    const isExpanded = !collapsed
+
+    useEffect(() => {
+        if (location.pathname.startsWith(item.href)) {
+            setIsOpen(true)
+        }
+    }, [location.pathname, item.href])
+
+    return (
+        <div className="space-y-1">
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className={clsx(
+                    'group flex h-9 w-full items-center rounded-md text-[14px] font-medium transition-colors text-left focus:outline-none',
+                    collapsed ? 'justify-center px-0' : 'gap-2 px-2',
+                    active ? 'bg-[#f5f7fa] text-[#0064b7]' : 'text-gray-600 hover:bg-[#f5f7fa] hover:text-black'
+                )}
+                title={collapsed ? item.name : undefined}
+            >
+                <Icon className={clsx('h-4 w-4 shrink-0 stroke-[1.9]', active ? 'text-[#0064b7]' : 'text-gray-500 group-hover:text-gray-700')} />
+                <span className={labelTransition(isExpanded, 'flex min-w-0 flex-1 items-center')}>
+                    <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                    <ChevronDown className={clsx('h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform duration-200 ml-1', isOpen ? 'rotate-180 text-gray-600' : '')} />
+                </span>
+            </button>
+            
+            {isOpen && isExpanded && (
+                <div className="ml-6 pl-2.5 border-l border-gray-100 space-y-1">
+                    {item.subItems.map((sub) => {
+                        const isSubActive = location.pathname === sub.href;
+                        return (
+                            <Link
+                                key={sub.name}
+                                to={sub.href}
+                                onClick={onNavigate}
+                                className={clsx(
+                                    'block py-1.5 px-2 text-xs font-semibold rounded-lg transition-colors',
+                                    isSubActive ? 'text-[#0064b7] bg-blue-50/40 font-bold' : 'text-gray-500 hover:text-black hover:bg-gray-50'
+                                )}
+                            >
+                                {sub.name}
+                            </Link>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
     )
 }
 
