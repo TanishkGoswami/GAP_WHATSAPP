@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone, AlertCircle, RefreshCw, UploadCloud, Type, MessageSquareText, MousePointerClick, ChevronDown, Loader2, Check } from 'lucide-react'
+import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone, AlertCircle, RefreshCw, UploadCloud, Type, MessageSquareText, MousePointerClick, ChevronDown, Loader2, Check, MessageSquare, Image, ExternalLink, ArrowRight } from 'lucide-react'
 import Modal from '../components/Modal'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
@@ -16,14 +16,15 @@ const INDUSTRY_LIBRARY = [
         category: 'MARKETING',
         language: 'en_US',
         components: [
+            // Note: TEXT headers cannot have emojis per Meta rules
             { type: 'HEADER', format: 'TEXT', text: 'Exclusive Property Viewing' },
             { type: 'BODY', text: 'Hi {{1}},\n\nThank you for showing interest in *{{2}}*. We would love to host you for a site viewing!\n\nOur agent {{3}} will be available to show you around the premium amenities. Click below to confirm your visit time.' },
             { type: 'FOOTER', text: 'GAP Real Estate Group' },
             {
+                // Only CTA buttons (no mixing QUICK_REPLY with URL/PHONE_NUMBER)
                 type: 'BUTTONS',
                 buttons: [
-                    { type: 'QUICK_REPLY', text: 'Confirm Site Visit' },
-                    { type: 'QUICK_REPLY', text: 'Reschedule Visit' }
+                    { type: 'URL', text: 'View Brochure', url: 'https://example.com/property' }
                 ]
             }
         ]
@@ -41,7 +42,7 @@ const INDUSTRY_LIBRARY = [
                 type: 'BUTTONS',
                 buttons: [
                     { type: 'URL', text: 'Pay Online', url: 'https://example.com/pay' },
-                    { type: 'PHONE_NUMBER', text: 'Contact Accounts', phone_number: '+15555555555' }
+                    { type: 'PHONE_NUMBER', text: 'Contact Accounts', phone_number: '+16505551234' }
                 ]
             }
         ]
@@ -53,13 +54,15 @@ const INDUSTRY_LIBRARY = [
         category: 'MARKETING',
         language: 'en_US',
         components: [
+            // IMAGE header - no emojis issue here
             { type: 'HEADER', format: 'IMAGE', media_url: 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?auto=format&fit=crop&w=600&q=80' },
-            { type: 'BODY', text: 'Hey {{1}}! You left some amazing items in your cart. 🛒\n\nComplete your order today and get a **10% special discount** on your purchase. Use code: *SAVE10* at checkout.' },
+            // Fixed **double asterisk** to *single asterisk* (Meta only supports single)
+            { type: 'BODY', text: 'Hey {{1}}! You left some amazing items in your cart.\n\nComplete your order today and get a *10% special discount* on your purchase. Use code: *SAVE10* at checkout.' },
             {
                 type: 'BUTTONS',
                 buttons: [
                     { type: 'URL', text: 'Checkout Now', url: 'https://example.com/checkout' },
-                    { type: 'PHONE_NUMBER', text: 'Contact Support', phone_number: '+15555555555' }
+                    { type: 'PHONE_NUMBER', text: 'Contact Support', phone_number: '+16505551234' }
                 ]
             }
         ]
@@ -87,14 +90,15 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
+            // Note: TEXT headers cannot have emojis per Meta rules
             { type: 'HEADER', format: 'TEXT', text: 'Appointment Confirmed' },
-            { type: 'BODY', text: 'Dear {{1}},\n\nYour consultation with *Dr. {{2}}* has been confirmed for {{3}} at {{4}}.\n\n🏥 Clinic Location: {{5}}.\nPlease arrive 10 minutes prior to your slot.' },
+            { type: 'BODY', text: 'Dear {{1}},\n\nYour consultation with *Dr. {{2}}* has been confirmed for {{3}} at {{4}}.\n\nClinic Location: {{5}}.\nPlease arrive 10 minutes prior to your slot.' },
             { type: 'FOOTER', text: 'GAP Care Clinic' },
             {
                 type: 'BUTTONS',
                 buttons: [
                     { type: 'URL', text: 'Get Directions', url: 'https://maps.google.com' },
-                    { type: 'PHONE_NUMBER', text: 'Call Desk', phone_number: '+15555555555' }
+                    { type: 'PHONE_NUMBER', text: 'Call Desk', phone_number: '+16505551234' }
                 ]
             }
         ]
@@ -123,7 +127,7 @@ const INDUSTRY_LIBRARY = [
         language: 'en_US',
         components: [
             { type: 'HEADER', format: 'IMAGE', media_url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=600&q=80' },
-            { type: 'BODY', text: 'Hello {{1}},\n\nAdmissions are now open for the *{{2}}* masterclass! 🎓\n\nLearn directly from leading industry experts and get certified. Join us live on {{3}} at {{4}}.' },
+            { type: 'BODY', text: 'Hello {{1}},\n\nAdmissions are now open for the *{{2}}* masterclass!\n\nLearn directly from leading industry experts and get certified. Join us live on {{3}} at {{4}} EST.' },
             { type: 'FOOTER', text: 'GAP Learning Institute' },
             {
                 type: 'BUTTONS',
@@ -140,7 +144,7 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            { type: 'BODY', text: 'Hello {{1}},\n\nWe have successfully received your payment of *₹{{2}}* for invoice *#{{3}}*.\n\nThank you for using our payment gateway. Your receipt is attached.' },
+            { type: 'BODY', text: 'Hello {{1}},\n\nWe have successfully received your payment of *Rs. {{2}}* for invoice *#{{3}}*.\n\nThank you for using our payment gateway. Your receipt is attached.' },
             { type: 'FOOTER', text: 'GAP Finance Services' },
             {
                 type: 'BUTTONS',
@@ -165,7 +169,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     const [loading, setLoading] = useState(true)
     const [hasConnectedAccount, setHasConnectedAccount] = useState(false)
     const [fetchError, setFetchError] = useState('')
-    
+
     // Prefill state
     const [prefilledTemplate, setPrefilledTemplate] = useState(null);
     const [isAdding, setIsAdding] = useState(false);
@@ -200,7 +204,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     const filteredTemplates = useMemo(() => {
         return allTemplatesList.filter(t => {
             const matchCategory = activeTab === 'ALL' || t.category === activeTab;
-            
+
             let matchStatus = false;
             if (activeStatus === 'APPROVED') {
                 matchStatus = t.status === 'APPROVED';
@@ -210,7 +214,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                 // Draft view includes DRAFT or REJECTED templates
                 matchStatus = t.status === 'DRAFT' || t.status === 'REJECTED';
             }
-            
+
             return matchCategory && matchStatus;
         });
     }, [allTemplatesList, activeTab, activeStatus]);
@@ -249,80 +253,17 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
         setActiveStatus('PENDING');
     };
 
-    const handleAddToMyTemplates = async (item) => {
-        // Pre-flight check: If template name already exists, warn user instead of failing
-        const exists = templates.some(t => t.name === item.name);
-        if (exists) {
-            alertDialog(`A template with the name "${item.name}" already exists in your account.`, { title: 'Template already exists', tone: 'warning' });
-            return;
-        }
-
-        setIsAdding(true);
-        try {
-            const formData = new FormData();
-            formData.append('name', item.name);
-            formData.append('category', item.category);
-            formData.append('language', item.language);
-
-            // Check if there is an image/video header with a media_url
-            const headerComp = item.components?.find(c => c.type === 'HEADER');
-            if (headerComp && (headerComp.format === 'IMAGE' || headerComp.format === 'VIDEO') && headerComp.media_url) {
-                try {
-                    const mediaRes = await fetch(headerComp.media_url);
-                    if (mediaRes.ok) {
-                        const blob = await mediaRes.blob();
-                        const fileExt = headerComp.format === 'IMAGE' ? 'jpg' : 'mp4';
-                        const fileType = blob.type || (headerComp.format === 'IMAGE' ? 'image/jpeg' : 'video/mp4');
-                        const fileObj = new File([blob], `sample.${fileExt}`, { type: fileType });
-                        formData.append('file', fileObj);
-                    }
-                } catch (mediaErr) {
-                    console.error('Failed to fetch media sample:', mediaErr);
-                }
-            }
-
-            // Remove media_url property from components so Meta's validation does not complain
-            const sanitizedComponents = item.components.map(comp => {
-                const { media_url, ...rest } = comp;
-                
-                // If this is the BODY component and contains variables, auto-inject example
-                if (rest.type === 'BODY' && rest.text) {
-                    const matches = rest.text.match(/\{\{(\d+)\}\}/g);
-                    if (matches) {
-                        const varIndices = matches.map(m => parseInt(m.replace(/[^0-9]/g, ''), 10));
-                        const maxVar = Math.max(...varIndices);
-                        if (maxVar > 0) {
-                            rest.example = {
-                                body_text: [
-                                    Array.from({ length: maxVar }, (_, i) => `Sample ${i + 1}`)
-                                ]
-                            };
-                        }
-                    }
-                }
-                
-                return rest;
-            });
-            formData.append('components', JSON.stringify(sanitizedComponents));
-
-            const res = await apiCall(`${API_URL}/api/whatsapp/templates`, {
-                method: 'POST',
-                body: formData
-            });
-
-            const json = await res.json();
-            if (res.ok) {
-                handleCreateSuccess();
-            } else {
-                alertDialog(json.error || 'Failed to add template to your account.', { title: 'Failed to add', tone: 'danger' });
-            }
-        } catch (err) {
-            console.error('Error adding template:', err);
-            alertDialog(err?.message || 'Error adding template.', { title: 'Failed to add', tone: 'danger' });
-        } finally {
-            setIsAdding(false);
-        }
+    // When user clicks "+ Add to My Templates" on any industry library template:
+    // → Always open the CreateTemplateModal pre-filled with the template data
+    // → User reviews, customizes, uploads their own media if needed
+    // → User clicks "Submit for Review" to send to Meta for approval
+    // This way the user is always in control — nothing gets submitted without their explicit action.
+    const handleAddToMyTemplates = (item) => {
+        setSelectedTemplate(null); // close preview modal if open
+        setPrefilledTemplate(item);
+        setIsCreateOpen(true);
     };
+
 
     useEffect(() => {
         if (session?.access_token) {
@@ -336,7 +277,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
             tone: 'danger',
             confirmLabel: 'Delete template',
         });
-        if(!confirmed) return;
+        if (!confirmed) return;
         try {
             const res = await apiCall(`${API_URL}/api/whatsapp/templates/${name}`, {
                 method: 'DELETE'
@@ -354,11 +295,11 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
 
     const filteredLibrary = useMemo(() => {
         return INDUSTRY_LIBRARY.filter(t => {
-            const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            const matchesSearch = t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 t.components.find(c => c.type === 'BODY')?.text.toLowerCase().includes(searchQuery.toLowerCase());
-            
+
             const matchesIndustry = activeIndustry === 'All Industries' || t.industry === activeIndustry;
-            
+
             return matchesSearch && matchesIndustry;
         });
     }, [searchQuery, activeIndustry]);
@@ -376,155 +317,222 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     }, [filteredLibrary]);
 
     if (viewMode === 'INDUSTRIES') {
+        // Industry metadata: icons, colors, emoji
+        const industryMeta = {
+            'Real Estate':  { emoji: '🏠', color: 'amber',   from: 'from-amber-500',   to: 'to-orange-500',  light: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
+            'E-commerce':   { emoji: '🛍️', color: 'blue',    from: 'from-blue-500',    to: 'to-cyan-500',    light: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
+            'Healthcare':   { emoji: '🏥', color: 'green',   from: 'from-emerald-500', to: 'to-teal-500',    light: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200'},
+            'Education':    { emoji: '🎓', color: 'indigo',  from: 'from-indigo-500',  to: 'to-violet-500',  light: 'bg-indigo-50',  text: 'text-indigo-700',  border: 'border-indigo-200' },
+            'Finance':      { emoji: '💳', color: 'purple',  from: 'from-purple-500',  to: 'to-pink-500',    light: 'bg-purple-50',  text: 'text-purple-700',  border: 'border-purple-200' },
+        };
+        const categoryColors = {
+            MARKETING:      'bg-orange-50 text-orange-700 border-orange-200',
+            UTILITY:        'bg-blue-50 text-blue-700 border-blue-200',
+            AUTHENTICATION: 'bg-violet-50 text-violet-700 border-violet-200',
+        };
+
         return (
-            <div className="space-y-6">
-                {isAdding && (
-                    <div className="fixed inset-0 bg-white/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-3">
-                        <Loader2 className="h-10 w-10 text-green-600 animate-spin" />
-                        <p className="text-sm font-semibold text-gray-800 animate-pulse">Adding template to your account...</p>
-                        <p className="text-xs text-gray-500">Uploading media and submitting to Meta for approval.</p>
-                    </div>
-                )}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Industry Templates</h1>
-                        <p className="text-sm text-gray-500 mt-1">Browse and customize pre-approved WhatsApp templates tailored for your business vertical</p>
+            <div className="space-y-0">
+                {/* Hero Banner */}
+                <div className="relative bg-gradient-to-br from-[#0d1b2a] via-[#1a2e44] to-[#0d1b2a] rounded-2xl px-8 py-8 mb-8 overflow-hidden">
+                    <div className="absolute inset-0 opacity-10" style={{backgroundImage: 'radial-gradient(circle at 80% 50%, #25d366 0%, transparent 60%)'}} />
+                    <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-3 py-1 text-xs font-semibold text-white/80 mb-3">
+                                <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
+                                Industry-Ready Templates
+                            </div>
+                            <h1 className="text-2xl font-bold text-white">Template Library</h1>
+                            <p className="text-sm text-white/60 mt-1 max-w-md">Browse {filteredLibrary.length}+ professionally crafted WhatsApp message templates. Customize and submit for Meta approval in minutes.</p>
+                        </div>
                     </div>
                 </div>
 
-                <div className="flex flex-col gap-6 lg:flex-row items-stretch min-h-[500px]">
-                    {/* Left sidebar filters */}
-                    <div className="w-full lg:w-60 shrink-0 space-y-1.5 bg-gray-50 p-4 rounded-2xl border border-gray-200/50 h-fit">
-                        <div className="text-[10px] font-bold text-gray-400 uppercase px-2 mb-2 tracking-wider">Verticals</div>
-                        {['All Industries', 'Real Estate', 'E-commerce', 'Healthcare', 'Education', 'Finance'].map((ind) => {
-                            const isSelected = activeIndustry === ind;
-                            return (
-                                <button
-                                    key={ind}
-                                    type="button"
-                                    onClick={() => setActiveIndustry(ind)}
-                                    className={`w-full flex items-center justify-between px-3.5 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                                        isSelected
-                                            ? 'bg-green-600 text-white shadow-sm'
-                                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                                    }`}
-                                >
-                                    <span>{ind}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
-
-                    {/* Right side catalog */}
-                    <div className="flex-1 space-y-6">
-                        <div className="flex flex-col sm:flex-row gap-3 items-center justify-between border-b border-gray-100 pb-4">
-                            <div className="relative w-full sm:w-72">
-                                <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type="text"
-                                    placeholder="Search templates..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full rounded-xl border border-gray-300 bg-white pl-10 pr-4 py-2.5 text-sm placeholder:text-gray-400 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 shadow-sm"
-                                />
+                <div className="flex flex-col gap-6 lg:flex-row items-start relative">
+                    {/* Left sidebar */}
+                    <div className="w-full lg:w-56 shrink-0 lg:sticky lg:top-6 z-10">
+                        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                            <div className="px-4 pt-4 pb-2">
+                                <div className="relative">
+                                    <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        placeholder="Search templates..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-3 py-2 text-xs placeholder:text-gray-400 focus:border-green-500 focus:outline-none focus:bg-white transition-all"
+                                    />
+                                </div>
                             </div>
-                            <div className="text-xs font-semibold text-gray-500">
-                                Showing {filteredLibrary.length} pre-built templates
+                            <div className="px-3 py-2">
+                                <div className="text-[9px] font-bold text-gray-400 uppercase px-2 mb-1.5 tracking-widest">Verticals</div>
+                                {[
+                                    { label: 'All Industries', icon: '⚡', count: INDUSTRY_LIBRARY.length },
+                                    ...Object.keys(industryMeta).map(name => ({
+                                        label: name,
+                                        icon: industryMeta[name].emoji,
+                                        count: INDUSTRY_LIBRARY.filter(t => t.industry === name).length
+                                    }))
+                                ].map((ind) => {
+                                    const isSelected = activeIndustry === ind.label;
+                                    return (
+                                        <button
+                                            key={ind.label}
+                                            type="button"
+                                            onClick={() => setActiveIndustry(ind.label)}
+                                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition-all mb-0.5 ${
+                                                isSelected
+                                                    ? 'bg-gradient-to-r from-green-600 to-emerald-500 text-white shadow-sm shadow-green-200'
+                                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                            }`}
+                                        >
+                                            <span className="flex items-center gap-2">
+                                                <span className="text-sm">{ind.icon}</span>
+                                                {ind.label}
+                                            </span>
+                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                                                {ind.count}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <div className="border-t border-gray-100 px-4 py-3">
+                                <p className="text-[10px] text-gray-400 leading-relaxed">Templates are pre-formatted to meet Meta's WhatsApp Business Policy.</p>
                             </div>
                         </div>
+                    </div>
 
+                    {/* Right catalog */}
+                    <div className="flex-1 min-w-0">
                         {filteredLibrary.length === 0 ? (
-                            <div className="py-16 px-4 flex flex-col items-center justify-center text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
-                                <Search className="h-10 w-10 text-gray-400 mb-3" />
+                            <div className="py-20 flex flex-col items-center justify-center text-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl">
+                                <div className="h-14 w-14 rounded-2xl bg-gray-100 flex items-center justify-center text-2xl mb-3">🔍</div>
                                 <h3 className="text-sm font-bold text-gray-900">No matching templates</h3>
-                                <p className="text-xs text-gray-500 mt-1">Try adjusting your keywords or selected industry.</p>
+                                <p className="text-xs text-gray-500 mt-1">Try different keywords or select another vertical.</p>
                             </div>
                         ) : (
-                            <div className="space-y-8">
-                                {Object.keys(groupedLibrary).map(industryName => (
-                                    <div key={industryName} className="space-y-4">
-                                        <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
-                                            <span className={`h-2 w-2 rounded-full ${
-                                                industryName === 'Real Estate' ? 'bg-amber-500' :
-                                                industryName === 'E-commerce' ? 'bg-blue-500' :
-                                                industryName === 'Healthcare' ? 'bg-green-500' :
-                                                industryName === 'Education' ? 'bg-indigo-500' :
-                                                'bg-purple-500'
-                                            }`} />
-                                            <h2 className="text-lg font-bold text-gray-900">{industryName} Templates</h2>
-                                        </div>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                            {groupedLibrary[industryName].map((item) => {
-                                                const bodyComp = item.components.find(c => c.type === 'BODY');
-                                                
-                                                return (
-                                                    <div 
-                                                        key={item.id} 
-                                                        onClick={() => setSelectedTemplate(item)}
-                                                        className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md hover:border-green-300 transition-all cursor-pointer relative flex flex-col justify-between h-full min-h-[340px]"
-                                                    >
-                                                        <div>
-                                                            <div className="absolute top-5 right-5">
-                                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-gray-50 text-gray-600 border-gray-200">
-                                                                    Library
-                                                                </span>
+                            <div className="space-y-10">
+                                {Object.keys(groupedLibrary).map(industryName => {
+                                    const meta = industryMeta[industryName] || { emoji: '📋', from: 'from-gray-500', to: 'to-gray-600', light: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' };
+                                    return (
+                                        <div key={industryName}>
+                                            {/* Industry section header */}
+                                            <div className="flex items-center gap-3 mb-5">
+                                                <div className={`h-9 w-9 rounded-xl bg-gradient-to-br ${meta.from} ${meta.to} flex items-center justify-center text-lg shadow-sm`}>
+                                                    {meta.emoji}
+                                                </div>
+                                                <div>
+                                                    <h2 className="text-base font-bold text-gray-900">{industryName}</h2>
+                                                    <p className="text-xs text-gray-400">{groupedLibrary[industryName].length} templates</p>
+                                                </div>
+                                                <div className="ml-auto h-px flex-1 bg-gradient-to-r from-gray-200 to-transparent" />
+                                            </div>
+
+                                            {/* Cards grid */}
+                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                                {groupedLibrary[industryName].map((item) => {
+                                                    const bodyComp = item.components.find(c => c.type === 'BODY');
+                                                    const hasButtons = item.components.some(c => c.type === 'BUTTONS');
+                                                    const headerComp = item.components.find(c => c.type === 'HEADER');
+                                                    const catStyle = categoryColors[item.category] || 'bg-gray-50 text-gray-600 border-gray-200';
+
+                                                    return (
+                                                        <div
+                                                            key={item.id}
+                                                            onClick={() => setSelectedTemplate(item)}
+                                                            className="group bg-white rounded-2xl border border-gray-200/80 shadow-sm hover:shadow-lg hover:border-gray-300 transition-all duration-200 cursor-pointer flex flex-col overflow-hidden"
+                                                        >
+                                                            {/* Card top accent bar */}
+                                                            <div className={`h-1 w-full bg-gradient-to-r ${meta.from} ${meta.to}`} />
+
+                                                            <div className="p-5 flex flex-col flex-1">
+                                                                {/* Template name row */}
+                                                                <div className="flex items-start justify-between gap-2 mb-4">
+                                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                                        <div className={`h-8 w-8 rounded-lg ${meta.light} flex items-center justify-center shrink-0`}>
+                                                                            <MessageSquare className={`h-4 w-4 ${meta.text}`} />
+                                                                        </div>
+                                                                        <div className="min-w-0">
+                                                                            <h3 className="text-sm font-semibold text-gray-900 truncate max-w-[140px]">{item.name.replace(/_/g, ' ')}</h3>
+                                                                            <p className="text-[10px] text-gray-400">{item.language === 'en_US' ? 'English (US)' : item.language}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${catStyle}`}>
+                                                                        {item.category}
+                                                                    </span>
+                                                                </div>
+
+                                                                {/* WhatsApp bubble preview */}
+                                                                <div className="mb-4 h-[160px] flex flex-col">
+                                                                    {headerComp?.format === 'TEXT' && (
+                                                                        <p className="text-[11px] font-bold text-gray-700 mb-1.5 uppercase tracking-wide truncate">{headerComp.text}</p>
+                                                                    )}
+                                                                    {headerComp?.format === 'IMAGE' && (
+                                                                        <div className="w-full h-16 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center mb-2 shrink-0">
+                                                                            <Image className="h-6 w-6 text-gray-400" />
+                                                                        </div>
+                                                                    )}
+                                                                    <div className="bg-[#f0fdf4] rounded-xl rounded-tl-sm px-3.5 py-3 relative flex-1 overflow-hidden">
+                                                                        <p className="text-xs text-gray-700 leading-relaxed">
+                                                                            {bodyComp?.text || 'No message body'}
+                                                                        </p>
+                                                                        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[#f0fdf4] to-transparent pointer-events-none rounded-b-xl" />
+                                                                    </div>
+                                                                    
+                                                                    {/* Tags pinned to bottom */}
+                                                                    <div className="mt-2 flex gap-1.5 flex-wrap h-[24px] overflow-hidden shrink-0">
+                                                                        {hasButtons && (
+                                                                            item.components.find(c => c.type === 'BUTTONS')?.buttons?.slice(0, 2).map((btn, i) => (
+                                                                                <span key={i} className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-0.5 text-[10px] font-medium text-blue-600">
+                                                                                    {btn.type === 'URL' ? <ExternalLink className="h-2.5 w-2.5 shrink-0" /> : <MessageSquare className="h-2.5 w-2.5 shrink-0" />}
+                                                                                    <span className="truncate max-w-[100px]">{btn.text}</span>
+                                                                                </span>
+                                                                            ))
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* CTA button */}
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleAddToMyTemplates(item);
+                                                                    }}
+                                                                    className="w-full mt-auto flex items-center justify-center gap-2 bg-white hover:bg-[#f0fdf4] text-gray-700 hover:text-green-700 text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-200 border border-gray-200 hover:border-green-300 shadow-sm"
+                                                                >
+                                                                    <Plus className="h-4 w-4" />
+                                                                    Use This Template
+                                                                    <ArrowRight className="h-4 w-4 ml-auto opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                                                                </button>
                                                             </div>
 
-                                                            <div className="flex items-center gap-3 mb-4 pr-24">
-                                                                <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
-                                                                    <FileText className="h-5 w-5" />
-                                                                </div>
-                                                                <div>
-                                                                    <h3 className="font-medium text-gray-900 truncate max-w-[150px]">{item.name}</h3>
-                                                                    <p className="text-xs text-gray-500">{item.language === 'en_US' ? 'English (US)' : item.language}</p>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="space-y-2 mb-4">
-                                                                <div className="text-xs text-gray-400 uppercase font-semibold tracking-wider">Preview</div>
-                                                                <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600 line-clamp-4">
-                                                                    {bodyComp?.text || 'No preview'}
-                                                                </div>
-                                                            </div>
                                                         </div>
-
-                                                        <div className="pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 mt-auto">
-                                                            <span>{item.category}</span>
-                                                            <button 
-                                                                onClick={(e) => { 
-                                                                    e.stopPropagation(); 
-                                                                    handleAddToMyTemplates(item); 
-                                                                }}
-                                                                className="text-green-600 font-semibold flex items-center gap-1 hover:text-green-700 transition-colors"
-                                                            >
-                                                                <Plus className="h-3.5 w-3.5" /> Add to My Templates
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
                 </div>
-                
-                {/* Create template modal */}
-                <CreateTemplateModal 
-                    isOpen={iscreateOpen} 
+
+                {/* Modals */}
+                <CreateTemplateModal
+                    isOpen={iscreateOpen}
                     onClose={() => {
                         setIsCreateOpen(false);
                         setPrefilledTemplate(null);
-                    }} 
-                    onSuccess={handleCreateSuccess} 
-                    apiCall={apiCall} 
+                    }}
+                    onSuccess={handleCreateSuccess}
+                    apiCall={apiCall}
                     initialData={prefilledTemplate}
                 />
-                <ViewTemplateModal 
-                    template={selectedTemplate} 
-                    onClose={() => setSelectedTemplate(null)} 
+                <ViewTemplateModal
+                    template={selectedTemplate}
+                    onClose={() => setSelectedTemplate(null)}
                     onAddToMyTemplates={(tpl) => {
                         setSelectedTemplate(null);
                         handleAddToMyTemplates(tpl);
@@ -570,7 +578,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                             {activeTab === 'ALL' ? 'All Templates' : activeTab.charAt(0) + activeTab.slice(1).toLowerCase()}
                             <ChevronDown className="h-4 w-4 text-gray-400 ml-1" />
                         </button>
-                        
+
                         {showCategoryDropdown && (
                             <>
                                 <div className="fixed inset-0 z-10" onClick={() => setShowCategoryDropdown(false)} />
@@ -587,11 +595,10 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                 setActiveTab(opt.val);
                                                 setShowCategoryDropdown(false);
                                             }}
-                                            className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                                                activeTab === opt.val
+                                            className={`w-full text-left px-4 py-2 text-sm transition-colors ${activeTab === opt.val
                                                     ? 'bg-green-50 text-green-700 font-semibold'
                                                     : 'text-gray-700 hover:bg-gray-50'
-                                            }`}
+                                                }`}
                                         >
                                             {opt.label}
                                         </button>
@@ -607,25 +614,25 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                     {/* Status Tabs */}
                     <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200/50 shadow-sm">
                         {[
-                            { status: 'APPROVED', label: 'Approved', count: approvedCount },
-                            { status: 'PENDING', label: 'Pending', count: pendingCount },
-                            { status: 'DRAFT', label: 'Draft', count: draftCount }
+                            { status: 'APPROVED', label: 'Approved', count: approvedCount, icon: CheckCircle, activeColor: 'text-emerald-500', dotColor: 'bg-emerald-500' },
+                            { status: 'PENDING', label: 'Pending', count: pendingCount, icon: Clock, activeColor: 'text-amber-500', dotColor: 'bg-amber-500' },
+                            { status: 'DRAFT', label: 'Draft', count: draftCount, icon: FileText, activeColor: 'text-gray-500', dotColor: 'bg-gray-400' }
                         ].map((btn) => {
                             const isSelected = activeStatus === btn.status;
+                            const Icon = btn.icon;
                             return (
                                 <button
                                     key={btn.status}
                                     onClick={() => setActiveStatus(btn.status)}
-                                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${
-                                        isSelected
+                                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${isSelected
                                             ? 'bg-white text-gray-900 shadow-sm border border-gray-200/50'
                                             : 'text-gray-500 hover:text-gray-900'
-                                    }`}
+                                        }`}
                                 >
+                                    <Icon className={`h-3.5 w-3.5 ${isSelected ? btn.activeColor : 'text-gray-400'}`} />
                                     <span>{btn.label}</span>
-                                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
-                                        isSelected ? 'bg-gray-100 text-gray-700' : 'bg-gray-200/60 text-gray-400'
-                                    }`}>
+                                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${isSelected ? 'bg-gray-100 text-gray-700' : 'bg-gray-200/60 text-gray-400'
+                                        }`}>
                                         {btn.count}
                                     </span>
                                 </button>
@@ -664,100 +671,105 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
 
             {/* Grid */}
             {!loading && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {filteredTemplates.length === 0 ? (
-                    <div className="col-span-full py-16 px-4 flex flex-col items-center justify-center text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
-                        <FileText className="h-10 w-10 text-gray-400 mb-3" />
-                        <h3 className="text-sm font-bold text-gray-900">No templates found</h3>
-                        <p className="text-xs text-gray-500 mt-1 max-w-sm leading-relaxed">
-                            {activeStatus === 'APPROVED' && "Templates approved by Meta for marketing, utility, or authentication will appear here."}
-                            {activeStatus === 'PENDING' && "Newly created message templates currently undergoing Meta verification will appear here."}
-                            {activeStatus === 'DRAFT' && "Locally saved drafts and templates rejected by Meta will appear here."}
-                        </p>
-                    </div>
-                ) : (
-                    filteredTemplates.map((template) => (
-                        <div 
-                            key={template.id || template.name} 
-                            onClick={() => setSelectedTemplate(template)}
-                            className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md hover:border-green-300 transition-all cursor-pointer relative flex flex-col justify-between h-full min-h-[340px]"
-                        >
-                            <div>
-                                <div className="absolute top-5 right-5 flex items-center gap-2">
-                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                                            template.status === 'APPROVED' ? 'bg-green-50 text-green-700 border-green-100' :
-                                            template.status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
-                                            template.status === 'DRAFT' ? 'bg-gray-50 text-gray-600 border-gray-200' :
-                                            'bg-red-50 text-red-700 border-red-100'
-                                        }`}>
-                                        {template.status === 'APPROVED' && <CheckCircle className="h-3 w-3" />}
-                                        {template.status === 'PENDING' && <Clock className="h-3 w-3" />}
-                                        {template.status === 'DRAFT' && <FileText className="h-3 w-3" />}
-                                        {template.status === 'REJECTED' && <XCircle className="h-3 w-3" />}
-                                        {template.status}
-                                    </span>
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); handleDelete(template.name); }} 
-                                        className="text-gray-400 hover:text-red-500 transition-colors" 
-                                        title="Delete template"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                    </button>
-                                </div>
-
-                                <div className="flex items-center gap-3 mb-4 pr-24">
-                                    <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
-                                        <FileText className="h-5 w-5" />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-medium text-gray-900 truncate max-w-[150px]">{template.name}</h3>
-                                        <p className="text-xs text-gray-500">{template.language}</p>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2 mb-4">
-                                    <div className="text-xs text-gray-400 uppercase font-semibold tracking-wider">Preview</div>
-                                    <div className="bg-gray-50 p-3 rounded-lg text-sm text-gray-600 line-clamp-4">
-                                        {template.components?.find((c) => c.type === 'BODY')?.text || 'No preview'}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 mt-auto">
-                                <span>{template.category}</span>
-                                <span>Updated {template.last_updated || 'recently'}</span>
-                            </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {filteredTemplates.length === 0 ? (
+                        <div className="col-span-full py-16 px-4 flex flex-col items-center justify-center text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
+                            <FileText className="h-10 w-10 text-gray-400 mb-3" />
+                            <h3 className="text-sm font-bold text-gray-900">No templates found</h3>
+                            <p className="text-xs text-gray-500 mt-1 max-w-sm leading-relaxed">
+                                {activeStatus === 'APPROVED' && "Templates approved by Meta for marketing, utility, or authentication will appear here."}
+                                {activeStatus === 'PENDING' && "Newly created message templates currently undergoing Meta verification will appear here."}
+                                {activeStatus === 'DRAFT' && "Locally saved drafts and templates rejected by Meta will appear here."}
+                            </p>
                         </div>
-                    ))
-                )}
+                    ) : (
+                        filteredTemplates.map((template) => (
+                            <div
+                                key={template.id || template.name}
+                                onClick={() => setSelectedTemplate(template)}
+                                className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 hover:shadow-md hover:border-green-300 transition-all cursor-pointer relative flex flex-col h-full min-h-[300px]"
+                            >
+                                {/* Header row: icon + name + status + delete */}
+                                <div className="flex items-start justify-between gap-2 mb-4">
+                                    <div className="flex items-center gap-3 min-w-0">
+                                        <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500 shrink-0">
+                                            <FileText className="h-5 w-5" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <h3 className="font-medium text-gray-900 truncate max-w-[130px] text-sm">{template.name}</h3>
+                                            <p className="text-xs text-gray-400 mt-0.5">{template.language}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${template.status === 'APPROVED' ? 'bg-green-50 text-green-700 border-green-100' :
+                                                template.status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
+                                                    template.status === 'DRAFT' ? 'bg-gray-50 text-gray-600 border-gray-200' :
+                                                        'bg-red-50 text-red-700 border-red-100'
+                                            }`}>
+                                            {template.status === 'APPROVED' && <CheckCircle className="h-3 w-3" />}
+                                            {template.status === 'PENDING' && <Clock className="h-3 w-3" />}
+                                            {template.status === 'DRAFT' && <FileText className="h-3 w-3" />}
+                                            {template.status === 'REJECTED' && <XCircle className="h-3 w-3" />}
+                                            {template.status}
+                                        </span>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleDelete(template.name); }}
+                                            className="text-gray-300 hover:text-red-500 transition-colors p-0.5"
+                                            title="Delete template"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                </div>
 
-                {/* Add New Card Placeholder */}
-                <button
-                    onClick={() => setIsCreateOpen(true)}
-                    className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 p-8 text-center hover:border-green-500 hover:bg-green-50 transition-colors group min-h-[340px]"
-                >
-                    <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 mb-3 group-hover:bg-green-100 group-hover:text-green-600 transition-colors">
-                        <Plus className="h-6 w-6" />
-                    </div>
-                    <h3 className="text-sm font-medium text-gray-900">Create New Template</h3>
-                    <p className="text-xs text-gray-500 mt-1">Marketing, Utility, or Auth</p>
-                </button>
-            </div>
+                                {/* Preview — fixed height so all cards align uniformly */}
+                                <div className="flex-1">
+                                    <div className="text-[10px] text-gray-400 uppercase font-semibold tracking-wider mb-1.5">Preview</div>
+                                    <div className="bg-gray-50 rounded-lg p-3 h-[120px] overflow-hidden relative">
+                                        <p className="text-sm text-gray-600 leading-relaxed line-clamp-5">
+                                            {template.components?.find((c) => c.type === 'BODY')?.text || 'No preview available'}
+                                        </p>
+                                        {/* Fade out at bottom for long text */}
+                                        <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-gray-50 to-transparent rounded-b-lg pointer-events-none" />
+                                    </div>
+                                </div>
+
+                                {/* Footer — always at bottom */}
+                                <div className="pt-3 mt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+                                    <span className="font-medium">{template.category}</span>
+                                    <span>Updated {template.last_updated || 'recently'}</span>
+                                </div>
+                            </div>
+                        ))
+                    )}
+
+                    {/* Add New Card Placeholder */}
+                    <button
+                        onClick={() => setIsCreateOpen(true)}
+                        className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 p-8 text-center hover:border-green-500 hover:bg-green-50 transition-colors group min-h-[340px]"
+                    >
+                        <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 mb-3 group-hover:bg-green-100 group-hover:text-green-600 transition-colors">
+                            <Plus className="h-6 w-6" />
+                        </div>
+                        <h3 className="text-sm font-medium text-gray-900">Create New Template</h3>
+                        <p className="text-xs text-gray-500 mt-1">Marketing, Utility, or Auth</p>
+                    </button>
+                </div>
             )}
 
-            <CreateTemplateModal 
-                isOpen={iscreateOpen} 
+            <CreateTemplateModal
+                isOpen={iscreateOpen}
                 onClose={() => {
                     setIsCreateOpen(false);
                     setPrefilledTemplate(null);
-                }} 
-                onSuccess={handleCreateSuccess} 
-                apiCall={apiCall} 
-                initialData={prefilledTemplate} 
+                }}
+                onSuccess={handleCreateSuccess}
+                apiCall={apiCall}
+                initialData={prefilledTemplate}
             />
-            <ViewTemplateModal 
-                template={selectedTemplate} 
-                onClose={() => setSelectedTemplate(null)} 
+            <ViewTemplateModal
+                template={selectedTemplate}
+                onClose={() => setSelectedTemplate(null)}
                 onAddToMyTemplates={(tpl) => {
                     setSelectedTemplate(null);
                     handleAddToMyTemplates(tpl);
@@ -796,11 +808,10 @@ function CustomSelect({ value, onChange, options, className = "" }) {
                                         onChange(opt.value);
                                         setIsOpen(false);
                                     }}
-                                    className={`w-full flex items-center justify-between px-4 py-2 text-sm transition-colors ${
-                                        isSelected
+                                    className={`w-full flex items-center justify-between px-4 py-2 text-sm transition-colors ${isSelected
                                             ? 'bg-green-50 text-green-700 font-semibold'
                                             : 'text-gray-700 hover:bg-gray-50'
-                                    }`}
+                                        }`}
                                 >
                                     <span className="truncate">{opt.label}</span>
                                     {isSelected && <Check className="h-4 w-4 text-green-600 flex-shrink-0 ml-2" />}
@@ -852,7 +863,7 @@ function ViewTemplateModal({ template, onClose, onAddToMyTemplates }) {
                                 <span className="text-[10px] mt-1 tracking-wider uppercase">Video Attachment</span>
                             </div>
                         )}
-                        
+
                         <p className="text-sm text-gray-800 whitespace-pre-wrap">
                             {bodyComp?.text || ''}
                         </p>
@@ -876,8 +887,8 @@ function ViewTemplateModal({ template, onClose, onAddToMyTemplates }) {
             </div>
             <div className="mt-4 pt-4 flex justify-between items-center border-t border-gray-100">
                 {template.industry ? (
-                    <button 
-                        onClick={() => onAddToMyTemplates(template)} 
+                    <button
+                        onClick={() => onAddToMyTemplates(template)}
                         className="px-4 py-2 text-sm font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg shadow-sm flex items-center gap-1.5 transition-colors"
                     >
                         <Plus className="h-4 w-4" /> Add to My Templates
@@ -1066,7 +1077,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
             } else {
                 setSubmitError(json.error || 'Failed to create template');
             }
-        } catch(e) {
+        } catch (e) {
             console.error(e);
             setSubmitError('Error creating template');
         } finally {

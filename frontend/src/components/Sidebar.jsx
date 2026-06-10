@@ -214,23 +214,33 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
 
                     <nav className="flex-1 overflow-y-auto px-2 py-3">
                         <div className="space-y-1">
-                            {filteredNavigation.slice(0, 3).map(item => (
-                                <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
-                            ))}
+                            {filteredNavigation.slice(0, 3).map(item => {
+                                if (item.subItems) {
+                                    return <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} onNavigate={closeMenus} />
+                                }
+                                return <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
+                            })}
                         </div>
 
                         {isOwner ? (
                             <>
                                 <div className="my-2 h-px bg-gray-100" />
                                 <div className="space-y-1">
-                                    {filteredNavigation.slice(3, 6).map(item => (
-                                        <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
-                            </div>
+                                    {filteredNavigation.slice(3, 6).map(item => {
+                                        if (item.subItems) {
+                                            return <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} onNavigate={closeMenus} />
+                                        }
+                                        return <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
+                                    })}
+                                </div>
                                 <div className="my-2 h-px bg-gray-100" />
                                 <div className="space-y-1">
-                                    {filteredNavigation.slice(6).map(item => (
-                                        <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
-                                    ))}
+                                    {filteredNavigation.slice(6).map(item => {
+                                        if (item.subItems) {
+                                            return <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} onNavigate={closeMenus} />
+                                        }
+                                        return <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
+                                    })}
                                 </div>
                             </>
                         ) : null}
@@ -374,9 +384,12 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
 
                         <nav className="flex-1 overflow-y-auto px-3 py-4">
                             <div className="space-y-1">
-                                {filteredNavigation.map(item => (
-                                    <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={false} onNavigate={handleMobileNavigate} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
-                                ))}
+                                {filteredNavigation.map(item => {
+                                    if (item.subItems) {
+                                        return <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={false} onNavigate={handleMobileNavigate} />
+                                    }
+                                    return <NavItem key={item.name} item={item} active={isActive(item.href)} collapsed={false} onNavigate={handleMobileNavigate} attention={shouldHighlightConnect && item.href === '/whatsapp-connect'} />
+                                })}
                             </div>
                             {isOwner ? (
                                 <div className="mt-4 border-t border-gray-100 pt-4">
