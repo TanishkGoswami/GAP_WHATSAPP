@@ -27,7 +27,9 @@ import {
     Upload,
     UserRound,
     X,
+    MessageSquareText,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 
@@ -103,10 +105,36 @@ const emptyDraft = {
 }
 
 export default function Contacts() {
+    const navigate = useNavigate()
     const { session, apiCall } = useAuth()
     const { alertDialog } = useDialog()
     const queryClient = useQueryClient()
     const fileInputRef = useRef(null)
+
+    const [startingConversation, setStartingConversation] = useState(false)
+
+    const handleDirectMessage = async () => {
+        if (!activeContact?.id) return
+        setStartingConversation(true)
+        try {
+            const res = await apiCall(`${API_BASE}/conversations/start`, {
+                method: 'POST',
+                body: JSON.stringify({
+                    contact_id: activeContact.id,
+                    wa_account_id: activeContact.wa_account_id || null
+                })
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data.error || 'Failed to start conversation')
+
+            // Redirect to live chat with the phone query param
+            navigate(`/live-chat?phone=${activeContact.phone || activeContact.wa_id}`)
+        } catch (err) {
+            alertDialog(err.message, { title: 'Failed to open chat', tone: 'danger' })
+        } finally {
+            setStartingConversation(false)
+        }
+    }
 
     const [searchTerm, setSearchTerm] = useState('')
     const [tagFilter, setTagFilter] = useState('')
@@ -758,10 +786,19 @@ export default function Contacts() {
 
                             <div className="border-t border-gray-200 bg-white px-5 py-4">
                                 {drawerMode === 'view' && activeContact ? (
-                                    <div className="flex justify-between gap-3">
+                                    <div className="flex justify-between gap-3 w-full">
                                         <button type="button" onClick={() => deleteMutation.mutate(activeContact)} disabled={deleteMutation.isPending} className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">
                                             <Trash2 className="h-4 w-4" />
                                             Delete
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleDirectMessage}
+                                            disabled={startingConversation}
+                                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                                        >
+                                            <MessageSquareText className="h-4 w-4" />
+                                            {startingConversation ? 'Opening chat...' : 'Direct Message'}
                                         </button>
                                     </div>
                                 ) : (
