@@ -12,7 +12,7 @@ const corsHeaders = {
 function getPlanName(planId: string): string {
   if (!planId) return "Growth";
   const p = planId.toLowerCase();
-  if (p.includes("free")) return "Free";
+  if (p.includes("free")) return "No active plan";
   if (p.includes("starter")) return "Starter";
   if (p.includes("growth")) return "Growth";
   if (p === "pro" || p.includes("whatsapp_pro") || p.includes("pro_monthly") || p.includes("pro_yearly")) return "Pro";

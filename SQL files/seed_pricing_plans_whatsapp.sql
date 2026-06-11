@@ -31,10 +31,28 @@ INSERT INTO "public"."pricing_plans" (
 ('c3433aef-0abf-4ad8-a2b9-4c1b5f8c51e2', 'crm_standard', 'INR', 0, 'monthly', true, '2026-04-28 11:59:46.369013+00', '2026-04-28 11:59:46.369013+00', 'CRM Lite', 'custom-crm', 'Up to 5 active users included for free. Extra users @ ₹9/day', '["5 Users Included Free","Additional Users @ ₹9/day","Lead Management","Sales Pipeline","WhatsApp Integration","Basic Analytics"]', 'blue', 'zap', false, null),
 
 -- NEW WhatsApp Plans
-('12e5e1e3-8557-4560-bf86-5384bc4495c0', 'whatsapp_free', 'INR', 0, 'monthly', true, '2026-04-28 11:59:46.369013+00', '2026-04-28 11:59:46.369013+00', 'WA Free', 'whatsapp', 'Trial workspace for testing WhatsApp chat and basic automation.', '["1 WhatsApp number","200 contacts","1 team member","2 basic flows","Live chat access"]', 'blue', 'zap', false, null),
 ('a642e61c-8e4d-44a3-aa6a-e27efb99e71e', 'whatsapp_starter_monthly', 'INR', 99900, 'monthly', true, '2026-04-28 11:59:46.369013+00', '2026-04-28 11:59:46.369013+00', 'WA Starter', 'whatsapp', 'Simple WhatsApp workspace for small shops and service businesses.', '["1 WhatsApp number","1,000 contacts","5 automation flows","Manual broadcasts","Basic bot replies"]', 'blue', 'zap', false, null),
 ('2a9b3a37-0cfc-4bf0-a5c9-1c9f0a20e8b2', 'whatsapp_starter_yearly', 'INR', 999000, 'yearly', true, '2026-04-28 11:59:46.369013+00', '2026-04-28 11:59:46.369013+00', 'WA Starter', 'whatsapp', 'Simple WhatsApp workspace for small shops and service businesses.', '["1 WhatsApp number","1,000 contacts","5 automation flows","Manual broadcasts","Basic bot replies"]', 'blue', 'zap', false, null),
 ('3bdfa67b-1cb2-4752-b5e1-5db0d603e5c9', 'whatsapp_growth_monthly', 'INR', 199900, 'monthly', true, '2026-04-28 11:59:46.369013+00', '2026-04-28 11:59:46.369013+00', 'WA Growth', 'whatsapp', 'Best plan for growing teams running campaigns and customer support.', '["10,000 contacts","5 agents included","Unlimited flows","Broadcast campaigns","Message spend dashboard"]', 'emerald', 'crown', true, null),
 ('1c6999b1-5e2a-4bc4-b778-9e5c6b4129bb', 'whatsapp_growth_yearly', 'INR', 1999000, 'yearly', true, '2026-04-28 11:59:46.369013+00', '2026-04-28 11:59:46.369013+00', 'WA Growth', 'whatsapp', 'Best plan for growing teams running campaigns and customer support.', '["10,000 contacts","5 agents included","Unlimited flows","Broadcast campaigns","Message spend dashboard"]', 'emerald', 'crown', true, null),
 ('fa0c90e1-158c-4508-bdec-aeca6fdecf41', 'whatsapp_pro_monthly', 'INR', 349900, 'monthly', true, '2026-04-28 11:59:46.369013+00', '2026-04-28 11:59:46.369013+00', 'WA Pro', 'whatsapp', 'Advanced automation, campaigns, AI agents, and reporting.', '["2 WhatsApp numbers","50,000 contacts","10 agents included","Campaign scheduler","API and webhooks"]', 'purple', 'award', false, null),
-('2c8f82c9-a69a-42b0-b32d-1256a7413f19', 'whatsapp_pro_yearly', 'INR', 3499000, 'yearly', true, '2026-04-28 11:59:46.369013+00', '2026-04-28 11:59:46.369013+00', 'WA Pro', 'whatsapp', 'Advanced automation, campaigns, AI agents, and reporting.', '["2 WhatsApp numbers","50,000 contacts","10 agents included","Campaign scheduler","API and webhooks"]', 'purple', 'award', false, null);
+('2c8f82c9-a69a-42b0-b32d-1256a7413f19', 'whatsapp_pro_yearly', 'INR', 3499000, 'yearly', true, '2026-04-28 11:59:46.369013+00', '2026-04-28 11:59:46.369013+00', 'WA Pro', 'whatsapp', 'Advanced automation, campaigns, AI agents, and reporting.', '["2 WhatsApp numbers","50,000 contacts","10 agents included","Campaign scheduler","API and webhooks"]', 'purple', 'award', false, null)
+ON CONFLICT ("id") DO UPDATE SET
+  "plan_name" = EXCLUDED."plan_name",
+  "currency" = EXCLUDED."currency",
+  "amount" = EXCLUDED."amount",
+  "duration" = EXCLUDED."duration",
+  "is_active" = EXCLUDED."is_active",
+  "updated_at" = now(),
+  "plan_label" = EXCLUDED."plan_label",
+  "category" = EXCLUDED."category",
+  "description" = EXCLUDED."description",
+  "features" = EXCLUDED."features",
+  "color" = EXCLUDED."color",
+  "icon" = EXCLUDED."icon",
+  "is_popular" = EXCLUDED."is_popular",
+  "razorpay_plan_id" = EXCLUDED."razorpay_plan_id";
+
+DELETE FROM "public"."pricing_plans"
+WHERE "category" = 'whatsapp'
+  AND ("plan_name" = 'whatsapp_free' OR "plan_label" = 'WA Free');

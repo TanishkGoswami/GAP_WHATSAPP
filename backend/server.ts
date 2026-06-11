@@ -321,16 +321,18 @@ async function getOrganizationPlanLimits(organizationId: string) {
         .eq('id', organizationId)
         .maybeSingle();
 
-    const planId = org?.plan_id || 'free';
-    const { data: plan } = await supabase
-        .from('whatsapp_subscription_plans')
-        .select('id, name, limits')
-        .eq('id', planId)
-        .maybeSingle();
+    const planId = org?.plan_id || null;
+    const { data: plan } = planId
+        ? await supabase
+            .from('whatsapp_subscription_plans')
+            .select('id, name, limits')
+            .eq('id', planId)
+            .maybeSingle()
+        : { data: null };
 
     return {
         plan_id: plan?.id || planId,
-        plan_name: plan?.name || planId,
+        plan_name: plan?.name || 'No active plan',
         limits: plan?.limits || {},
     };
 }
@@ -1127,11 +1129,11 @@ app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
             }));
         const messageCharges = usageLogCharges.length ? usageLogCharges : legacyMessageDebitCharges;
 
-        const planId = orgResult.data?.plan_id || 'free';
-        const currentPlan = plans.find((plan: any) => plan.id === planId) || plans.find((plan: any) => plan.id === 'free') || null;
+        const planId = orgResult.data?.plan_id || null;
+        const currentPlan = planId ? plans.find((plan: any) => plan.id === planId) || null : null;
 
         res.json({
-            organization: orgResult.data || { id: orgId, plan_id: 'free', plan_status: 'active' },
+            organization: orgResult.data || { id: orgId, plan_id: null, plan_status: 'inactive' },
             current_plan: currentPlan,
             plans,
             wallet: walletData || {
