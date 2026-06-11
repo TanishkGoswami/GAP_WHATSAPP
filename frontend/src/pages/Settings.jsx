@@ -606,11 +606,10 @@ export default function Settings() {
                                     <div className="mb-4 text-xs font-semibold uppercase tracking-wide text-gray-500">Connected accounts</div>
                                     <div className="space-y-2">
                                     {accounts.map(account => (
-                                        <button
+                                        <div
                                             key={account.id}
-                                            type="button"
                                             onClick={() => setSelectedAccountId(account.id)}
-                                            className={`w-full rounded-xl border p-4 text-left transition-colors ${selectedAccountId === account.id ? 'border-green-500 bg-green-50 shadow-sm' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                                            className={`w-full cursor-pointer rounded-xl border p-4 text-left transition-colors ${selectedAccountId === account.id ? 'border-green-500 bg-green-50 shadow-sm' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                                         >
                                             <div className="flex items-center gap-3">
                                                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
@@ -635,7 +634,7 @@ export default function Settings() {
                                                     <Trash2 className="h-4 w-4" />
                                                 </button>
                                             </div>
-                                        </button>
+                                        </div>
                                     ))}
                                     </div>
                                 </aside>

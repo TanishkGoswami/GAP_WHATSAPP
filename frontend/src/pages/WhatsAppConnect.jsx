@@ -39,7 +39,7 @@ export default function WhatsAppConnect() {
     const [billing, setBilling] = useState(null)
     const [embedStatus, setEmbedStatus] = useState('idle')
     const [embedError, setEmbedError] = useState('')
-    const [manualOpen, setManualOpen] = useState(false)
+    const [manualOpen, setManualOpen] = useState(true)
     const [manualCreds, setManualCreds] = useState({ businessAccountId: '', accessToken: '' })
     const [manualPhoneNumbers, setManualPhoneNumbers] = useState([])
     const [manualSelectedPhoneId, setManualSelectedPhoneId] = useState('')
@@ -542,6 +542,18 @@ export default function WhatsAppConnect() {
                                 {(manualStatus === 'validating' || manualStatus === 'saving') && <Loader2 className="h-4 w-4 animate-spin" />}
                                 {manualPhoneNumbers.length > 0 ? 'Link to platform' : 'Validate access'}
                             </button>
+                            <div className="pt-3">
+                                <div className="overflow-hidden rounded-xl border border-gray-100 shadow-sm">
+                                    <video
+                                        src="https://v1.pinimg.com/videos/iht/expMp4/f0/9b/a6/f09ba694033f34eb5017ec4a8101ef5f_720w.mp4"
+                                        autoPlay
+                                        loop
+                                        muted
+                                        playsInline
+                                        className="w-full h-auto object-cover"
+                                    />
+                                </div>
+                            </div>
                         </form>
                     )}
                 </div>
