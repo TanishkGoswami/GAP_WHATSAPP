@@ -16,15 +16,18 @@ const INDUSTRY_LIBRARY = [
         category: 'MARKETING',
         language: 'en_US',
         components: [
-            // Note: TEXT headers cannot have emojis per Meta rules
-            { type: 'HEADER', format: 'TEXT', text: 'Exclusive Property Viewing' },
-            { type: 'BODY', text: 'Hi {{1}},\n\nThank you for showing interest in *{{2}}*. We would love to host you for a site viewing!\n\nOur agent {{3}} will be available to show you around the premium amenities. Click below to confirm your visit time.' },
+            { type: 'HEADER', format: 'TEXT', text: 'Property Viewing' },
+            {
+                type: 'BODY',
+                text: 'Hi {{1}},\n\nThank you for your interest in *{{2}}*. We would be glad to host you for a site viewing.\n\nOur agent, {{3}}, is available to show you around the amenities. Please click below to confirm your visit time or call us for details.',
+                example: { body_text: [["John", "Skyline Apartments", "Sarah"]] }
+            },
             { type: 'FOOTER', text: 'GAP Real Estate Group' },
             {
-                // Only CTA buttons (no mixing QUICK_REPLY with URL/PHONE_NUMBER)
                 type: 'BUTTONS',
                 buttons: [
-                    { type: 'URL', text: 'View Brochure', url: 'https://example.com/property' }
+                    { type: 'URL', text: 'View Brochure', url: 'https://example.com/brochure' },
+                    { type: 'PHONE_NUMBER', text: 'Call Agent', phone_number: '+16505551234' }
                 ]
             }
         ]
@@ -36,7 +39,11 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            { type: 'BODY', text: 'Hello {{1}},\n\nThis is a friendly reminder that the next installment of {{2}} for your unit at *{{3}}* is due on {{4}}.\n\nYou can pay online using the link below to avoid any late payment charge.' },
+            {
+                type: 'BODY',
+                text: 'Hello {{1}},\n\nThis is a friendly reminder that the next installment of {{2}} for your unit at *{{3}}* is due on {{4}}.\n\nYou can pay online using the secure link below to avoid any late payment charges.',
+                example: { body_text: [["Michael", "$5,000", "Oceanview Villa", "Oct 15, 2026"]] }
+            },
             { type: 'FOOTER', text: 'GAP Real Estate Group' },
             {
                 type: 'BUTTONS',
@@ -54,15 +61,18 @@ const INDUSTRY_LIBRARY = [
         category: 'MARKETING',
         language: 'en_US',
         components: [
-            // IMAGE header - no emojis issue here
-            { type: 'HEADER', format: 'IMAGE', media_url: 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?auto=format&fit=crop&w=600&q=80' },
-            // Fixed **double asterisk** to *single asterisk* (Meta only supports single)
-            { type: 'BODY', text: 'Hey {{1}}! You left some amazing items in your cart.\n\nComplete your order today and get a *10% special discount* on your purchase. Use code: *SAVE10* at checkout.' },
+            { type: 'HEADER', format: 'IMAGE', example: { header_handle: ["placeholder_handle"] } },
+            {
+                type: 'BODY',
+                text: 'Hi {{1}},\n\nWe noticed you left a few items in your cart.\n\nYou can complete your order using the link below and apply code *SAVE10* to receive 10% off your purchase.',
+                example: { body_text: [["Alice"]] }
+            },
+            { type: 'FOOTER', text: 'GAP Store' },
             {
                 type: 'BUTTONS',
                 buttons: [
-                    { type: 'URL', text: 'Checkout Now', url: 'https://example.com/checkout' },
-                    { type: 'PHONE_NUMBER', text: 'Contact Support', phone_number: '+16505551234' }
+                    { type: 'URL', text: 'View Cart', url: 'https://example.com/checkout' },
+                    { type: 'PHONE_NUMBER', text: 'Support', phone_number: '+16505551234' }
                 ]
             }
         ]
@@ -74,7 +84,12 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            { type: 'BODY', text: 'Hi {{1}},\n\nYour order *#{{2}}* has been packed and handed over to our delivery partner. It is expected to be delivered by {{3}}.\n\nTrack the progress of your order in real-time below.' },
+            {
+                type: 'BODY',
+                text: 'Hi {{1}},\n\nYour order *#{{2}}* has been packed and handed over to our delivery partner. It is expected to be delivered by {{3}}.\n\nTrack the progress of your order in real-time below.',
+                example: { body_text: [["Alice", "ORD-98765", "Tomorrow, 5 PM"]] }
+            },
+            { type: 'FOOTER', text: 'GAP Store Delivery' },
             {
                 type: 'BUTTONS',
                 buttons: [
@@ -90,9 +105,12 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            // Note: TEXT headers cannot have emojis per Meta rules
             { type: 'HEADER', format: 'TEXT', text: 'Appointment Confirmed' },
-            { type: 'BODY', text: 'Dear {{1}},\n\nYour consultation with *Dr. {{2}}* has been confirmed for {{3}} at {{4}}.\n\nClinic Location: {{5}}.\nPlease arrive 10 minutes prior to your slot.' },
+            {
+                type: 'BODY',
+                text: 'Dear {{1}},\n\nYour consultation with *Dr. {{2}}* has been confirmed for {{3}} at {{4}}.\n\nClinic Location: {{5}}.\nPlease arrive 10 minutes prior to your slot.',
+                example: { body_text: [["David", "Smith", "Oct 12", "10:30 AM", "Main St. Clinic"]] }
+            },
             { type: 'FOOTER', text: 'GAP Care Clinic' },
             {
                 type: 'BUTTONS',
@@ -110,7 +128,12 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            { type: 'BODY', text: 'Hello {{1}},\n\nYour lab reports for test *{{2}}* conducted on {{3}} are ready.\n\nYou can access your password-secured PDF report by clicking the link below.' },
+            {
+                type: 'BODY',
+                text: 'Hello {{1}},\n\nYour lab reports for test *{{2}}* conducted on {{3}} are ready.\n\nYou can access your password-secured PDF report by clicking the link below.',
+                example: { body_text: [["David", "Blood Test", "Oct 10"]] }
+            },
+            { type: 'FOOTER', text: 'GAP Care Clinic' },
             {
                 type: 'BUTTONS',
                 buttons: [
@@ -126,13 +149,17 @@ const INDUSTRY_LIBRARY = [
         category: 'MARKETING',
         language: 'en_US',
         components: [
-            { type: 'HEADER', format: 'IMAGE', media_url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=600&q=80' },
-            { type: 'BODY', text: 'Hello {{1}},\n\nAdmissions are now open for the *{{2}}* masterclass!\n\nLearn directly from leading industry experts and get certified. Join us live on {{3}} at {{4}} EST.' },
+            { type: 'HEADER', format: 'IMAGE', example: { header_handle: ["placeholder_handle"] } },
+            {
+                type: 'BODY',
+                text: 'Hello {{1}},\n\nAdmissions are now open for the *{{2}}* masterclass.\n\nLearn directly from industry experts and earn your certification. Join our live session on {{3}} at {{4}} EST.',
+                example: { body_text: [["Emma", "Digital Marketing", "Nov 5", "2:00 PM"]] }
+            },
             { type: 'FOOTER', text: 'GAP Learning Institute' },
             {
                 type: 'BUTTONS',
                 buttons: [
-                    { type: 'URL', text: 'Register Free', url: 'https://example.com/webinar' }
+                    { type: 'URL', text: 'Register Now', url: 'https://example.com/webinar' }
                 ]
             }
         ]
@@ -144,7 +171,11 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            { type: 'BODY', text: 'Hello {{1}},\n\nWe have successfully received your payment of *Rs. {{2}}* for invoice *#{{3}}*.\n\nThank you for using our payment gateway. Your receipt is attached.' },
+            {
+                type: 'BODY',
+                text: 'Hello {{1}},\n\nWe have successfully received your payment of *{{2}}* for invoice *#{{3}}*.\n\nThank you for using our secure payment gateway. Your receipt is attached via the link below.',
+                example: { body_text: [["Robert", "$150.00", "INV-12345"]] }
+            },
             { type: 'FOOTER', text: 'GAP Finance Services' },
             {
                 type: 'BUTTONS',
@@ -319,15 +350,15 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     if (viewMode === 'INDUSTRIES') {
         // Industry metadata: icons, colors, emoji
         const industryMeta = {
-            'Real Estate':  { emoji: '🏠', color: 'amber',   from: 'from-amber-500',   to: 'to-orange-500',  light: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
-            'E-commerce':   { emoji: '🛍️', color: 'blue',    from: 'from-blue-500',    to: 'to-cyan-500',    light: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
-            'Healthcare':   { emoji: '🏥', color: 'green',   from: 'from-emerald-500', to: 'to-teal-500',    light: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200'},
-            'Education':    { emoji: '🎓', color: 'indigo',  from: 'from-indigo-500',  to: 'to-violet-500',  light: 'bg-indigo-50',  text: 'text-indigo-700',  border: 'border-indigo-200' },
-            'Finance':      { emoji: '💳', color: 'purple',  from: 'from-purple-500',  to: 'to-pink-500',    light: 'bg-purple-50',  text: 'text-purple-700',  border: 'border-purple-200' },
+            'Real Estate': { emoji: '🏠', color: 'amber', from: 'from-amber-500', to: 'to-orange-500', light: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+            'E-commerce': { emoji: '🛍️', color: 'blue', from: 'from-blue-500', to: 'to-cyan-500', light: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+            'Healthcare': { emoji: '🏥', color: 'green', from: 'from-emerald-500', to: 'to-teal-500', light: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+            'Education': { emoji: '🎓', color: 'indigo', from: 'from-indigo-500', to: 'to-violet-500', light: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
+            'Finance': { emoji: '💳', color: 'purple', from: 'from-purple-500', to: 'to-pink-500', light: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
         };
         const categoryColors = {
-            MARKETING:      'bg-orange-50 text-orange-700 border-orange-200',
-            UTILITY:        'bg-blue-50 text-blue-700 border-blue-200',
+            MARKETING: 'bg-orange-50 text-orange-700 border-orange-200',
+            UTILITY: 'bg-blue-50 text-blue-700 border-blue-200',
             AUTHENTICATION: 'bg-violet-50 text-violet-700 border-violet-200',
         };
 
@@ -335,7 +366,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
             <div className="space-y-0">
                 {/* Hero Banner */}
                 <div className="relative bg-gradient-to-br from-[#0d1b2a] via-[#1a2e44] to-[#0d1b2a] rounded-2xl px-8 py-8 mb-8 overflow-hidden">
-                    <div className="absolute inset-0 opacity-10" style={{backgroundImage: 'radial-gradient(circle at 80% 50%, #25d366 0%, transparent 60%)'}} />
+                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 80% 50%, #25d366 0%, transparent 60%)' }} />
                     <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
                             <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-3 py-1 text-xs font-semibold text-white/80 mb-3">
@@ -380,11 +411,10 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                             key={ind.label}
                                             type="button"
                                             onClick={() => setActiveIndustry(ind.label)}
-                                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition-all mb-0.5 ${
-                                                isSelected
+                                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition-all mb-0.5 ${isSelected
                                                     ? 'bg-gradient-to-r from-green-600 to-emerald-500 text-white shadow-sm shadow-green-200'
                                                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                                            }`}
+                                                }`}
                                         >
                                             <span className="flex items-center gap-2">
                                                 <span className="text-sm">{ind.icon}</span>
@@ -479,7 +509,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                                         </p>
                                                                         <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[#f0fdf4] to-transparent pointer-events-none rounded-b-xl" />
                                                                     </div>
-                                                                    
+
                                                                     {/* Tags pinned to bottom */}
                                                                     <div className="mt-2 flex gap-1.5 flex-wrap h-[24px] overflow-hidden shrink-0">
                                                                         {hasButtons && (
@@ -596,8 +626,8 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                 setShowCategoryDropdown(false);
                                             }}
                                             className={`w-full text-left px-4 py-2 text-sm transition-colors ${activeTab === opt.val
-                                                    ? 'bg-green-50 text-green-700 font-semibold'
-                                                    : 'text-gray-700 hover:bg-gray-50'
+                                                ? 'bg-green-50 text-green-700 font-semibold'
+                                                : 'text-gray-700 hover:bg-gray-50'
                                                 }`}
                                         >
                                             {opt.label}
@@ -625,8 +655,8 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                     key={btn.status}
                                     onClick={() => setActiveStatus(btn.status)}
                                     className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${isSelected
-                                            ? 'bg-white text-gray-900 shadow-sm border border-gray-200/50'
-                                            : 'text-gray-500 hover:text-gray-900'
+                                        ? 'bg-white text-gray-900 shadow-sm border border-gray-200/50'
+                                        : 'text-gray-500 hover:text-gray-900'
                                         }`}
                                 >
                                     <Icon className={`h-3.5 w-3.5 ${isSelected ? btn.activeColor : 'text-gray-400'}`} />
@@ -702,9 +732,9 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                     </div>
                                     <div className="flex items-center gap-1.5 shrink-0">
                                         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${template.status === 'APPROVED' ? 'bg-green-50 text-green-700 border-green-100' :
-                                                template.status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
-                                                    template.status === 'DRAFT' ? 'bg-gray-50 text-gray-600 border-gray-200' :
-                                                        'bg-red-50 text-red-700 border-red-100'
+                                            template.status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
+                                                template.status === 'DRAFT' ? 'bg-gray-50 text-gray-600 border-gray-200' :
+                                                    'bg-red-50 text-red-700 border-red-100'
                                             }`}>
                                             {template.status === 'APPROVED' && <CheckCircle className="h-3 w-3" />}
                                             {template.status === 'PENDING' && <Clock className="h-3 w-3" />}
@@ -809,8 +839,8 @@ function CustomSelect({ value, onChange, options, className = "" }) {
                                         setIsOpen(false);
                                     }}
                                     className={`w-full flex items-center justify-between px-4 py-2 text-sm transition-colors ${isSelected
-                                            ? 'bg-green-50 text-green-700 font-semibold'
-                                            : 'text-gray-700 hover:bg-gray-50'
+                                        ? 'bg-green-50 text-green-700 font-semibold'
+                                        : 'text-gray-700 hover:bg-gray-50'
                                         }`}
                                 >
                                     <span className="truncate">{opt.label}</span>
