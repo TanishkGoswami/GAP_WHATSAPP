@@ -915,6 +915,23 @@ export default function LiveChat() {
     }, [user, session, selectedAccount]); // Re-fetch when user loads/filters/connects
 
     useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const phoneParam = params.get('phone') || params.get('waId') || params.get('wa_id');
+        if (phoneParam && chats.length > 0) {
+            const cleanPhone = phoneParam.replace(/[^0-9]/g, '');
+            const targetChat = chats.find(c => {
+                const chatPhone = String(c.phone || c.waId || '').replace(/[^0-9]/g, '');
+                return chatPhone === cleanPhone;
+            });
+            if (targetChat) {
+                setSelectedChat(targetChat);
+                // Clean the search params from url
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        }
+    }, [chats]);
+
+    useEffect(() => {
         if (!selectedChat) {
             setBotEnabled(false);
             setSelectedBotId(null);

@@ -253,25 +253,52 @@ export default function BillingPage() {
                     </div>
                 </section>
 
-                <section className="rounded-xl border border-gray-200 bg-white p-5">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                        <div>
-                            <h2 className="text-base font-semibold text-gray-950">Recharge Message Wallet</h2>
-                            <p className="mt-1 text-sm text-gray-500">
-                                Marketing, utility aur authentication message charges wallet se deduct honge. Campaign launch se pehle enough balance rakho.
-                            </p>
+                <section className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-6 md:p-8 text-white shadow-xl shadow-indigo-950/20">
+                    {/* Glowing decorative shapes */}
+                    <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-indigo-500/15 blur-3xl" />
+                    <div className="pointer-events-none absolute -left-20 -bottom-20 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
+
+                    <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between w-full">
+                        <div className="flex items-center gap-5">
+                            {/* Money asset illustration */}
+                            <div className="relative hidden shrink-0 sm:block">
+                                <div className="absolute -inset-2 rounded-full bg-indigo-500/20 blur-md" />
+                                <img
+                                    src="/images/money.png"
+                                    alt="Money wallet illustration"
+                                    className="relative h-20 w-20 object-contain drop-shadow-[0_8px_16px_rgba(99,102,241,0.4)] transition-transform duration-300 hover:scale-110"
+                                />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                    <span className="sm:hidden shrink-0">
+                                        <img src="/images/money.png" alt="Money" className="h-8 w-8 object-contain" />
+                                    </span>
+                                    Recharge Message Wallet
+                                </h2>
+                                <p className="mt-1.5 text-sm text-indigo-200/80 leading-relaxed max-w-xl">
+                                    Marketing, utility aur authentication message charges wallet se deduct honge. Campaign launch se pehle enough balance rakho.
+                                </p>
+                            </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 sm:flex">
+                        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
                             {[50000, 100000, 250000, 500000].map(amount => (
                                 <button
                                     key={amount}
                                     type="button"
                                     onClick={() => handleWalletRecharge(amount)}
                                     disabled={recharging !== null}
-                                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="group relative inline-flex min-w-[100px] sm:min-w-[120px] items-center justify-center gap-2 overflow-hidden rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:shadow-lg hover:shadow-indigo-500/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
-                                    {recharging === amount && <Loader2 className="h-4 w-4 animate-spin" />}
-                                    {formatINRFromPaise(amount)}
+                                    {recharging === amount ? (
+                                        <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+                                    ) : (
+                                        <Wallet className="h-4 w-4 text-indigo-400 transition-transform group-hover:scale-110" />
+                                    )}
+                                    <span>{formatINRFromPaise(amount)}</span>
+                                    
+                                    {/* Subtle glow effect behind button */}
+                                    <div className="absolute -inset-px -z-10 rounded-xl bg-gradient-to-r from-indigo-500/20 to-purple-500/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                                 </button>
                             ))}
                         </div>
