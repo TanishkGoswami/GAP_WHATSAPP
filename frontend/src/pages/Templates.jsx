@@ -16,15 +16,18 @@ const INDUSTRY_LIBRARY = [
         category: 'MARKETING',
         language: 'en_US',
         components: [
-            // Note: TEXT headers cannot have emojis per Meta rules
-            { type: 'HEADER', format: 'TEXT', text: 'Exclusive Property Viewing' },
-            { type: 'BODY', text: 'Hi {{1}},\n\nThank you for showing interest in *{{2}}*. We would love to host you for a site viewing!\n\nOur agent {{3}} will be available to show you around the premium amenities. Click below to confirm your visit time.' },
+            { type: 'HEADER', format: 'TEXT', text: 'Property Viewing' },
+            {
+                type: 'BODY',
+                text: 'Hi {{1}},\n\nThank you for your interest in *{{2}}*. We would be glad to host you for a site viewing.\n\nOur agent, {{3}}, is available to show you around the amenities. Please click below to confirm your visit time or call us for details.',
+                example: { body_text: [["John", "Skyline Apartments", "Sarah"]] }
+            },
             { type: 'FOOTER', text: 'GAP Real Estate Group' },
             {
-                // Only CTA buttons (no mixing QUICK_REPLY with URL/PHONE_NUMBER)
                 type: 'BUTTONS',
                 buttons: [
-                    { type: 'URL', text: 'View Brochure', url: 'https://example.com/property' }
+                    { type: 'URL', text: 'View Brochure', url: 'https://example.com/brochure' },
+                    { type: 'PHONE_NUMBER', text: 'Call Agent', phone_number: '+16505551234' }
                 ]
             }
         ]
@@ -36,7 +39,11 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            { type: 'BODY', text: 'Hello {{1}},\n\nThis is a friendly reminder that the next installment of {{2}} for your unit at *{{3}}* is due on {{4}}.\n\nYou can pay online using the link below to avoid any late payment charge.' },
+            {
+                type: 'BODY',
+                text: 'Hello {{1}},\n\nThis is a friendly reminder that the next installment of {{2}} for your unit at *{{3}}* is due on {{4}}.\n\nYou can pay online using the secure link below to avoid any late payment charges.',
+                example: { body_text: [["Michael", "$5,000", "Oceanview Villa", "Oct 15, 2026"]] }
+            },
             { type: 'FOOTER', text: 'GAP Real Estate Group' },
             {
                 type: 'BUTTONS',
@@ -54,15 +61,18 @@ const INDUSTRY_LIBRARY = [
         category: 'MARKETING',
         language: 'en_US',
         components: [
-            // IMAGE header - no emojis issue here
-            { type: 'HEADER', format: 'IMAGE', media_url: 'https://images.unsplash.com/photo-1511556532299-8f662fc26c06?auto=format&fit=crop&w=600&q=80' },
-            // Fixed **double asterisk** to *single asterisk* (Meta only supports single)
-            { type: 'BODY', text: 'Hey {{1}}! You left some amazing items in your cart.\n\nComplete your order today and get a *10% special discount* on your purchase. Use code: *SAVE10* at checkout.' },
+            { type: 'HEADER', format: 'IMAGE', example: { header_handle: ["placeholder_handle"] } },
+            {
+                type: 'BODY',
+                text: 'Hi {{1}},\n\nWe noticed you left a few items in your cart.\n\nYou can complete your order using the link below and apply code *SAVE10* to receive 10% off your purchase.',
+                example: { body_text: [["Alice"]] }
+            },
+            { type: 'FOOTER', text: 'GAP Store' },
             {
                 type: 'BUTTONS',
                 buttons: [
-                    { type: 'URL', text: 'Checkout Now', url: 'https://example.com/checkout' },
-                    { type: 'PHONE_NUMBER', text: 'Contact Support', phone_number: '+16505551234' }
+                    { type: 'URL', text: 'View Cart', url: 'https://example.com/checkout' },
+                    { type: 'PHONE_NUMBER', text: 'Support', phone_number: '+16505551234' }
                 ]
             }
         ]
@@ -74,7 +84,12 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            { type: 'BODY', text: 'Hi {{1}},\n\nYour order *#{{2}}* has been packed and handed over to our delivery partner. It is expected to be delivered by {{3}}.\n\nTrack the progress of your order in real-time below.' },
+            {
+                type: 'BODY',
+                text: 'Hi {{1}},\n\nYour order *#{{2}}* has been packed and handed over to our delivery partner. It is expected to be delivered by {{3}}.\n\nTrack the progress of your order in real-time below.',
+                example: { body_text: [["Alice", "ORD-98765", "Tomorrow, 5 PM"]] }
+            },
+            { type: 'FOOTER', text: 'GAP Store Delivery' },
             {
                 type: 'BUTTONS',
                 buttons: [
@@ -90,9 +105,12 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            // Note: TEXT headers cannot have emojis per Meta rules
             { type: 'HEADER', format: 'TEXT', text: 'Appointment Confirmed' },
-            { type: 'BODY', text: 'Dear {{1}},\n\nYour consultation with *Dr. {{2}}* has been confirmed for {{3}} at {{4}}.\n\nClinic Location: {{5}}.\nPlease arrive 10 minutes prior to your slot.' },
+            {
+                type: 'BODY',
+                text: 'Dear {{1}},\n\nYour consultation with *Dr. {{2}}* has been confirmed for {{3}} at {{4}}.\n\nClinic Location: {{5}}.\nPlease arrive 10 minutes prior to your slot.',
+                example: { body_text: [["David", "Smith", "Oct 12", "10:30 AM", "Main St. Clinic"]] }
+            },
             { type: 'FOOTER', text: 'GAP Care Clinic' },
             {
                 type: 'BUTTONS',
@@ -110,7 +128,12 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            { type: 'BODY', text: 'Hello {{1}},\n\nYour lab reports for test *{{2}}* conducted on {{3}} are ready.\n\nYou can access your password-secured PDF report by clicking the link below.' },
+            {
+                type: 'BODY',
+                text: 'Hello {{1}},\n\nYour lab reports for test *{{2}}* conducted on {{3}} are ready.\n\nYou can access your password-secured PDF report by clicking the link below.',
+                example: { body_text: [["David", "Blood Test", "Oct 10"]] }
+            },
+            { type: 'FOOTER', text: 'GAP Care Clinic' },
             {
                 type: 'BUTTONS',
                 buttons: [
@@ -126,13 +149,17 @@ const INDUSTRY_LIBRARY = [
         category: 'MARKETING',
         language: 'en_US',
         components: [
-            { type: 'HEADER', format: 'IMAGE', media_url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=600&q=80' },
-            { type: 'BODY', text: 'Hello {{1}},\n\nAdmissions are now open for the *{{2}}* masterclass!\n\nLearn directly from leading industry experts and get certified. Join us live on {{3}} at {{4}} EST.' },
+            { type: 'HEADER', format: 'IMAGE', example: { header_handle: ["placeholder_handle"] } },
+            {
+                type: 'BODY',
+                text: 'Hello {{1}},\n\nAdmissions are now open for the *{{2}}* masterclass.\n\nLearn directly from industry experts and earn your certification. Join our live session on {{3}} at {{4}} EST.',
+                example: { body_text: [["Emma", "Digital Marketing", "Nov 5", "2:00 PM"]] }
+            },
             { type: 'FOOTER', text: 'GAP Learning Institute' },
             {
                 type: 'BUTTONS',
                 buttons: [
-                    { type: 'URL', text: 'Register Free', url: 'https://example.com/webinar' }
+                    { type: 'URL', text: 'Register Now', url: 'https://example.com/webinar' }
                 ]
             }
         ]
@@ -144,7 +171,11 @@ const INDUSTRY_LIBRARY = [
         category: 'UTILITY',
         language: 'en_US',
         components: [
-            { type: 'BODY', text: 'Hello {{1}},\n\nWe have successfully received your payment of *Rs. {{2}}* for invoice *#{{3}}*.\n\nThank you for using our payment gateway. Your receipt is attached.' },
+            {
+                type: 'BODY',
+                text: 'Hello {{1}},\n\nWe have successfully received your payment of *{{2}}* for invoice *#{{3}}*.\n\nThank you for using our secure payment gateway. Your receipt is attached via the link below.',
+                example: { body_text: [["Robert", "$150.00", "INV-12345"]] }
+            },
             { type: 'FOOTER', text: 'GAP Finance Services' },
             {
                 type: 'BUTTONS',
@@ -319,53 +350,84 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     if (viewMode === 'INDUSTRIES') {
         // Industry metadata: icons, colors, emoji
         const industryMeta = {
-            'Real Estate':  { emoji: '🏠', color: 'amber',   from: 'from-amber-500',   to: 'to-orange-500',  light: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-200'  },
-            'E-commerce':   { emoji: '🛍️', color: 'blue',    from: 'from-blue-500',    to: 'to-cyan-500',    light: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-200'   },
-            'Healthcare':   { emoji: '🏥', color: 'green',   from: 'from-emerald-500', to: 'to-teal-500',    light: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200'},
-            'Education':    { emoji: '🎓', color: 'indigo',  from: 'from-indigo-500',  to: 'to-violet-500',  light: 'bg-indigo-50',  text: 'text-indigo-700',  border: 'border-indigo-200' },
-            'Finance':      { emoji: '💳', color: 'purple',  from: 'from-purple-500',  to: 'to-pink-500',    light: 'bg-purple-50',  text: 'text-purple-700',  border: 'border-purple-200' },
+            'Real Estate': { emoji: '🏠', color: 'amber', from: 'from-amber-500', to: 'to-orange-500', light: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+            'E-commerce': { emoji: '🛍️', color: 'blue', from: 'from-blue-500', to: 'to-cyan-500', light: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+            'Healthcare': { emoji: '🏥', color: 'green', from: 'from-emerald-500', to: 'to-teal-500', light: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' },
+            'Education': { emoji: '🎓', color: 'indigo', from: 'from-indigo-500', to: 'to-violet-500', light: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' },
+            'Finance': { emoji: '💳', color: 'purple', from: 'from-purple-500', to: 'to-pink-500', light: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
         };
         const categoryColors = {
-            MARKETING:      'bg-orange-50 text-orange-700 border-orange-200',
-            UTILITY:        'bg-blue-50 text-blue-700 border-blue-200',
+            MARKETING: 'bg-orange-50 text-orange-700 border-orange-200',
+            UTILITY: 'bg-blue-50 text-blue-700 border-blue-200',
             AUTHENTICATION: 'bg-violet-50 text-violet-700 border-violet-200',
         };
 
         return (
             <div className="space-y-0">
-                {/* Hero Banner */}
-                <div className="relative bg-gradient-to-br from-[#0d1b2a] via-[#1a2e44] to-[#0d1b2a] rounded-2xl px-8 py-8 mb-8 overflow-hidden">
-                    <div className="absolute inset-0 opacity-10" style={{backgroundImage: 'radial-gradient(circle at 80% 50%, #25d366 0%, transparent 60%)'}} />
-                    <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
-                            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-3 py-1 text-xs font-semibold text-white/80 mb-3">
-                                <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
-                                Industry-Ready Templates
+                {/* ═══════════════════════════════════════════════════════════════
+                    HERO BANNER — Dark navy theme matching Recharge Wallet card
+                ═══════════════════════════════════════════════════════════════ */}
+                <div className="relative rounded-2xl px-7 py-7 mb-8 overflow-hidden border border-[#1e2245]/60" style={{ background: 'linear-gradient(135deg, #0f1129 0%, #161a3a 50%, #121530 100%)' }}>
+                    {/* Ambient glow effects */}
+                    <div className="absolute -left-20 -top-20 w-72 h-72 bg-indigo-500/[0.07] blur-[80px] rounded-full pointer-events-none" />
+                    <div className="absolute right-0 bottom-0 w-48 h-48 bg-purple-500/[0.05] blur-[60px] rounded-full pointer-events-none" />
+                    
+                    <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+                        {/* Left — Icon + Text */}
+                        <div className="flex items-center gap-4">
+                            <div className="shrink-0 flex items-center justify-center w-[52px] h-[52px] rounded-2xl bg-gradient-to-br from-indigo-500 via-blue-500 to-cyan-400 shadow-lg shadow-indigo-500/20">
+                                <FileText className="h-6 w-6 text-white" strokeWidth={2} />
                             </div>
-                            <h1 className="text-2xl font-bold text-white">Template Library</h1>
-                            <p className="text-sm text-white/60 mt-1 max-w-md">Browse {filteredLibrary.length}+ professionally crafted WhatsApp message templates. Customize and submit for Meta approval in minutes.</p>
+                            <div>
+                                <h1 className="text-[19px] font-bold text-white tracking-tight">Template Library</h1>
+                                <p className="text-[13px] text-[#7c819b] mt-1 leading-relaxed max-w-md">
+                                    Browse {filteredLibrary.length}+ professionally crafted WhatsApp message templates.<br className="hidden sm:inline" />
+                                    Customize and submit for Meta approval in minutes.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Right — Quick-filter pills */}
+                        <div className="flex flex-wrap items-center gap-2.5">
+                            {[
+                                { label: 'Marketing', icon: <MessageSquareText className="h-3.5 w-3.5" />, color: 'text-sky-400' },
+                                { label: 'Utility', icon: <Clock className="h-3.5 w-3.5" />, color: 'text-amber-400' },
+                                { label: 'Auth', icon: <CheckCircle className="h-3.5 w-3.5" />, color: 'text-violet-400' },
+                            ].map(pill => (
+                                <span key={pill.label} className="inline-flex items-center gap-2 bg-white/[0.04] backdrop-blur-sm border border-white/[0.08] rounded-lg px-4 py-2 text-[12px] font-medium text-white/70 select-none hover:bg-white/[0.08] hover:text-white transition-all duration-200 cursor-default">
+                                    <span className={pill.color}>{pill.icon}</span>
+                                    {pill.label}
+                                </span>
+                            ))}
                         </div>
                     </div>
                 </div>
 
+                {/* ═══════════════════════════════════════════════════════════════
+                    CONTENT — Sidebar + Template Cards
+                ═══════════════════════════════════════════════════════════════ */}
                 <div className="flex flex-col gap-6 lg:flex-row items-start relative">
-                    {/* Left sidebar */}
+
+                    {/* ── Left Sidebar ────────────────────────────────── */}
                     <div className="w-full lg:w-56 shrink-0 lg:sticky lg:top-6 z-10">
-                        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                        <div className="bg-white rounded-2xl border border-gray-200/80 shadow-sm overflow-hidden">
+                            {/* Search */}
                             <div className="px-4 pt-4 pb-2">
                                 <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                                    <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                     <input
                                         type="text"
                                         placeholder="Search templates..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-3 py-2 text-xs placeholder:text-gray-400 focus:border-green-500 focus:outline-none focus:bg-white transition-all"
+                                        className="w-full rounded-xl border border-gray-200 bg-gray-50/80 pl-9 pr-3 py-2 text-xs placeholder:text-gray-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 focus:outline-none focus:bg-white transition-all"
                                     />
                                 </div>
                             </div>
+
+                            {/* Industry List */}
                             <div className="px-3 py-2">
-                                <div className="text-[9px] font-bold text-gray-400 uppercase px-2 mb-1.5 tracking-widest">Verticals</div>
+                                <div className="text-[9px] font-bold text-gray-400 uppercase px-2 mb-2 tracking-[0.12em]">Verticals</div>
                                 {[
                                     { label: 'All Industries', icon: '⚡', count: INDUSTRY_LIBRARY.length },
                                     ...Object.keys(industryMeta).map(name => ({
@@ -380,13 +442,12 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                             key={ind.label}
                                             type="button"
                                             onClick={() => setActiveIndustry(ind.label)}
-                                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition-all mb-0.5 ${
-                                                isSelected
-                                                    ? 'bg-gradient-to-r from-green-600 to-emerald-500 text-white shadow-sm shadow-green-200'
-                                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                                            }`}
+                                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition-all duration-150 mb-0.5 ${isSelected
+                                                ? 'bg-gradient-to-r from-indigo-600 to-blue-500 text-white shadow-md shadow-indigo-200/60'
+                                                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                                }`}
                                         >
-                                            <span className="flex items-center gap-2">
+                                            <span className="flex items-center gap-2.5">
                                                 <span className="text-sm">{ind.icon}</span>
                                                 {ind.label}
                                             </span>
@@ -397,16 +458,18 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                     );
                                 })}
                             </div>
+
+                            {/* Footer note */}
                             <div className="border-t border-gray-100 px-4 py-3">
                                 <p className="text-[10px] text-gray-400 leading-relaxed">Templates are pre-formatted to meet Meta's WhatsApp Business Policy.</p>
                             </div>
                         </div>
                     </div>
 
-                    {/* Right catalog */}
+                    {/* ── Right — Template Cards ──────────────────────── */}
                     <div className="flex-1 min-w-0">
                         {filteredLibrary.length === 0 ? (
-                            <div className="py-20 flex flex-col items-center justify-center text-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl">
+                            <div className="py-20 flex flex-col items-center justify-center text-center bg-gray-50/50 border-2 border-dashed border-gray-200 rounded-2xl">
                                 <div className="h-14 w-14 rounded-2xl bg-gray-100 flex items-center justify-center text-2xl mb-3">🔍</div>
                                 <h3 className="text-sm font-bold text-gray-900">No matching templates</h3>
                                 <p className="text-xs text-gray-500 mt-1">Try different keywords or select another vertical.</p>
@@ -419,7 +482,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                         <div key={industryName}>
                                             {/* Industry section header */}
                                             <div className="flex items-center gap-3 mb-5">
-                                                <div className={`h-9 w-9 rounded-xl bg-gradient-to-br ${meta.from} ${meta.to} flex items-center justify-center text-lg shadow-sm`}>
+                                                <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${meta.from} ${meta.to} flex items-center justify-center text-lg shadow-md`}>
                                                     {meta.emoji}
                                                 </div>
                                                 <div>
@@ -430,7 +493,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                             </div>
 
                                             {/* Cards grid */}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                                                 {groupedLibrary[industryName].map((item) => {
                                                     const bodyComp = item.components.find(c => c.type === 'BODY');
                                                     const hasButtons = item.components.some(c => c.type === 'BUTTONS');
@@ -441,9 +504,9 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                         <div
                                                             key={item.id}
                                                             onClick={() => setSelectedTemplate(item)}
-                                                            className="group bg-white rounded-2xl border border-gray-200/80 shadow-sm hover:shadow-lg hover:border-gray-300 transition-all duration-200 cursor-pointer flex flex-col overflow-hidden"
+                                                            className="group bg-white rounded-2xl border border-gray-200/80 shadow-sm hover:shadow-xl hover:border-indigo-200 hover:-translate-y-0.5 transition-all duration-300 cursor-pointer flex flex-col overflow-hidden"
                                                         >
-                                                            {/* Card top accent bar */}
+                                                            {/* Top accent bar */}
                                                             <div className={`h-1 w-full bg-gradient-to-r ${meta.from} ${meta.to}`} />
 
                                                             <div className="p-5 flex flex-col flex-1">
@@ -463,47 +526,51 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                                     </span>
                                                                 </div>
 
-                                                                {/* WhatsApp bubble preview */}
-                                                                <div className="mb-4 h-[160px] flex flex-col">
-                                                                    {headerComp?.format === 'TEXT' && (
-                                                                        <p className="text-[11px] font-bold text-gray-700 mb-1.5 uppercase tracking-wide truncate">{headerComp.text}</p>
-                                                                    )}
-                                                                    {headerComp?.format === 'IMAGE' && (
-                                                                        <div className="w-full h-16 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center mb-2 shrink-0">
-                                                                            <Image className="h-6 w-6 text-gray-400" />
-                                                                        </div>
-                                                                    )}
-                                                                    <div className="bg-[#f0fdf4] rounded-xl rounded-tl-sm px-3.5 py-3 relative flex-1 overflow-hidden">
-                                                                        <p className="text-xs text-gray-700 leading-relaxed">
+                                                                {/* Header text */}
+                                                                {headerComp?.format === 'TEXT' && (
+                                                                    <p className="text-[11px] font-bold text-gray-700 mb-2 uppercase tracking-wide">{headerComp.text}</p>
+                                                                )}
+
+                                                                {/* Image header placeholder */}
+                                                                {headerComp?.format === 'IMAGE' && (
+                                                                    <div className="w-full h-14 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-100 flex items-center justify-center mb-2 shrink-0">
+                                                                        <Image className="h-5 w-5 text-gray-300" />
+                                                                    </div>
+                                                                )}
+
+                                                                {/* WhatsApp-style message bubble */}
+                                                                <div className="mb-3 flex-1">
+                                                                    <div className="bg-[#f0fdf4] rounded-xl rounded-tl-sm px-3.5 py-3 relative h-[130px] overflow-hidden">
+                                                                        <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-line">
                                                                             {bodyComp?.text || 'No message body'}
                                                                         </p>
-                                                                        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[#f0fdf4] to-transparent pointer-events-none rounded-b-xl" />
-                                                                    </div>
-                                                                    
-                                                                    {/* Tags pinned to bottom */}
-                                                                    <div className="mt-2 flex gap-1.5 flex-wrap h-[24px] overflow-hidden shrink-0">
-                                                                        {hasButtons && (
-                                                                            item.components.find(c => c.type === 'BUTTONS')?.buttons?.slice(0, 2).map((btn, i) => (
-                                                                                <span key={i} className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-0.5 text-[10px] font-medium text-blue-600">
-                                                                                    {btn.type === 'URL' ? <ExternalLink className="h-2.5 w-2.5 shrink-0" /> : <MessageSquare className="h-2.5 w-2.5 shrink-0" />}
-                                                                                    <span className="truncate max-w-[100px]">{btn.text}</span>
-                                                                                </span>
-                                                                            ))
-                                                                        )}
+                                                                        <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-[#f0fdf4] to-transparent pointer-events-none rounded-b-xl" />
                                                                     </div>
                                                                 </div>
 
-                                                                {/* CTA button */}
+                                                                {/* Button tags */}
+                                                                {hasButtons && (
+                                                                    <div className="flex gap-1.5 flex-wrap mb-4 min-h-[24px]">
+                                                                        {item.components.find(c => c.type === 'BUTTONS')?.buttons?.slice(0, 2).map((btn, i) => (
+                                                                            <span key={i} className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-0.5 text-[10px] font-medium text-blue-600">
+                                                                                {btn.type === 'URL' ? <ExternalLink className="h-2.5 w-2.5 shrink-0" /> : <MessageSquare className="h-2.5 w-2.5 shrink-0" />}
+                                                                                <span className="truncate max-w-[100px]">{btn.text}</span>
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+
+                                                                {/* CTA */}
                                                                 <button
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         handleAddToMyTemplates(item);
                                                                     }}
-                                                                    className="w-full mt-auto flex items-center justify-center gap-2 bg-white hover:bg-[#f0fdf4] text-gray-700 hover:text-green-700 text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-200 border border-gray-200 hover:border-green-300 shadow-sm"
+                                                                    className="w-full mt-auto flex items-center justify-center gap-2 bg-gray-50 hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-200 border border-gray-200 hover:border-indigo-200 group-hover:shadow-sm"
                                                                 >
                                                                     <Plus className="h-4 w-4" />
                                                                     Use This Template
-                                                                    <ArrowRight className="h-4 w-4 ml-auto opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                                                                    <ArrowRight className="h-4 w-4 ml-auto opacity-40 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-200" />
                                                                 </button>
                                                             </div>
 
@@ -596,8 +663,8 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                 setShowCategoryDropdown(false);
                                             }}
                                             className={`w-full text-left px-4 py-2 text-sm transition-colors ${activeTab === opt.val
-                                                    ? 'bg-green-50 text-green-700 font-semibold'
-                                                    : 'text-gray-700 hover:bg-gray-50'
+                                                ? 'bg-green-50 text-green-700 font-semibold'
+                                                : 'text-gray-700 hover:bg-gray-50'
                                                 }`}
                                         >
                                             {opt.label}
@@ -625,8 +692,8 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                     key={btn.status}
                                     onClick={() => setActiveStatus(btn.status)}
                                     className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${isSelected
-                                            ? 'bg-white text-gray-900 shadow-sm border border-gray-200/50'
-                                            : 'text-gray-500 hover:text-gray-900'
+                                        ? 'bg-white text-gray-900 shadow-sm border border-gray-200/50'
+                                        : 'text-gray-500 hover:text-gray-900'
                                         }`}
                                 >
                                     <Icon className={`h-3.5 w-3.5 ${isSelected ? btn.activeColor : 'text-gray-400'}`} />
@@ -702,9 +769,9 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                     </div>
                                     <div className="flex items-center gap-1.5 shrink-0">
                                         <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border ${template.status === 'APPROVED' ? 'bg-green-50 text-green-700 border-green-100' :
-                                                template.status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
-                                                    template.status === 'DRAFT' ? 'bg-gray-50 text-gray-600 border-gray-200' :
-                                                        'bg-red-50 text-red-700 border-red-100'
+                                            template.status === 'PENDING' ? 'bg-yellow-50 text-yellow-700 border-yellow-100' :
+                                                template.status === 'DRAFT' ? 'bg-gray-50 text-gray-600 border-gray-200' :
+                                                    'bg-red-50 text-red-700 border-red-100'
                                             }`}>
                                             {template.status === 'APPROVED' && <CheckCircle className="h-3 w-3" />}
                                             {template.status === 'PENDING' && <Clock className="h-3 w-3" />}
@@ -809,8 +876,8 @@ function CustomSelect({ value, onChange, options, className = "" }) {
                                         setIsOpen(false);
                                     }}
                                     className={`w-full flex items-center justify-between px-4 py-2 text-sm transition-colors ${isSelected
-                                            ? 'bg-green-50 text-green-700 font-semibold'
-                                            : 'text-gray-700 hover:bg-gray-50'
+                                        ? 'bg-green-50 text-green-700 font-semibold'
+                                        : 'text-gray-700 hover:bg-gray-50'
                                         }`}
                                 >
                                     <span className="truncate">{opt.label}</span>
