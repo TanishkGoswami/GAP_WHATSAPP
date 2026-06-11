@@ -15,6 +15,7 @@ import Broadcast from './pages/Broadcast'
 import LiveChat from './pages/LiveChat'
 import BotAgents from './pages/BotAgents'
 import Settings from './pages/Settings'
+import PrivacyPolicy from './pages/PrivacyPolicy'
 import SSOLogin from './pages/SSOLogin'
 import AcceptInvite from './pages/AcceptInvite'
 import HelpCenter from './pages/HelpCenter'
@@ -42,6 +43,7 @@ export default function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/agent-login" element={<AgentLogin />} />
               <Route path="/accept-invite" element={<AcceptInvite />} />
               <Route path="/signup" element={<Signup />} />

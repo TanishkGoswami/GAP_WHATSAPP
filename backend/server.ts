@@ -2034,7 +2034,7 @@ app.post("/api/wa/connect/callback", authMiddleware, async (req: any, res) => {
         // Exchange code for token
         const appId = process.env.META_APP_ID;
         const appSecret = process.env.META_APP_SECRET;
-        const redirectUri = process.env.META_REDIRECT_URI;
+        const redirectUri = req.body.redirect_uri || '';
         const targetOrgId = req.organization_id;
 
         if (!targetOrgId) return res.status(400).json({ error: 'No organization found for this user.' });
@@ -2069,7 +2069,7 @@ app.post("/api/wa/connect/callback", authMiddleware, async (req: any, res) => {
 
         // --- NEW: Automatically Discover WABA IDs ---
         // Instead of requiring 'waba_id' from frontend, we fetch all WABAs a user has access to.
-        const wabaDiscoveryUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/me/whatsapp_business_accounts?access_token=${encodeURIComponent(finalToken)}`;
+        const wabaDiscoveryUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/me/assigned_whatsapp_business_accounts?access_token=${encodeURIComponent(finalToken)}`;
         const wabaRes = await fetch(wabaDiscoveryUrl);
         const wabaData: any = await wabaRes.json();
 
@@ -4239,6 +4239,95 @@ app.get("/api/conversations", authMiddleware, async (req: any, res) => {
     } catch (err: any) {
         console.error("Error fetching conversations:", err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/conversations/start', authMiddleware, async (req: any, res) => {
+    const organization_id = req.organization_id;
+    const { contact_id, wa_account_id } = req.body;
+
+    if (!organization_id) {
+        return res.status(403).json({ error: 'No organization linked to this account' });
+    }
+    if (!contact_id) {
+        return res.status(400).json({ error: 'contact_id is required' });
+    }
+
+    try {
+        // Resolve account id if not provided
+        let targetAccountId = wa_account_id;
+        if (!targetAccountId) {
+            // Find the first connected account for this org
+            const { data: account } = await supabase
+                .from('w_wa_accounts')
+                .select('id')
+                .eq('organization_id', organization_id)
+                .eq('status', 'connected')
+                .limit(1)
+                .maybeSingle();
+            targetAccountId = account?.id;
+        }
+
+        if (!targetAccountId) {
+            // Try any account as fallback
+            const { data: anyAccount } = await supabase
+                .from('w_wa_accounts')
+                .select('id')
+                .eq('organization_id', organization_id)
+                .limit(1)
+                .maybeSingle();
+            targetAccountId = anyAccount?.id;
+        }
+
+        if (!targetAccountId) {
+            return res.status(400).json({ error: 'No WhatsApp account found for this organization. Please connect one first.' });
+        }
+
+        // Check if conversation already exists
+        const { data: existing, error: findErr } = await supabase
+            .from('w_conversations')
+            .select(`
+                *,
+                contact:w_contacts(id, name, custom_name, phone, wa_id, wa_key, created_at, tags, custom_fields)
+            `)
+            .eq('organization_id', organization_id)
+            .eq('wa_account_id', targetAccountId)
+            .eq('contact_id', contact_id)
+            .maybeSingle();
+
+        if (findErr) throw findErr;
+
+        if (existing) {
+            return res.json(existing);
+        }
+
+        // Create new conversation
+        const { data: newConv, error: createErr } = await supabase
+            .from('w_conversations')
+            .insert({
+                organization_id,
+                wa_account_id: targetAccountId,
+                contact_id,
+                last_message_at: new Date().toISOString(),
+                last_message_preview: 'Conversation started',
+                unread_count: 0,
+                status: 'open'
+            })
+            .select(`
+                *,
+                contact:w_contacts(id, name, custom_name, phone, wa_id, wa_key, created_at, tags, custom_fields)
+            `)
+            .single();
+
+        if (createErr) throw createErr;
+
+        // Emit conversation created event to sockets
+        io.to(`org:${organization_id}`).emit('conversation_created', newConv);
+
+        return res.json(newConv);
+    } catch (err: any) {
+        console.error("Error starting conversation:", err);
+        return res.status(500).json({ error: err.message || 'Failed to start conversation' });
     }
 });
 
