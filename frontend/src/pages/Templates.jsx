@@ -364,39 +364,70 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
 
         return (
             <div className="space-y-0">
-                {/* Hero Banner */}
-                <div className="relative bg-gradient-to-br from-[#0d1b2a] via-[#1a2e44] to-[#0d1b2a] rounded-2xl px-8 py-8 mb-8 overflow-hidden">
-                    <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 80% 50%, #25d366 0%, transparent 60%)' }} />
-                    <div className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                        <div>
-                            <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm border border-white/20 rounded-full px-3 py-1 text-xs font-semibold text-white/80 mb-3">
-                                <span className="h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
-                                Industry-Ready Templates
+                {/* ═══════════════════════════════════════════════════════════════
+                    HERO BANNER — Dark navy theme matching Recharge Wallet card
+                ═══════════════════════════════════════════════════════════════ */}
+                <div className="relative rounded-2xl px-7 py-7 mb-8 overflow-hidden border border-[#1e2245]/60" style={{ background: 'linear-gradient(135deg, #0f1129 0%, #161a3a 50%, #121530 100%)' }}>
+                    {/* Ambient glow effects */}
+                    <div className="absolute -left-20 -top-20 w-72 h-72 bg-indigo-500/[0.07] blur-[80px] rounded-full pointer-events-none" />
+                    <div className="absolute right-0 bottom-0 w-48 h-48 bg-purple-500/[0.05] blur-[60px] rounded-full pointer-events-none" />
+                    
+                    <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5">
+                        {/* Left — Icon + Text */}
+                        <div className="flex items-center gap-4">
+                            <div className="shrink-0 flex items-center justify-center w-[52px] h-[52px] rounded-2xl bg-gradient-to-br from-indigo-500 via-blue-500 to-cyan-400 shadow-lg shadow-indigo-500/20">
+                                <FileText className="h-6 w-6 text-white" strokeWidth={2} />
                             </div>
-                            <h1 className="text-2xl font-bold text-white">Template Library</h1>
-                            <p className="text-sm text-white/60 mt-1 max-w-md">Browse {filteredLibrary.length}+ professionally crafted WhatsApp message templates. Customize and submit for Meta approval in minutes.</p>
+                            <div>
+                                <h1 className="text-[19px] font-bold text-white tracking-tight">Template Library</h1>
+                                <p className="text-[13px] text-[#7c819b] mt-1 leading-relaxed max-w-md">
+                                    Browse {filteredLibrary.length}+ professionally crafted WhatsApp message templates.<br className="hidden sm:inline" />
+                                    Customize and submit for Meta approval in minutes.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Right — Quick-filter pills */}
+                        <div className="flex flex-wrap items-center gap-2.5">
+                            {[
+                                { label: 'Marketing', icon: <MessageSquareText className="h-3.5 w-3.5" />, color: 'text-sky-400' },
+                                { label: 'Utility', icon: <Clock className="h-3.5 w-3.5" />, color: 'text-amber-400' },
+                                { label: 'Auth', icon: <CheckCircle className="h-3.5 w-3.5" />, color: 'text-violet-400' },
+                            ].map(pill => (
+                                <span key={pill.label} className="inline-flex items-center gap-2 bg-white/[0.04] backdrop-blur-sm border border-white/[0.08] rounded-lg px-4 py-2 text-[12px] font-medium text-white/70 select-none hover:bg-white/[0.08] hover:text-white transition-all duration-200 cursor-default">
+                                    <span className={pill.color}>{pill.icon}</span>
+                                    {pill.label}
+                                </span>
+                            ))}
                         </div>
                     </div>
                 </div>
 
+                {/* ═══════════════════════════════════════════════════════════════
+                    CONTENT — Sidebar + Template Cards
+                ═══════════════════════════════════════════════════════════════ */}
                 <div className="flex flex-col gap-6 lg:flex-row items-start relative">
-                    {/* Left sidebar */}
+
+                    {/* ── Left Sidebar ────────────────────────────────── */}
                     <div className="w-full lg:w-56 shrink-0 lg:sticky lg:top-6 z-10">
-                        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                        <div className="bg-white rounded-2xl border border-gray-200/80 shadow-sm overflow-hidden">
+                            {/* Search */}
                             <div className="px-4 pt-4 pb-2">
                                 <div className="relative">
-                                    <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                                    <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                     <input
                                         type="text"
                                         placeholder="Search templates..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-9 pr-3 py-2 text-xs placeholder:text-gray-400 focus:border-green-500 focus:outline-none focus:bg-white transition-all"
+                                        className="w-full rounded-xl border border-gray-200 bg-gray-50/80 pl-9 pr-3 py-2 text-xs placeholder:text-gray-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/10 focus:outline-none focus:bg-white transition-all"
                                     />
                                 </div>
                             </div>
+
+                            {/* Industry List */}
                             <div className="px-3 py-2">
-                                <div className="text-[9px] font-bold text-gray-400 uppercase px-2 mb-1.5 tracking-widest">Verticals</div>
+                                <div className="text-[9px] font-bold text-gray-400 uppercase px-2 mb-2 tracking-[0.12em]">Verticals</div>
                                 {[
                                     { label: 'All Industries', icon: '⚡', count: INDUSTRY_LIBRARY.length },
                                     ...Object.keys(industryMeta).map(name => ({
@@ -411,12 +442,12 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                             key={ind.label}
                                             type="button"
                                             onClick={() => setActiveIndustry(ind.label)}
-                                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition-all mb-0.5 ${isSelected
-                                                    ? 'bg-gradient-to-r from-green-600 to-emerald-500 text-white shadow-sm shadow-green-200'
-                                                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition-all duration-150 mb-0.5 ${isSelected
+                                                ? 'bg-gradient-to-r from-indigo-600 to-blue-500 text-white shadow-md shadow-indigo-200/60'
+                                                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                                                 }`}
                                         >
-                                            <span className="flex items-center gap-2">
+                                            <span className="flex items-center gap-2.5">
                                                 <span className="text-sm">{ind.icon}</span>
                                                 {ind.label}
                                             </span>
@@ -427,16 +458,18 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                     );
                                 })}
                             </div>
+
+                            {/* Footer note */}
                             <div className="border-t border-gray-100 px-4 py-3">
                                 <p className="text-[10px] text-gray-400 leading-relaxed">Templates are pre-formatted to meet Meta's WhatsApp Business Policy.</p>
                             </div>
                         </div>
                     </div>
 
-                    {/* Right catalog */}
+                    {/* ── Right — Template Cards ──────────────────────── */}
                     <div className="flex-1 min-w-0">
                         {filteredLibrary.length === 0 ? (
-                            <div className="py-20 flex flex-col items-center justify-center text-center bg-gray-50 border-2 border-dashed border-gray-200 rounded-2xl">
+                            <div className="py-20 flex flex-col items-center justify-center text-center bg-gray-50/50 border-2 border-dashed border-gray-200 rounded-2xl">
                                 <div className="h-14 w-14 rounded-2xl bg-gray-100 flex items-center justify-center text-2xl mb-3">🔍</div>
                                 <h3 className="text-sm font-bold text-gray-900">No matching templates</h3>
                                 <p className="text-xs text-gray-500 mt-1">Try different keywords or select another vertical.</p>
@@ -449,7 +482,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                         <div key={industryName}>
                                             {/* Industry section header */}
                                             <div className="flex items-center gap-3 mb-5">
-                                                <div className={`h-9 w-9 rounded-xl bg-gradient-to-br ${meta.from} ${meta.to} flex items-center justify-center text-lg shadow-sm`}>
+                                                <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${meta.from} ${meta.to} flex items-center justify-center text-lg shadow-md`}>
                                                     {meta.emoji}
                                                 </div>
                                                 <div>
@@ -460,7 +493,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                             </div>
 
                                             {/* Cards grid */}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                                                 {groupedLibrary[industryName].map((item) => {
                                                     const bodyComp = item.components.find(c => c.type === 'BODY');
                                                     const hasButtons = item.components.some(c => c.type === 'BUTTONS');
@@ -471,9 +504,9 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                         <div
                                                             key={item.id}
                                                             onClick={() => setSelectedTemplate(item)}
-                                                            className="group bg-white rounded-2xl border border-gray-200/80 shadow-sm hover:shadow-lg hover:border-gray-300 transition-all duration-200 cursor-pointer flex flex-col overflow-hidden"
+                                                            className="group bg-white rounded-2xl border border-gray-200/80 shadow-sm hover:shadow-xl hover:border-indigo-200 hover:-translate-y-0.5 transition-all duration-300 cursor-pointer flex flex-col overflow-hidden"
                                                         >
-                                                            {/* Card top accent bar */}
+                                                            {/* Top accent bar */}
                                                             <div className={`h-1 w-full bg-gradient-to-r ${meta.from} ${meta.to}`} />
 
                                                             <div className="p-5 flex flex-col flex-1">
@@ -493,47 +526,51 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                                     </span>
                                                                 </div>
 
-                                                                {/* WhatsApp bubble preview */}
-                                                                <div className="mb-4 h-[160px] flex flex-col">
-                                                                    {headerComp?.format === 'TEXT' && (
-                                                                        <p className="text-[11px] font-bold text-gray-700 mb-1.5 uppercase tracking-wide truncate">{headerComp.text}</p>
-                                                                    )}
-                                                                    {headerComp?.format === 'IMAGE' && (
-                                                                        <div className="w-full h-16 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center mb-2 shrink-0">
-                                                                            <Image className="h-6 w-6 text-gray-400" />
-                                                                        </div>
-                                                                    )}
-                                                                    <div className="bg-[#f0fdf4] rounded-xl rounded-tl-sm px-3.5 py-3 relative flex-1 overflow-hidden">
-                                                                        <p className="text-xs text-gray-700 leading-relaxed">
+                                                                {/* Header text */}
+                                                                {headerComp?.format === 'TEXT' && (
+                                                                    <p className="text-[11px] font-bold text-gray-700 mb-2 uppercase tracking-wide">{headerComp.text}</p>
+                                                                )}
+
+                                                                {/* Image header placeholder */}
+                                                                {headerComp?.format === 'IMAGE' && (
+                                                                    <div className="w-full h-14 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-100 flex items-center justify-center mb-2 shrink-0">
+                                                                        <Image className="h-5 w-5 text-gray-300" />
+                                                                    </div>
+                                                                )}
+
+                                                                {/* WhatsApp-style message bubble */}
+                                                                <div className="mb-3 flex-1">
+                                                                    <div className="bg-[#f0fdf4] rounded-xl rounded-tl-sm px-3.5 py-3 relative h-[130px] overflow-hidden">
+                                                                        <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-line">
                                                                             {bodyComp?.text || 'No message body'}
                                                                         </p>
-                                                                        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[#f0fdf4] to-transparent pointer-events-none rounded-b-xl" />
-                                                                    </div>
-
-                                                                    {/* Tags pinned to bottom */}
-                                                                    <div className="mt-2 flex gap-1.5 flex-wrap h-[24px] overflow-hidden shrink-0">
-                                                                        {hasButtons && (
-                                                                            item.components.find(c => c.type === 'BUTTONS')?.buttons?.slice(0, 2).map((btn, i) => (
-                                                                                <span key={i} className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-0.5 text-[10px] font-medium text-blue-600">
-                                                                                    {btn.type === 'URL' ? <ExternalLink className="h-2.5 w-2.5 shrink-0" /> : <MessageSquare className="h-2.5 w-2.5 shrink-0" />}
-                                                                                    <span className="truncate max-w-[100px]">{btn.text}</span>
-                                                                                </span>
-                                                                            ))
-                                                                        )}
+                                                                        <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-[#f0fdf4] to-transparent pointer-events-none rounded-b-xl" />
                                                                     </div>
                                                                 </div>
 
-                                                                {/* CTA button */}
+                                                                {/* Button tags */}
+                                                                {hasButtons && (
+                                                                    <div className="flex gap-1.5 flex-wrap mb-4 min-h-[24px]">
+                                                                        {item.components.find(c => c.type === 'BUTTONS')?.buttons?.slice(0, 2).map((btn, i) => (
+                                                                            <span key={i} className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-0.5 text-[10px] font-medium text-blue-600">
+                                                                                {btn.type === 'URL' ? <ExternalLink className="h-2.5 w-2.5 shrink-0" /> : <MessageSquare className="h-2.5 w-2.5 shrink-0" />}
+                                                                                <span className="truncate max-w-[100px]">{btn.text}</span>
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+
+                                                                {/* CTA */}
                                                                 <button
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         handleAddToMyTemplates(item);
                                                                     }}
-                                                                    className="w-full mt-auto flex items-center justify-center gap-2 bg-white hover:bg-[#f0fdf4] text-gray-700 hover:text-green-700 text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-200 border border-gray-200 hover:border-green-300 shadow-sm"
+                                                                    className="w-full mt-auto flex items-center justify-center gap-2 bg-gray-50 hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-200 border border-gray-200 hover:border-indigo-200 group-hover:shadow-sm"
                                                                 >
                                                                     <Plus className="h-4 w-4" />
                                                                     Use This Template
-                                                                    <ArrowRight className="h-4 w-4 ml-auto opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                                                                    <ArrowRight className="h-4 w-4 ml-auto opacity-40 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-200" />
                                                                 </button>
                                                             </div>
 
