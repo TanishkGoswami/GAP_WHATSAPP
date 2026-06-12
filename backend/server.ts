@@ -702,7 +702,7 @@ async function inspectMetaTokenPermissions(token: string) {
     const appId = process.env.META_APP_ID;
     const appSecret = process.env.META_APP_SECRET;
     if (!appId || !appSecret || !token) {
-        return { checked: false, missingScopes: [], scopes: [], error: null };
+        return { checked: false, is_valid: null, expires_at: null, missingScopes: [], scopes: [], error: null };
     }
 
     try {
@@ -712,6 +712,8 @@ async function inspectMetaTokenPermissions(token: string) {
         if (!response.ok || data.error) {
             return {
                 checked: true,
+                is_valid: false,
+                expires_at: null,
                 missingScopes: [],
                 scopes: [],
                 error: data.error?.message || 'Unable to inspect Meta token'
@@ -721,10 +723,53 @@ async function inspectMetaTokenPermissions(token: string) {
         const scopes = Array.isArray(data.data?.scopes) ? data.data.scopes : [];
         const requiredScopes = ['whatsapp_business_messaging', 'whatsapp_business_management'];
         const missingScopes = requiredScopes.filter(scope => !scopes.includes(scope));
-        return { checked: true, missingScopes, scopes, error: null };
+        return {
+            checked: true,
+            is_valid: data.data?.is_valid ?? null,
+            expires_at: data.data?.expires_at || null,
+            missingScopes,
+            scopes,
+            error: data.data?.is_valid === false ? 'Meta access token is no longer valid.' : null
+        };
     } catch (err: any) {
-        return { checked: true, missingScopes: [], scopes: [], error: err.message || 'Unable to inspect Meta token' };
+        return { checked: true, is_valid: null, expires_at: null, missingScopes: [], scopes: [], error: err.message || 'Unable to inspect Meta token' };
     }
+}
+
+function getMetaIssueCode(error: any) {
+    const message = String(error?.message || error?.error_user_msg || '').toLowerCase();
+    const code = Number(error?.code);
+    const subcode = Number(error?.error_subcode);
+
+    if (
+        code === 190 ||
+        subcode === 463 ||
+        subcode === 467 ||
+        message.includes('session has expired') ||
+        message.includes('error validating access token') ||
+        message.includes('access token has expired')
+    ) {
+        return 'token_expired';
+    }
+
+    if (code === 10 || code === 200 || message.includes('permission')) return 'permission_missing';
+    return 'meta_access_error';
+}
+
+function addDiagnosticIssue(diagnostics: any, code: string, message: string, metaError?: any) {
+    diagnostics.issue_codes = Array.isArray(diagnostics.issue_codes) ? diagnostics.issue_codes : [];
+    diagnostics.issues = Array.isArray(diagnostics.issues) ? diagnostics.issues : [];
+
+    if (!diagnostics.issue_codes.includes(code)) diagnostics.issue_codes.push(code);
+    if (!diagnostics.issues.includes(message)) diagnostics.issues.push(message);
+
+    if (code === 'token_expired') diagnostics.reconnect_required = true;
+    if (metaError) diagnostics.meta_errors.push({
+        code: metaError.code || null,
+        subcode: metaError.error_subcode || null,
+        type: metaError.type || null,
+        fbtrace_id: metaError.fbtrace_id || null
+    });
 }
 
 function getMetaSendErrorMessage(error: any) {
@@ -801,18 +846,32 @@ async function getMetaAccountDiagnostics(account: any) {
         token_permissions: null,
         phone_number_access: null,
         waba_access: null,
+        issue_codes: [],
+        reconnect_required: false,
+        meta_errors: [],
         send_ready: false,
         issues: []
     };
 
     if (!token) {
-        diagnostics.issues.push('Missing Meta access token. Reconnect this account.');
+        addDiagnosticIssue(diagnostics, 'token_missing', 'Missing Meta access token. Reconnect this account.');
         return diagnostics;
     }
 
     diagnostics.token_permissions = await inspectMetaTokenPermissions(token);
+    if (diagnostics.token_permissions?.is_valid === false) {
+        addDiagnosticIssue(
+            diagnostics,
+            'token_expired',
+            'Meta access token expired. Reconnect this WhatsApp number from Connect with Meta to restore sending, templates, and profile access.'
+        );
+    }
     if (diagnostics.token_permissions?.missingScopes?.length) {
-        diagnostics.issues.push(`Token missing permission(s): ${diagnostics.token_permissions.missingScopes.join(', ')}`);
+        addDiagnosticIssue(
+            diagnostics,
+            'permission_missing',
+            `Token missing permission(s): ${diagnostics.token_permissions.missingScopes.join(', ')}`
+        );
     }
 
     if (account?.phone_number_id) {
@@ -821,13 +880,21 @@ async function getMetaAccountDiagnostics(account: any) {
             const phoneJson: any = await phoneRes.json();
             diagnostics.phone_number_access = phoneJson;
             if (!phoneRes.ok || phoneJson.error) {
-                diagnostics.issues.push(`Token cannot access phone number ${account.phone_number_id}: ${phoneJson.error?.message || 'Unknown Meta error'}`);
+                const issueCode = getMetaIssueCode(phoneJson.error);
+                addDiagnosticIssue(
+                    diagnostics,
+                    issueCode === 'token_expired' ? issueCode : 'phone_access_denied',
+                    issueCode === 'token_expired'
+                        ? 'Meta access token expired. Reconnect this WhatsApp number from Connect with Meta to restore sending, templates, and profile access.'
+                        : `Token cannot access phone number ${account.phone_number_id}: ${phoneJson.error?.message || 'Unknown Meta error'}`,
+                    phoneJson.error
+                );
             }
         } catch (err: any) {
-            diagnostics.issues.push(`Could not validate phone number access: ${err.message}`);
+            addDiagnosticIssue(diagnostics, 'phone_access_check_failed', `Could not validate phone number access: ${err.message}`);
         }
     } else {
-        diagnostics.issues.push('Missing phone_number_id on this account.');
+        addDiagnosticIssue(diagnostics, 'phone_number_missing', 'Missing phone_number_id on this account.');
     }
 
     if (account?.whatsapp_business_account_id) {
@@ -836,15 +903,23 @@ async function getMetaAccountDiagnostics(account: any) {
             const wabaJson: any = await wabaRes.json();
             diagnostics.waba_access = wabaJson;
             if (!wabaRes.ok || wabaJson.error) {
-                diagnostics.issues.push(`Token cannot access WABA ${account.whatsapp_business_account_id}: ${wabaJson.error?.message || 'Unknown Meta error'}`);
+                const issueCode = getMetaIssueCode(wabaJson.error);
+                addDiagnosticIssue(
+                    diagnostics,
+                    issueCode === 'token_expired' ? issueCode : 'waba_access_denied',
+                    issueCode === 'token_expired'
+                        ? 'Meta access token expired. Reconnect this WhatsApp number from Connect with Meta to restore sending, templates, and profile access.'
+                        : `Token cannot access WABA ${account.whatsapp_business_account_id}: ${wabaJson.error?.message || 'Unknown Meta error'}`,
+                    wabaJson.error
+                );
             } else if (account?.phone_number_id && !wabaJson.data?.some((phone: any) => String(phone.id) === String(account.phone_number_id))) {
-                diagnostics.issues.push(`Phone number ${account.phone_number_id} was not found inside WABA ${account.whatsapp_business_account_id} for this token.`);
+                addDiagnosticIssue(diagnostics, 'phone_not_in_waba', `Phone number ${account.phone_number_id} was not found inside WABA ${account.whatsapp_business_account_id} for this token.`);
             }
         } catch (err: any) {
-            diagnostics.issues.push(`Could not validate WABA phone list: ${err.message}`);
+            addDiagnosticIssue(diagnostics, 'waba_access_check_failed', `Could not validate WABA phone list: ${err.message}`);
         }
     } else {
-        diagnostics.issues.push('Missing whatsapp_business_account_id on this account.');
+        addDiagnosticIssue(diagnostics, 'waba_missing', 'Missing whatsapp_business_account_id on this account.');
     }
 
     diagnostics.send_ready = diagnostics.issues.length === 0;

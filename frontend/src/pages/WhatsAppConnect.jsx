@@ -344,6 +344,7 @@ export default function WhatsAppConnect() {
                                 diagnostics={diagnostics[account.id]}
                                 loading={diagnosticsLoadingId === account.id}
                                 onCheck={() => runAccountDiagnostics(account.id)}
+                                onReconnect={handleEmbeddedSignup}
                                 onDisconnect={() => handleDeleteAccount(account.id)}
                             />
                         ))}
@@ -649,11 +650,19 @@ function Notice({ tone, title, text, onClose }) {
     )
 }
 
-function AccountCard({ account, diagnostics, loading, onCheck, onDisconnect }) {
+function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDisconnect }) {
     const ready = diagnostics?.send_ready ?? account.send_ready
-    const summary = diagnostics
-        ? (diagnostics.send_ready ? 'Cloud API send access verified. Ready for production.' : diagnostics.issues?.join(', '))
-        : account.diagnostics_summary
+    const issueCodes = diagnostics?.issue_codes || []
+    const reconnectRequired = diagnostics?.reconnect_required || issueCodes.includes('token_expired') || issueCodes.includes('token_missing')
+    const summary = getAccountSummary(account, diagnostics, reconnectRequired)
+    const statusLabel = ready ? 'Active' : reconnectRequired ? 'Reconnect Required' : 'Action Needed'
+    const messagingStatus = ready ? 'Send Ready' : reconnectRequired ? 'Paused' : 'Limited'
+    const templateStatus = ready ? 'Unlocked' : reconnectRequired ? 'Reconnect' : 'Needs Check'
+    const noticeClass = ready
+        ? 'border-emerald-100 bg-emerald-50 text-emerald-900'
+        : reconnectRequired
+            ? 'border-red-100 bg-red-50 text-red-900'
+            : 'border-amber-100 bg-amber-50 text-amber-900'
 
     return (
         <div className="flex flex-col justify-between rounded-[20px] border border-gray-100 bg-white p-6 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.05)] ring-1 ring-black/5">
@@ -673,25 +682,35 @@ function AccountCard({ account, diagnostics, loading, onCheck, onDisconnect }) {
                         </p>
                     </div>
                 </div>
-                <span className="inline-flex shrink-0 items-center gap-2 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-900">
-                    <span className={`h-1.5 w-1.5 rounded-full ${ready ? 'bg-black' : 'bg-amber-500'}`} />
-                    {ready ? 'Active' : 'Action Needed'}
+                <span className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${ready ? 'bg-emerald-50 text-emerald-800' : reconnectRequired ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800'}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${ready ? 'bg-emerald-600' : reconnectRequired ? 'bg-red-600' : 'bg-amber-500'}`} />
+                    {statusLabel}
                 </span>
             </div>
 
             <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <StatusTile label="MESSAGING" value={ready ? 'Send Ready' : 'Limited'} />
-                <StatusTile label="TEMPLATES" value="Unlocked" />
+                <StatusTile label="MESSAGING" value={messagingStatus} />
+                <StatusTile label="TEMPLATES" value={templateStatus} />
                 <StatusTile label="INTEGRATION" value="Cloud API" />
             </div>
 
-            <div className="mt-6 flex items-start gap-3 rounded-[12px] bg-gray-50 p-4 text-[14px] font-medium text-gray-900 border border-gray-100">
+            <div className={`mt-6 flex items-start gap-3 rounded-[12px] p-4 text-[14px] font-medium border ${noticeClass}`}>
                 {ready ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />}
                 <p className="leading-5">{summary || 'Run diagnostics to verify live Meta permissions.'}</p>
             </div>
 
             <div className="mt-6 pt-6 border-t border-gray-100">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-center">
+                    {reconnectRequired && (
+                        <button
+                            type="button"
+                            onClick={onReconnect}
+                            className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0070d1] px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-[#0064b7]"
+                        >
+                            <Smartphone className="h-4 w-4" />
+                            Reconnect Meta
+                        </button>
+                    )}
                     <button
                         type="button"
                         onClick={onCheck}
@@ -701,13 +720,15 @@ function AccountCard({ account, diagnostics, loading, onCheck, onDisconnect }) {
                         {loading ? <Loader2 className="h-4 w-4 animate-spin text-gray-500" /> : <ShieldCheck className="h-4 w-4 text-gray-500" />}
                         Verify Access
                     </button>
-                    <Link
-                        to="/templates"
-                        className="inline-flex items-center justify-center gap-2 rounded-full bg-black px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-gray-800"
-                    >
-                        <MessageSquareText className="h-4 w-4" />
-                        Manage Templates
-                    </Link>
+                    {!reconnectRequired && (
+                        <Link
+                            to="/templates"
+                            className="inline-flex items-center justify-center gap-2 rounded-full bg-black px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-gray-800"
+                        >
+                            <MessageSquareText className="h-4 w-4" />
+                            Manage Templates
+                        </Link>
+                    )}
                     <button
                         type="button"
                         onClick={onDisconnect}
@@ -719,6 +740,15 @@ function AccountCard({ account, diagnostics, loading, onCheck, onDisconnect }) {
             </div>
         </div>
     )
+}
+
+function getAccountSummary(account, diagnostics, reconnectRequired) {
+    if (diagnostics?.send_ready) return 'Cloud API send access verified. Ready for production.'
+    if (reconnectRequired) {
+        return 'Meta token expire ho gaya hai. Reconnect Meta click karke same number ko fresh permission ke saath link karein; uske baad sending, templates and profile access restore ho jayega.'
+    }
+    if (diagnostics?.issues?.length) return diagnostics.issues.join(', ')
+    return account.diagnostics_summary
 }
 
 function StatusTile({ label, value }) {
