@@ -193,27 +193,12 @@ export default function BillingPage() {
     return (
         <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
             <div className="mx-auto max-w-7xl space-y-6">
-                <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <header>
                     <div>
                         <h1 className="text-2xl font-semibold text-gray-950">Billing & Usage</h1>
                         <p className="mt-1 text-sm text-gray-500">
                             Platform subscription alag hai. Marketing, utility aur authentication message spend wallet se deduct hoga.
                         </p>
-                    </div>
-                    <div className="inline-flex w-fit rounded-xl border border-gray-200 bg-white p-1">
-                        {BILLING_INTERVALS.map(item => (
-                            <button
-                                key={item.months}
-                                type="button"
-                                onClick={() => setInterval(item.months)}
-                                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
-                                    interval === item.months ? 'bg-gray-950 text-white' : 'text-gray-600 hover:bg-gray-100'
-                                }`}
-                            >
-                                {item.label}
-                                {item.discount > 0 && <span className="ml-2 text-xs text-green-500">-{item.discount}%</span>}
-                            </button>
-                        ))}
                     </div>
                 </header>
 
@@ -425,14 +410,31 @@ export default function BillingPage() {
                 </section>
 
                 <section className="rounded-xl border border-gray-200 bg-white p-5">
-                    <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                             <h2 className="text-base font-semibold text-gray-950">Subscription Plans</h2>
                             <p className="mt-1 text-sm text-gray-500">Plan access ke liye hai. WhatsApp message spend wallet/recharge se alag chalega.</p>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                            <CreditCard className="h-4 w-4" />
-                            Razorpay secure checkout
+                        <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
+                            <div className="inline-flex w-full rounded-xl border border-gray-200 bg-white p-1 shadow-sm sm:w-fit">
+                                {BILLING_INTERVALS.map(item => (
+                                    <button
+                                        key={item.months}
+                                        type="button"
+                                        onClick={() => setInterval(item.months)}
+                                        className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition sm:flex-none ${
+                                            interval === item.months ? 'bg-[#128C7E] text-white shadow-sm' : 'text-gray-600 hover:bg-emerald-50 hover:text-[#075E54]'
+                                        }`}
+                                    >
+                                        {item.label}
+                                        {item.discount > 0 && <span className="ml-2 text-xs text-green-500">-{item.discount}%</span>}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="flex items-center gap-2 text-xs text-gray-500">
+                                <CreditCard className="h-4 w-4" />
+                                Razorpay secure checkout
+                            </div>
                         </div>
                     </div>
 
@@ -446,7 +448,7 @@ export default function BillingPage() {
                                 <article
                                     key={plan.id}
                                     className={`relative rounded-xl border p-5 ${
-                                        plan.id === 'growth' ? 'border-gray-950 bg-gray-950 text-white' : 'border-gray-200 bg-white text-gray-950'
+                                        plan.id === 'growth' ? 'border-[#128C7E] bg-gradient-to-br from-[#075E54] via-[#0b6f63] to-[#128C7E] text-white shadow-lg shadow-emerald-900/10' : 'border-gray-200 bg-white text-gray-950'
                                     }`}
                                 >
                                     {badge && !current && (
@@ -457,7 +459,10 @@ export default function BillingPage() {
                                     <h3 className="text-lg font-semibold">{plan.name}</h3>
                                     <p className={`mt-2 min-h-12 text-sm ${plan.id === 'growth' ? 'text-gray-300' : 'text-gray-500'}`}>{plan.description}</p>
                                     <div className="mt-5">
-                                        <p className="text-3xl font-bold">{formatINRFromPaise(monthlyEquivalent)}</p>
+                                        <p className="flex items-baseline gap-1 text-3xl font-bold">
+                                            {formatINRFromPaise(monthlyEquivalent)}
+                                            {price !== 0 && <span className={`text-sm font-medium ${plan.id === 'growth' ? 'text-emerald-100' : 'text-gray-500'}`}>/month</span>}
+                                        </p>
                                         <p className={`mt-1 text-xs ${plan.id === 'growth' ? 'text-gray-300' : 'text-gray-500'}`}>
                                             {price === 0 ? 'Forever' : interval === 12 ? `${formatINRFromPaise(price)} billed yearly` : 'per month'}
                                         </p>
@@ -468,8 +473,8 @@ export default function BillingPage() {
                                         onClick={() => handleUpgrade(plan)}
                                         className={`mt-5 w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-default disabled:opacity-60 ${
                                             plan.id === 'growth'
-                                                ? 'bg-white text-gray-950 hover:bg-gray-100'
-                                                : 'bg-gray-950 text-white hover:bg-gray-800'
+                                                ? 'bg-white text-[#075E54] hover:bg-emerald-50'
+                                                : 'bg-[#128C7E] text-white hover:bg-[#075E54]'
                                         }`}
                                     >
                                         {upgrading === plan.id ? 'Processing...' : current ? 'Current Plan' : `Upgrade to ${plan.name}`}
