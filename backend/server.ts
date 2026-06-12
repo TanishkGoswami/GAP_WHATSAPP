@@ -715,9 +715,12 @@ function encryptToken(token: string): string {
     return iv.toString('hex') + ':' + encrypted.toString('hex');
 }
 
-function decryptToken(stored: string): string {
+function decryptToken(stored: string | null | undefined): string {
+    if (!stored) {
+        return '';
+    }
     if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length !== 32 || !stored.includes(':')) {
-        // Not encrypted (legacy plain-text or key not set) â€” return as-is
+        // Not encrypted (legacy plain-text or key not set) — return as-is
         return stored;
     }
     try {
