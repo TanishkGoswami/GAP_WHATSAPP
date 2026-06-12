@@ -561,18 +561,18 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                         <div
                                                             key={item.id}
                                                             onClick={() => setSelectedTemplate(item)}
-                                                            className="group flex cursor-pointer flex-col overflow-hidden rounded border border-gray-200 bg-white shadow-sm transition hover:border-gray-400 hover:shadow-md"
+                                                            className="group relative mt-3 flex cursor-pointer flex-col overflow-visible rounded border border-gray-200 bg-white shadow-sm transition hover:border-gray-400 hover:shadow-md"
                                                         >
+                                                            <span className={`absolute left-4 top-0 z-10 inline-flex -translate-y-1/2 items-center rounded-full border px-3 py-0.5 text-[10px] font-semibold shadow-sm ${catStyle}`}>
+                                                                {item.category}
+                                                            </span>
                                                             {/* Top accent bar */}
                                                             <div className="h-px w-full bg-gray-300" />
 
-                                                            <div className="relative h-[286px] overflow-hidden bg-[#ece5dd]">
+                                                            <div className="relative h-[286px] overflow-hidden rounded-t bg-[#ece5dd]">
                                                                 <div className="absolute inset-0 opacity-[0.38] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]" />
                                                                 <div className="relative flex h-full flex-col p-4">
-                                                                    <div className="mb-2 flex items-center justify-between gap-2">
-                                                                        <span className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${catStyle}`}>
-                                                                            {item.category}
-                                                                        </span>
+                                                                    <div className="mb-2 flex items-center justify-end gap-2">
                                                                         <span className="text-[10px] font-medium text-gray-500">{item.language === 'en_US' ? 'English (US)' : item.language}</span>
                                                                     </div>
                                                                     <div className="max-w-[72%] rounded bg-white shadow-sm">
