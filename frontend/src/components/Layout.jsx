@@ -4,11 +4,12 @@ import Sidebar from './Sidebar'
 import Modal from './Modal'
 import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield, ExternalLink, Menu, Moon, SunMedium } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { formatINRFromPaise } from '../config/whatsappPricing'
 
 const NIGHT_LIGHT_KEY = 'gap_night_light_enabled'
 
 export default function Layout() {
-    const { user, userRole, loading, isProfileLoading, memberProfile, signOut, updateMyProfile } = useAuth()
+    const { user, userRole, loading, isProfileLoading, memberProfile, signOut, updateMyProfile, apiCall } = useAuth()
     const navigate = useNavigate()
     const location = useLocation()
     const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
@@ -19,6 +20,36 @@ export default function Layout() {
     const [profileDraft, setProfileDraft] = useState({ name: '', avatar_color: '#4f46e5' })
     const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
     const [isNightLight, setIsNightLight] = useState(() => localStorage.getItem(NIGHT_LIGHT_KEY) === 'true')
+
+    const [walletBalance, setWalletBalance] = useState(null)
+    const [isWalletLoading, setIsWalletLoading] = useState(true)
+
+    useEffect(() => {
+        let active = true;
+        const fetchWallet = async () => {
+            try {
+                const res = await apiCall(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/billing/overview`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (active && data?.wallet) {
+                        setWalletBalance(data.wallet.balance_paise);
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch wallet in Layout:', err);
+            } finally {
+                if (active) setIsWalletLoading(false);
+            }
+        };
+
+        if (user) {
+            fetchWallet();
+        }
+
+        return () => {
+            active = false;
+        };
+    }, [user, location.pathname, apiCall]);
 
     const isOwner = userRole === 'owner'
     const isLiveChat = location.pathname === '/live-chat'
@@ -228,6 +259,32 @@ export default function Layout() {
                     </div>
 
                     <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+                        {user && (
+                            <button
+                                type="button"
+                                onClick={() => navigate('/billing')}
+                                className="group flex items-center gap-2.5 rounded-full border border-gray-200 bg-white pl-2 pr-4 py-1.5 hover:bg-gray-50/80 hover:border-gray-300 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 shadow-sm cursor-pointer"
+                                title="Message Wallet Balance (Click to recharge)"
+                            >
+                                <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 border border-emerald-100/30 overflow-hidden">
+                                    <img
+                                        src="/images/money.png"
+                                        alt="Wallet"
+                                        className="h-5 w-5 object-contain group-hover:scale-110 transition-transform duration-300 drop-shadow-sm"
+                                    />
+                                </div>
+                                <div className="flex flex-col items-start leading-none">
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider group-hover:text-gray-500 transition-colors">Wallet</span>
+                                    <span className="mt-0.5 text-xs font-bold text-gray-800 tracking-tight">
+                                        {isWalletLoading ? (
+                                            <span className="inline-block h-3.5 w-12 animate-pulse rounded bg-gray-200" />
+                                        ) : (
+                                            formatINRFromPaise(walletBalance ?? 0)
+                                        )}
+                                    </span>
+                                </div>
+                            </button>
+                        )}
                         <div className="relative">
                             <button
                                 type="button"

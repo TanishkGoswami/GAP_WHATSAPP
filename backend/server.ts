@@ -1424,11 +1424,38 @@ app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
             }));
         const messageCharges = usageLogCharges.length ? usageLogCharges : legacyMessageDebitCharges;
 
-        const planId = orgResult.data?.plan_id || null;
+        const orgData = orgResult.data ? { ...orgResult.data } : { id: orgId, plan_id: null, plan_status: 'inactive' };
+        try {
+            if (orgResult.data) {
+                const { data: ownerMember } = await supabase
+                    .from('organization_members')
+                    .select('user_id')
+                    .eq('organization_id', orgId)
+                    .eq('role', 'owner')
+                    .maybeSingle();
+
+                if (ownerMember?.user_id) {
+                    const { data: sub } = await supabase
+                        .from('app_user_subscriptions')
+                        .select('started_at, expires_at')
+                        .eq('user_id', ownerMember.user_id)
+                        .maybeSingle();
+
+                    if (sub) {
+                        if (!orgData.plan_start_date) orgData.plan_start_date = sub.started_at;
+                        if (!orgData.plan_end_date) orgData.plan_end_date = sub.expires_at;
+                    }
+                }
+            }
+        } catch (subErr) {
+            console.error('[billing/overview] Failed to fetch owner subscription dates:', subErr);
+        }
+
+        const planId = orgData.plan_id || null;
         const currentPlan = planId ? plans.find((plan: any) => plan.id === planId) || null : null;
 
         res.json({
-            organization: orgResult.data || { id: orgId, plan_id: null, plan_status: 'inactive' },
+            organization: orgData,
             current_plan: currentPlan,
             plans,
             wallet: walletData || {
