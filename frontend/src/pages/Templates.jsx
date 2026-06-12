@@ -207,6 +207,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
 
     // Industry library filter state
     const [activeIndustry, setActiveIndustry] = useState('All Industries')
+    const [libraryCategory, setLibraryCategory] = useState('ALL')
     const [searchQuery, setSearchQuery] = useState('')
 
     useEffect(() => {
@@ -330,10 +331,11 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                 t.components.find(c => c.type === 'BODY')?.text.toLowerCase().includes(searchQuery.toLowerCase());
 
             const matchesIndustry = activeIndustry === 'All Industries' || t.industry === activeIndustry;
+            const matchesCategory = libraryCategory === 'ALL' || t.category === libraryCategory;
 
-            return matchesSearch && matchesIndustry;
+            return matchesSearch && matchesIndustry && matchesCategory;
         });
-    }, [searchQuery, activeIndustry]);
+    }, [searchQuery, activeIndustry, libraryCategory]);
 
     // Grouping by Industry for "All Industries" view
     const groupedLibrary = useMemo(() => {
@@ -357,17 +359,40 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
             'Finance': { emoji: '💳', color: 'purple', from: 'from-purple-500', to: 'to-pink-500', light: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
         };
         const categoryColors = {
-            MARKETING: 'bg-orange-50 text-orange-700 border-orange-200',
-            UTILITY: 'bg-blue-50 text-blue-700 border-blue-200',
-            AUTHENTICATION: 'bg-violet-50 text-violet-700 border-violet-200',
+            MARKETING: 'bg-white text-gray-700 border-gray-300',
+            UTILITY: 'bg-white text-gray-700 border-gray-300',
+            AUTHENTICATION: 'bg-white text-gray-700 border-gray-300',
         };
+        const categoryOptions = [
+            { label: 'All categories', value: 'ALL', count: INDUSTRY_LIBRARY.length },
+            { label: 'Marketing', value: 'MARKETING', count: INDUSTRY_LIBRARY.filter(t => t.category === 'MARKETING').length },
+            { label: 'Utility', value: 'UTILITY', count: INDUSTRY_LIBRARY.filter(t => t.category === 'UTILITY').length },
+            { label: 'Authentication', value: 'AUTHENTICATION', count: INDUSTRY_LIBRARY.filter(t => t.category === 'AUTHENTICATION').length },
+        ];
 
         return (
-            <div className="space-y-0">
+            <div className="min-h-[calc(100vh-4rem)] bg-[#eef4f7] pb-10">
+                <div className="sticky top-0 z-20 border-b border-gray-200 bg-white px-4 py-2 shadow-sm">
+                    <div className="flex w-full flex-col gap-3 md:flex-row md:items-center">
+                        <div className="relative flex-1">
+                            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                            <input
+                                type="text"
+                                placeholder="Search template library"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="h-9 w-full rounded border border-gray-300 bg-white pl-10 pr-3 text-sm text-gray-900 shadow-sm outline-none transition focus:border-[#1877f2] focus:ring-1 focus:ring-[#1877f2]"
+                            />
+                        </div>
+                        <div className="inline-flex h-9 items-center rounded border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 shadow-sm md:w-56">
+                            English (US) templates
+                        </div>
+                    </div>
+                </div>
                 {/* ═══════════════════════════════════════════════════════════════
                     HERO BANNER — Dark navy theme matching Recharge Wallet card
                 ═══════════════════════════════════════════════════════════════ */}
-                <div className="relative rounded-2xl px-7 py-7 mb-8 overflow-hidden border border-[#1e2245]/60" style={{ background: 'linear-gradient(135deg, #0f1129 0%, #161a3a 50%, #121530 100%)' }}>
+                <div className="hidden" style={{ background: 'linear-gradient(135deg, #0f1129 0%, #161a3a 50%, #121530 100%)' }}>
                     {/* Ambient glow effects */}
                     <div className="absolute -left-20 -top-20 w-72 h-72 bg-indigo-500/[0.07] blur-[80px] rounded-full pointer-events-none" />
                     <div className="absolute right-0 bottom-0 w-48 h-48 bg-purple-500/[0.05] blur-[60px] rounded-full pointer-events-none" />
@@ -406,13 +431,13 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                 {/* ═══════════════════════════════════════════════════════════════
                     CONTENT — Sidebar + Template Cards
                 ═══════════════════════════════════════════════════════════════ */}
-                <div className="flex flex-col gap-6 lg:flex-row items-start relative">
+                <div className="flex w-full flex-col items-start gap-5 md:flex-row">
 
                     {/* ── Left Sidebar ────────────────────────────────── */}
-                    <div className="w-full lg:w-56 shrink-0 lg:sticky lg:top-6 z-10">
-                        <div className="bg-white rounded-2xl border border-gray-200/80 shadow-sm overflow-hidden">
+                    <div className="w-full shrink-0 md:sticky md:top-[53px] md:w-[220px] lg:w-[236px] xl:w-[252px]">
+                        <div className="overflow-hidden border-b border-r border-gray-200 bg-white shadow-sm lg:border-b-0">
                             {/* Search */}
-                            <div className="px-4 pt-4 pb-2">
+                            <div className="hidden">
                                 <div className="relative">
                                     <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                     <input
@@ -425,9 +450,34 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                 </div>
                             </div>
 
+                            <div className="border-b border-gray-200 px-3.5 py-4">
+                                <p className="mb-3 text-sm font-semibold text-gray-900">Category</p>
+                                <div className="space-y-2">
+                                    {categoryOptions.map(option => {
+                                        const selected = libraryCategory === option.value;
+                                        return (
+                                            <button
+                                                key={option.value}
+                                                type="button"
+                                                onClick={() => setLibraryCategory(option.value)}
+                                                className="flex w-full items-center justify-between gap-2 rounded px-1 py-1 text-left text-sm text-gray-900 hover:bg-gray-50"
+                                            >
+                                                <span className="flex items-center gap-2">
+                                                    <span className={`flex h-5 w-5 items-center justify-center rounded-full border bg-white ${selected ? 'border-[#1877f2]' : 'border-gray-300'}`}>
+                                                        {selected && <span className="h-3 w-3 rounded-full bg-[#1877f2]" />}
+                                                    </span>
+                                                    {option.label}
+                                                </span>
+                                                <span className="text-xs text-gray-500">({option.count})</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
                             {/* Industry List */}
-                            <div className="px-3 py-2">
-                                <div className="text-[9px] font-bold text-gray-400 uppercase px-2 mb-2 tracking-[0.12em]">Verticals</div>
+                            <div className="border-b border-gray-200 px-3.5 py-4">
+                                <p className="mb-3 text-sm font-semibold text-gray-900">Industry</p>
                                 {[
                                     { label: 'All Industries', icon: '⚡', count: INDUSTRY_LIBRARY.length },
                                     ...Object.keys(industryMeta).map(name => ({
@@ -442,16 +492,16 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                             key={ind.label}
                                             type="button"
                                             onClick={() => setActiveIndustry(ind.label)}
-                                            className={`w-full flex items-center justify-between px-3 py-2 text-xs font-semibold rounded-xl transition-all duration-150 mb-0.5 ${isSelected
-                                                ? 'bg-gradient-to-r from-indigo-600 to-blue-500 text-white shadow-md shadow-indigo-200/60'
-                                                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                                            className={`mb-1 flex w-full items-center justify-between rounded px-2 py-2 text-sm transition-colors ${isSelected
+                                                ? 'bg-gray-100 font-semibold text-gray-950'
+                                                : 'text-gray-700 hover:bg-gray-50'
                                                 }`}
                                         >
                                             <span className="flex items-center gap-2.5">
-                                                <span className="text-sm">{ind.icon}</span>
+                                                <span className="hidden">{ind.icon}</span>
                                                 {ind.label}
                                             </span>
-                                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                                            <span className="text-xs text-gray-500">
                                                 {ind.count}
                                             </span>
                                         </button>
@@ -460,16 +510,23 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                             </div>
 
                             {/* Footer note */}
-                            <div className="border-t border-gray-100 px-4 py-3">
-                                <p className="text-[10px] text-gray-400 leading-relaxed">Templates are pre-formatted to meet Meta's WhatsApp Business Policy.</p>
+                            <div className="px-3.5 py-4">
+                                <p className="mb-2 text-sm font-semibold text-gray-900">Approval tips</p>
+                                <ul className="space-y-2 text-[11px] leading-5 text-gray-600">
+                                    <li>Use Utility only for transactional updates, not offers.</li>
+                                    <li>Keep variables clear: explain what each placeholder value means.</li>
+                                    <li>Avoid misleading urgency, spam words, or all-caps claims.</li>
+                                    <li>Use valid URLs and phone numbers in buttons.</li>
+                                    <li>Match the category with the real message purpose.</li>
+                                </ul>
                             </div>
                         </div>
                     </div>
 
                     {/* ── Right — Template Cards ──────────────────────── */}
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1 px-4 py-6 md:pl-0 lg:pr-6">
                         {filteredLibrary.length === 0 ? (
-                            <div className="py-20 flex flex-col items-center justify-center text-center bg-gray-50/50 border-2 border-dashed border-gray-200 rounded-2xl">
+                            <div className="flex flex-col items-center justify-center rounded border border-dashed border-gray-300 bg-white py-20 text-center">
                                 <div className="h-14 w-14 rounded-2xl bg-gray-100 flex items-center justify-center text-2xl mb-3">🔍</div>
                                 <h3 className="text-sm font-bold text-gray-900">No matching templates</h3>
                                 <p className="text-xs text-gray-500 mt-1">Try different keywords or select another vertical.</p>
@@ -481,22 +538,22 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                     return (
                                         <div key={industryName}>
                                             {/* Industry section header */}
-                                            <div className="flex items-center gap-3 mb-5">
-                                                <div className={`h-10 w-10 rounded-xl bg-gradient-to-br ${meta.from} ${meta.to} flex items-center justify-center text-lg shadow-md`}>
-                                                    {meta.emoji}
+                                            <div className="mb-5 flex items-center gap-3">
+                                                <div className="flex h-8 w-8 items-center justify-center rounded border border-gray-300 bg-white">
+                                                    <FileText className="h-4 w-4 text-gray-600" />
                                                 </div>
                                                 <div>
                                                     <h2 className="text-base font-bold text-gray-900">{industryName}</h2>
                                                     <p className="text-xs text-gray-400">{groupedLibrary[industryName].length} templates</p>
                                                 </div>
-                                                <div className="ml-auto h-px flex-1 bg-gradient-to-r from-gray-200 to-transparent" />
+                                                <div className="ml-auto h-px flex-1 bg-gray-300" />
                                             </div>
 
                                             {/* Cards grid */}
-                                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                                            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-[repeat(3,minmax(0,330px))]">
                                                 {groupedLibrary[industryName].map((item) => {
                                                     const bodyComp = item.components.find(c => c.type === 'BODY');
-                                                    const hasButtons = item.components.some(c => c.type === 'BUTTONS');
+                                                    const buttonsComp = item.components.find(c => c.type === 'BUTTONS');
                                                     const headerComp = item.components.find(c => c.type === 'HEADER');
                                                     const catStyle = categoryColors[item.category] || 'bg-gray-50 text-gray-600 border-gray-200';
 
@@ -504,73 +561,68 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                         <div
                                                             key={item.id}
                                                             onClick={() => setSelectedTemplate(item)}
-                                                            className="group bg-white rounded-2xl border border-gray-200/80 shadow-sm hover:shadow-xl hover:border-indigo-200 hover:-translate-y-0.5 transition-all duration-300 cursor-pointer flex flex-col overflow-hidden"
+                                                            className="group flex cursor-pointer flex-col overflow-hidden rounded border border-gray-200 bg-white shadow-sm transition hover:border-gray-400 hover:shadow-md"
                                                         >
                                                             {/* Top accent bar */}
-                                                            <div className={`h-1 w-full bg-gradient-to-r ${meta.from} ${meta.to}`} />
+                                                            <div className="h-px w-full bg-gray-300" />
 
-                                                            <div className="p-5 flex flex-col flex-1">
-                                                                {/* Template name row */}
-                                                                <div className="flex items-start justify-between gap-2 mb-4">
-                                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                                        <div className={`h-8 w-8 rounded-lg ${meta.light} flex items-center justify-center shrink-0`}>
-                                                                            <MessageSquare className={`h-4 w-4 ${meta.text}`} />
+                                                            <div className="relative h-[286px] overflow-hidden bg-[#ece5dd]">
+                                                                <div className="absolute inset-0 opacity-[0.38] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]" />
+                                                                <div className="relative flex h-full flex-col p-4">
+                                                                    <div className="mb-2 flex items-center justify-between gap-2">
+                                                                        <span className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${catStyle}`}>
+                                                                            {item.category}
+                                                                        </span>
+                                                                        <span className="text-[10px] font-medium text-gray-500">{item.language === 'en_US' ? 'English (US)' : item.language}</span>
+                                                                    </div>
+                                                                    <div className="max-w-[72%] rounded bg-white shadow-sm">
+                                                                        <div className="px-3 py-2.5">
+                                                                            {headerComp?.format === 'TEXT' && (
+                                                                                <p className="mb-1.5 text-sm font-semibold leading-5 text-gray-800">{headerComp.text}</p>
+                                                                            )}
+                                                                            {headerComp?.format === 'IMAGE' && (
+                                                                                <img
+                                                                                    src="/images/Image-Placeholder.jpg"
+                                                                                    alt="Template image placeholder"
+                                                                                    className="mb-2 h-14 w-full rounded object-cover"
+                                                                                    loading="lazy"
+                                                                                />
+                                                                            )}
+                                                                            <p className="text-[12px] leading-5 text-gray-800 whitespace-pre-line">
+                                                                                {renderTemplateText(bodyComp?.text || 'No message body')}
+                                                                            </p>
+                                                                            <p className="mt-1 text-right text-[10px] text-gray-400">7:02 AM</p>
                                                                         </div>
-                                                                        <div className="min-w-0">
-                                                                            <h3 className="text-sm font-semibold text-gray-900 truncate max-w-[140px]">{item.name.replace(/_/g, ' ')}</h3>
-                                                                            <p className="text-[10px] text-gray-400">{item.language === 'en_US' ? 'English (US)' : item.language}</p>
-                                                                        </div>
+                                                                        {buttonsComp?.buttons?.length > 0 && (
+                                                                            <div className="border-t border-gray-200">
+                                                                                {buttonsComp.buttons.slice(0, 1).map((btn, i) => (
+                                                                                    <div key={i} className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-medium text-[#008069]">
+                                                                                        {btn.type === 'URL' ? <ExternalLink className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />}
+                                                                                        <span className="truncate">{btn.text}</span>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
                                                                     </div>
-                                                                    <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${catStyle}`}>
-                                                                        {item.category}
-                                                                    </span>
+                                                                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-[#ece5dd] to-transparent" />
                                                                 </div>
+                                                            </div>
 
-                                                                {/* Header text */}
-                                                                {headerComp?.format === 'TEXT' && (
-                                                                    <p className="text-[11px] font-bold text-gray-700 mb-2 uppercase tracking-wide">{headerComp.text}</p>
-                                                                )}
-
-                                                                {/* Image header placeholder */}
-                                                                {headerComp?.format === 'IMAGE' && (
-                                                                    <div className="w-full h-14 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-100 flex items-center justify-center mb-2 shrink-0">
-                                                                        <Image className="h-5 w-5 text-gray-300" />
-                                                                    </div>
-                                                                )}
-
-                                                                {/* WhatsApp-style message bubble */}
-                                                                <div className="mb-3 flex-1">
-                                                                    <div className="bg-[#f0fdf4] rounded-xl rounded-tl-sm px-3.5 py-3 relative h-[130px] overflow-hidden">
-                                                                        <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-line">
-                                                                            {bodyComp?.text || 'No message body'}
-                                                                        </p>
-                                                                        <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-[#f0fdf4] to-transparent pointer-events-none rounded-b-xl" />
-                                                                    </div>
+                                                            <div className="flex min-h-14 items-center justify-between gap-3 border-t border-gray-200 bg-white px-3 py-2.5">
+                                                                <div className="min-w-0">
+                                                                    <p className="truncate text-sm font-medium text-gray-700">{item.name}</p>
+                                                                    <p className="text-[11px] text-gray-400">{item.industry}</p>
                                                                 </div>
-
-                                                                {/* Button tags */}
-                                                                {hasButtons && (
-                                                                    <div className="flex gap-1.5 flex-wrap mb-4 min-h-[24px]">
-                                                                        {item.components.find(c => c.type === 'BUTTONS')?.buttons?.slice(0, 2).map((btn, i) => (
-                                                                            <span key={i} className="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-lg px-2 py-0.5 text-[10px] font-medium text-blue-600">
-                                                                                {btn.type === 'URL' ? <ExternalLink className="h-2.5 w-2.5 shrink-0" /> : <MessageSquare className="h-2.5 w-2.5 shrink-0" />}
-                                                                                <span className="truncate max-w-[100px]">{btn.text}</span>
-                                                                            </span>
-                                                                        ))}
-                                                                    </div>
-                                                                )}
-
-                                                                {/* CTA */}
                                                                 <button
+                                                                    type="button"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
                                                                         handleAddToMyTemplates(item);
                                                                     }}
-                                                                    className="w-full mt-auto flex items-center justify-center gap-2 bg-gray-50 hover:bg-indigo-50 text-gray-700 hover:text-indigo-700 text-sm font-medium py-2.5 px-4 rounded-xl transition-all duration-200 border border-gray-200 hover:border-indigo-200 group-hover:shadow-sm"
+                                                                    className="inline-flex h-8 shrink-0 items-center gap-1 rounded border border-gray-300 bg-white px-2.5 text-xs font-semibold text-gray-800 hover:bg-gray-50"
                                                                 >
-                                                                    <Plus className="h-4 w-4" />
-                                                                    Use This Template
-                                                                    <ArrowRight className="h-4 w-4 ml-auto opacity-40 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-200" />
+                                                                    <Plus className="h-3.5 w-3.5" />
+                                                                    Use
                                                                 </button>
                                                             </div>
 
@@ -892,6 +944,14 @@ function CustomSelect({ value, onChange, options, className = "" }) {
     );
 }
 
+function renderTemplateText(text) {
+    return String(text || '').split(/(\{\{\d+\}\})/g).map((part, index) => (
+        /\{\{\d+\}\}/.test(part)
+            ? <span key={`${part}-${index}`} className="font-semibold text-[#2d7d0b]">{part}</span>
+            : part
+    ));
+}
+
 function ViewTemplateModal({ template, onClose, onAddToMyTemplates }) {
     if (!template) return null;
 
@@ -917,11 +977,11 @@ function ViewTemplateModal({ template, onClose, onAddToMyTemplates }) {
                             headerMediaUrl ? (
                                 <img src={headerMediaUrl} alt="Template header" className="w-full h-32 object-cover rounded mb-2 bg-gray-100" />
                             ) : (
-                                <div className="h-32 bg-gray-200 rounded mb-2 flex flex-col items-center justify-center text-gray-400 text-center px-3">
-                                    <ImageIcon className="h-8 w-8" />
-                                    <span className="text-[10px] mt-1 tracking-wider uppercase">Image Header</span>
-                                    <span className="text-[10px] mt-1 normal-case tracking-normal">Meta keeps this as approval sample. Add media when sending.</span>
-                                </div>
+                                <img
+                                    src="/images/Image-Placeholder.jpg"
+                                    alt="Template image placeholder"
+                                    className="mb-2 h-32 w-full rounded bg-gray-100 object-cover"
+                                />
                             )
                         )}
                         {headerComp?.format === 'VIDEO' && (

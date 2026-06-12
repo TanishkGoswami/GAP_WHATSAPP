@@ -90,8 +90,10 @@ export default function WhatsAppConnect() {
             list.filter(acc => acc.connection_type === 'meta_cloud_api' || acc.whatsapp_business_account_id)
                 .slice(0, 3)
                 .forEach(acc => runAccountDiagnostics(acc.id, { silent: true }))
+            return list
         } catch {
             setAccounts([])
+            return []
         } finally {
             setLoadingAccounts(false)
         }
@@ -149,10 +151,23 @@ export default function WhatsAppConnect() {
             const data = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(data.error || 'Connection failed')
             setEmbedStatus('saved')
+            setEmbedError('')
+            if (Array.isArray(data.accounts) && data.accounts.length > 0) {
+                setAccounts(prev => mergeAccounts(prev, data.accounts))
+            }
             await fetchAccounts()
             await fetchBilling()
             setTimeout(() => setEmbedStatus('idle'), 5000)
         } catch (err) {
+            const refreshedAccounts = await fetchAccounts()
+            await fetchBilling()
+            const hasConnectedMetaAccount = refreshedAccounts.some(acc => acc.connection_type === 'meta_cloud_api' || acc.whatsapp_business_account_id)
+            if (hasConnectedMetaAccount && String(err.message || '').toLowerCase().includes('limit reached')) {
+                setEmbedError('')
+                setEmbedStatus('saved')
+                setTimeout(() => setEmbedStatus('idle'), 5000)
+                return
+            }
             setEmbedError(err.message || 'Connection failed')
             setEmbedStatus('error')
         }
@@ -579,6 +594,15 @@ export default function WhatsAppConnect() {
             </section>
         </div>
     )
+}
+
+function mergeAccounts(currentAccounts, incomingAccounts) {
+    const byId = new Map(currentAccounts.map(account => [account.id, account]))
+    incomingAccounts.forEach(account => {
+        if (!account?.id) return
+        byId.set(account.id, { ...byId.get(account.id), ...account })
+    })
+    return Array.from(byId.values()).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
 }
 
 function GuideCard({ icon: Icon, title, items }) {

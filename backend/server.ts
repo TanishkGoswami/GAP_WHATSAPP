@@ -641,6 +641,39 @@ async function enforcePlanResourceLimit(params: {
     return { allowed: true, limit, used, plan: planInfo };
 }
 
+async function enforceWhatsAppCloudNumberLimit(organizationId: string, phoneNumberId: string) {
+    const { data: existingAccount, error: existingAccountErr } = await supabase
+        .from('w_wa_accounts')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('phone_number_id', phoneNumberId)
+        .maybeSingle();
+    if (existingAccountErr) throw existingAccountErr;
+    if (existingAccount?.id) return existingAccount;
+
+    const planInfo = await getOrganizationPlanLimits(organizationId);
+    const limit = Number(planInfo.limits?.numbers ?? -1);
+    if (limit < 0) return null;
+
+    const { count, error } = await supabase
+        .from('w_wa_accounts')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .in('status', ['connected', 'active'])
+        .not('whatsapp_business_account_id', 'is', null);
+    if (error) throw error;
+
+    const used = Number(count || 0);
+    if (used >= limit) {
+        const err: any = new Error(`WhatsApp number limit reached for ${planInfo.plan_name} plan (${used}/${limit}). Upgrade your plan to add more.`);
+        err.statusCode = 402;
+        err.limit = { resource: 'numbers', used, limit, plan: planInfo };
+        throw err;
+    }
+
+    return null;
+}
+
 const UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -2369,23 +2402,7 @@ app.post("/api/wa/connect/callback", authMiddleware, async (req: any, res) => {
                     const phone_number_id = item.id;
                     const display_phone_number = item.display_phone_number;
 
-                    const { data: existingAccount, error: existingAccountErr } = await supabase
-                        .from('w_wa_accounts')
-                        .select('id')
-                        .eq('organization_id', targetOrgId)
-                        .eq('phone_number_id', phone_number_id)
-                        .maybeSingle();
-                    if (existingAccountErr) throw existingAccountErr;
-
-                    if (!existingAccount?.id) {
-                        await enforcePlanResourceLimit({
-                            organization_id: targetOrgId,
-                            resource: 'numbers',
-                            table: 'w_wa_accounts',
-                            filters: { status: ['connected', 'active'] },
-                            label: 'WhatsApp number',
-                        });
-                    }
+                    await enforceWhatsAppCloudNumberLimit(targetOrgId, phone_number_id);
 
                     // Insert or Update in wa_accounts
                     const { data, error } = await supabase.from('w_wa_accounts').upsert({
@@ -7251,23 +7268,7 @@ app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
         const resolvedName = verifyData.verified_name || name || 'WhatsApp Business API';
         const normalizedPhoneNumberId = String(phone_number_id).trim();
 
-        const { data: existingAccount, error: existingAccountErr } = await supabase
-            .from('w_wa_accounts')
-            .select('id')
-            .eq('organization_id', orgId)
-            .eq('phone_number_id', normalizedPhoneNumberId)
-            .maybeSingle();
-        if (existingAccountErr) throw existingAccountErr;
-
-        if (!existingAccount?.id) {
-            await enforcePlanResourceLimit({
-                organization_id: orgId,
-                resource: 'numbers',
-                table: 'w_wa_accounts',
-                filters: { status: ['connected', 'active'] },
-                label: 'WhatsApp number',
-            });
-        }
+        await enforceWhatsAppCloudNumberLimit(orgId, normalizedPhoneNumberId);
 
         // Upsert the account (token is AES-256 encrypted before storage)
         const { data, error } = await supabase

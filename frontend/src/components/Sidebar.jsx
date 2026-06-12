@@ -61,8 +61,8 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
     const [selectedWaAccount, setSelectedWaAccount] = useState(() => localStorage.getItem(SELECTED_WA_ACCOUNT_KEY) || 'All')
 
     const isOwner = userRole === 'owner'
-    const isLiveChat = location.pathname.startsWith('/live-chat')
-    const isCollapsed = isLiveChat && !isHovered && !isOrgMenuOpen && !isAccountMenuOpen
+    const usesCompactSidebar = location.pathname.startsWith('/live-chat') || location.pathname.startsWith('/templates/industries')
+    const isCollapsed = usesCompactSidebar && !isHovered && !isOrgMenuOpen && !isAccountMenuOpen
     const isExpanded = !isCollapsed
     const displayName = memberProfile?.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Account'
     const userEmail = memberProfile?.email || user?.email || ''
@@ -131,12 +131,12 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
 
     return (
         <>
-            <div className={clsx('relative hidden h-full shrink-0 transition-[width] duration-200 ease-out md:block', isLiveChat ? COLLAPSED_WIDTH : EXPANDED_WIDTH)}>
+            <div className={clsx('relative hidden h-full shrink-0 transition-[width] duration-200 ease-out md:block', usesCompactSidebar ? COLLAPSED_WIDTH : EXPANDED_WIDTH)}>
                 <aside
                     onMouseEnter={() => setIsHovered(true)}
                     onMouseLeave={() => {
                         setIsHovered(false)
-                        if (isLiveChat) closeMenus()
+                        if (usesCompactSidebar) closeMenus()
                     }}
                     className={clsx(
                         'absolute inset-y-0 left-0 z-40 flex flex-col border-r border-gray-200 bg-white transition-[width] duration-200 ease-out',
