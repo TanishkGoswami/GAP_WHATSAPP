@@ -5,15 +5,6 @@ export const BILLING_INTERVALS = [
 
 export const FALLBACK_PLANS = [
     {
-        id: 'free',
-        name: 'Free',
-        description: 'Trial workspace for testing WhatsApp chat and basic automation.',
-        monthly_price_paise: 0,
-        yearly_price_paise: 0,
-        limits: { numbers: 1, contacts: 200, agents: 1, flows: 2, ai_agents: 0, broadcasts_per_month: 0, allow_broadcasts: false, allow_scheduling: false, allow_api_webhooks: false, allow_exports: false },
-        features: ['1 WhatsApp number', '200 contacts', '1 team member', '2 basic flows', 'Live chat access'],
-    },
-    {
         id: 'starter',
         name: 'Starter',
         description: 'Simple WhatsApp workspace for small shops and service businesses.',

@@ -140,6 +140,190 @@ function buildMetaEmbeddedSignupUrl() {
 
 type WhatsappBillingCategory = 'marketing' | 'utility' | 'authentication' | 'service';
 
+type TemplateValidationIssue = {
+    code: string;
+    severity: 'error' | 'warning';
+    message: string;
+    field?: string;
+};
+
+const TEMPLATE_CATEGORIES = new Set(['MARKETING', 'UTILITY', 'AUTHENTICATION']);
+const TEMPLATE_HEADER_FORMATS = new Set(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT']);
+const TEMPLATE_LANG_RE = /^[a-z]{2}(?:_[A-Z]{2})?$/;
+const PROMOTIONAL_WORD_RE = /\b(discount|offer|sale|deal|promo|coupon|cashback|free|limited time|buy now|save|off|exclusive|hurry|register now|enroll now|launch|upgrade)\b/i;
+const OTP_WORD_RE = /\b(otp|one[-\s]?time|verification code|verify|login code|security code|passcode|authentication)\b/i;
+
+function extractTemplateVariables(text: string) {
+    return [...String(text || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map(match => Number(match[1]));
+}
+
+function getBodyExampleValues(component: any): string[] {
+    const bodyText = component?.example?.body_text;
+    if (Array.isArray(bodyText?.[0])) return bodyText[0].map((value: any) => String(value ?? ''));
+    if (Array.isArray(bodyText)) return bodyText.map((value: any) => String(value ?? ''));
+    return [];
+}
+
+function hasHeaderMediaExample(component: any) {
+    const example = component?.example || {};
+    return Boolean(
+        example.header_handle?.[0]
+        || example.header_url?.[0]
+    );
+}
+
+function validateVariableSequence(text: string, sampleValues: string[], field: string, issues: TemplateValidationIssue[]) {
+    const vars = [...new Set(extractTemplateVariables(text))].sort((a, b) => a - b);
+    if (!vars.length) return;
+
+    for (let index = 1; index <= vars[vars.length - 1]; index += 1) {
+        if (!vars.includes(index)) {
+            issues.push({
+                code: 'VARIABLE_SEQUENCE_GAP',
+                severity: 'error',
+                field,
+                message: `Variables must be sequential. Add {{${index}}} or renumber the placeholders.`,
+            });
+        }
+    }
+
+    vars.forEach(variable => {
+        const sample = sampleValues[variable - 1];
+        if (!String(sample || '').trim()) {
+            issues.push({
+                code: 'VARIABLE_SAMPLE_REQUIRED',
+                severity: 'error',
+                field,
+                message: `Sample value is required for {{${variable}}}.`,
+            });
+        }
+    });
+
+    if (/^\s*\{\{\s*\d+\s*\}\}/.test(text) || /\{\{\s*\d+\s*\}\}\s*$/.test(text)) {
+        issues.push({
+            code: 'VARIABLE_AT_EDGE',
+            severity: 'error',
+            field,
+            message: 'Do not start or end a template field with a variable. Add clear fixed text around it.',
+        });
+    }
+}
+
+function validateWhatsappTemplatePayload(payload: any) {
+    const issues: TemplateValidationIssue[] = [];
+    const normalized = {
+        name: String(payload?.name || '').trim().toLowerCase(),
+        category: String(payload?.category || '').trim().toUpperCase(),
+        language: String(payload?.language || 'en_US').trim(),
+        components: Array.isArray(payload?.components) ? payload.components : [],
+    };
+
+    if (!/^[a-z0-9_]{1,512}$/.test(normalized.name)) {
+        issues.push({ code: 'INVALID_NAME', severity: 'error', field: 'name', message: 'Template name must use lowercase letters, numbers, and underscores only.' });
+    }
+    if (!TEMPLATE_CATEGORIES.has(normalized.category)) {
+        issues.push({ code: 'INVALID_CATEGORY', severity: 'error', field: 'category', message: 'Category must be MARKETING, UTILITY, or AUTHENTICATION.' });
+    }
+    if (!TEMPLATE_LANG_RE.test(normalized.language)) {
+        issues.push({ code: 'INVALID_LANGUAGE', severity: 'error', field: 'language', message: 'Use a WhatsApp language code like en_US or hi.' });
+    }
+
+    const components = normalized.components;
+    const body = components.find((component: any) => component?.type === 'BODY');
+    const headers = components.filter((component: any) => component?.type === 'HEADER');
+    const footers = components.filter((component: any) => component?.type === 'FOOTER');
+    const buttonsComp = components.find((component: any) => component?.type === 'BUTTONS');
+    const allText = components.map((component: any) => [component?.text, ...(component?.buttons || []).map((button: any) => button?.text)].filter(Boolean).join(' ')).join(' ');
+
+    if (!body?.text?.trim()) {
+        issues.push({ code: 'BODY_REQUIRED', severity: 'error', field: 'body', message: 'Body text is required.' });
+    } else {
+        const bodyText = String(body.text);
+        if (bodyText.length > 1024) {
+            issues.push({ code: 'BODY_TOO_LONG', severity: 'error', field: 'body', message: 'Body text must be 1024 characters or less.' });
+        }
+        validateVariableSequence(bodyText, getBodyExampleValues(body), 'body', issues);
+    }
+
+    if (headers.length > 1) {
+        issues.push({ code: 'MULTIPLE_HEADERS', severity: 'error', field: 'header', message: 'Only one header component is allowed.' });
+    }
+    if (headers[0]) {
+        const header = headers[0];
+        if (!TEMPLATE_HEADER_FORMATS.has(String(header.format || ''))) {
+            issues.push({ code: 'INVALID_HEADER_FORMAT', severity: 'error', field: 'header', message: 'Header must be TEXT, IMAGE, VIDEO, or DOCUMENT.' });
+        }
+        if (header.format === 'TEXT') {
+            if (!String(header.text || '').trim()) issues.push({ code: 'HEADER_TEXT_REQUIRED', severity: 'error', field: 'header', message: 'Text header requires text.' });
+            if (String(header.text || '').length > 60) issues.push({ code: 'HEADER_TOO_LONG', severity: 'error', field: 'header', message: 'Text header must be 60 characters or less.' });
+            const headerVars = extractTemplateVariables(header.text || '');
+            if (headerVars.length > 1) issues.push({ code: 'HEADER_TOO_MANY_VARIABLES', severity: 'error', field: 'header', message: 'Text header supports at most one variable.' });
+            validateVariableSequence(String(header.text || ''), header.example?.header_text || [], 'header', issues);
+        } else if (!hasHeaderMediaExample(header)) {
+            issues.push({ code: 'HEADER_MEDIA_SAMPLE_REQUIRED', severity: 'error', field: 'header', message: `${header.format} header requires an uploaded sample before Meta review.` });
+        }
+    }
+
+    if (footers.length > 1) {
+        issues.push({ code: 'MULTIPLE_FOOTERS', severity: 'error', field: 'footer', message: 'Only one footer component is allowed.' });
+    }
+    if (footers[0]?.text) {
+        if (String(footers[0].text).length > 60) issues.push({ code: 'FOOTER_TOO_LONG', severity: 'error', field: 'footer', message: 'Footer must be 60 characters or less.' });
+        if (extractTemplateVariables(footers[0].text).length) issues.push({ code: 'FOOTER_VARIABLES_NOT_ALLOWED', severity: 'error', field: 'footer', message: 'Footer cannot contain variables.' });
+    }
+
+    const buttons = Array.isArray(buttonsComp?.buttons) ? buttonsComp.buttons : [];
+    if (buttons.length > 10) issues.push({ code: 'TOO_MANY_BUTTONS', severity: 'error', field: 'buttons', message: 'Templates support up to 10 buttons.' });
+    const urlButtons = buttons.filter((button: any) => button?.type === 'URL');
+    const phoneButtons = buttons.filter((button: any) => button?.type === 'PHONE_NUMBER');
+    const quickButtons = buttons.filter((button: any) => button?.type === 'QUICK_REPLY');
+    if (urlButtons.length > 2) issues.push({ code: 'TOO_MANY_URL_BUTTONS', severity: 'error', field: 'buttons', message: 'Use at most two URL buttons.' });
+    if (phoneButtons.length > 1) issues.push({ code: 'TOO_MANY_PHONE_BUTTONS', severity: 'error', field: 'buttons', message: 'Use at most one phone button.' });
+    if (quickButtons.length > 10) issues.push({ code: 'TOO_MANY_QUICK_REPLY_BUTTONS', severity: 'error', field: 'buttons', message: 'Use at most ten quick reply buttons.' });
+
+    buttons.forEach((button: any, index: number) => {
+        const label = String(button?.text || '').trim();
+        if (!label) issues.push({ code: 'BUTTON_TEXT_REQUIRED', severity: 'error', field: `buttons.${index}`, message: 'Button text is required.' });
+        if (label.length > 25) issues.push({ code: 'BUTTON_TEXT_TOO_LONG', severity: 'error', field: `buttons.${index}`, message: 'Button text must be 25 characters or less.' });
+        if (button?.type === 'URL') {
+            const url = String(button.url || '').trim();
+            if (!/^https?:\/\/.+/i.test(url)) issues.push({ code: 'INVALID_BUTTON_URL', severity: 'error', field: `buttons.${index}.url`, message: 'URL button must start with http:// or https://.' });
+            const vars = extractTemplateVariables(url);
+            if (vars.length > 1 || (vars.length === 1 && !/\{\{\s*\d+\s*\}\}\s*$/.test(url))) {
+                issues.push({ code: 'INVALID_DYNAMIC_URL', severity: 'error', field: `buttons.${index}.url`, message: 'Dynamic URL can contain one variable, and it must be at the end of the URL.' });
+            }
+        }
+        if (button?.type === 'PHONE_NUMBER' && !/^\+[1-9]\d{7,14}$/.test(String(button.phone_number || ''))) {
+            issues.push({ code: 'INVALID_PHONE_BUTTON', severity: 'error', field: `buttons.${index}.phone_number`, message: 'Phone button must use E.164 format, for example +919999999999.' });
+        }
+        if (!['QUICK_REPLY', 'URL', 'PHONE_NUMBER', 'COPY_CODE', 'OTP'].includes(String(button?.type || ''))) {
+            issues.push({ code: 'INVALID_BUTTON_TYPE', severity: 'error', field: `buttons.${index}.type`, message: 'Unsupported button type.' });
+        }
+    });
+
+    if (normalized.category === 'UTILITY' && PROMOTIONAL_WORD_RE.test(allText)) {
+        issues.push({ code: 'UTILITY_PROMOTIONAL_CONTENT', severity: 'error', field: 'category', message: 'Utility templates cannot include promotional language. Use Marketing for offers, discounts, sales, or acquisition CTAs.' });
+    }
+    if (normalized.category !== 'AUTHENTICATION' && OTP_WORD_RE.test(allText)) {
+        issues.push({ code: 'OTP_REQUIRES_AUTHENTICATION', severity: 'error', field: 'category', message: 'OTP or verification-code content must use the Authentication category.' });
+    }
+    if (normalized.category === 'AUTHENTICATION') {
+        if (headers.length || footers.length) issues.push({ code: 'AUTH_NO_HEADER_FOOTER', severity: 'error', field: 'components', message: 'Authentication templates should not include custom headers or footers.' });
+        if (PROMOTIONAL_WORD_RE.test(allText)) issues.push({ code: 'AUTH_PROMOTIONAL_CONTENT', severity: 'error', field: 'body', message: 'Authentication templates cannot contain promotional language.' });
+        const authVars = body?.text ? getBodyExampleValues(body) : [];
+        if (!extractTemplateVariables(body?.text || '').length) issues.push({ code: 'AUTH_VARIABLE_REQUIRED', severity: 'error', field: 'body', message: 'Authentication templates require an OTP variable such as {{1}}.' });
+        if (authVars.some(value => String(value || '').length > 15)) issues.push({ code: 'AUTH_SAMPLE_TOO_LONG', severity: 'error', field: 'body', message: 'Authentication sample values must be 15 characters or less.' });
+        if (!OTP_WORD_RE.test(allText)) issues.push({ code: 'AUTH_OTP_WORDING_REQUIRED', severity: 'warning', field: 'body', message: 'Authentication templates should clearly describe a verification code.' });
+    }
+
+    const errorCount = issues.filter(issue => issue.severity === 'error').length;
+    const warningCount = issues.filter(issue => issue.severity === 'warning').length;
+    const riskScore = Math.min(100, errorCount * 35 + warningCount * 12);
+    const approvalState = errorCount > 0 ? 'blocked' : warningCount > 0 ? 'needs_review' : 'ready';
+
+    return { normalized, issues, riskScore, approvalState, canSubmit: errorCount === 0 };
+}
+
 function normalizeWhatsappBillingCategory(value: any, fallback: WhatsappBillingCategory = 'marketing'): WhatsappBillingCategory {
     const raw = String(value || '').toLowerCase().trim();
     if (raw.includes('utility')) return 'utility';
@@ -321,16 +505,18 @@ async function getOrganizationPlanLimits(organizationId: string) {
         .eq('id', organizationId)
         .maybeSingle();
 
-    const planId = org?.plan_id || 'free';
-    const { data: plan } = await supabase
-        .from('whatsapp_subscription_plans')
-        .select('id, name, limits')
-        .eq('id', planId)
-        .maybeSingle();
+    const planId = org?.plan_id || null;
+    const { data: plan } = planId
+        ? await supabase
+            .from('whatsapp_subscription_plans')
+            .select('id, name, limits')
+            .eq('id', planId)
+            .maybeSingle()
+        : { data: null };
 
     return {
         plan_id: plan?.id || planId,
-        plan_name: plan?.name || planId,
+        plan_name: plan?.name || 'No active plan',
         limits: plan?.limits || {},
     };
 }
@@ -455,6 +641,39 @@ async function enforcePlanResourceLimit(params: {
     return { allowed: true, limit, used, plan: planInfo };
 }
 
+async function enforceWhatsAppCloudNumberLimit(organizationId: string, phoneNumberId: string) {
+    const { data: existingAccount, error: existingAccountErr } = await supabase
+        .from('w_wa_accounts')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('phone_number_id', phoneNumberId)
+        .maybeSingle();
+    if (existingAccountErr) throw existingAccountErr;
+    if (existingAccount?.id) return existingAccount;
+
+    const planInfo = await getOrganizationPlanLimits(organizationId);
+    const limit = Number(planInfo.limits?.numbers ?? -1);
+    if (limit < 0) return null;
+
+    const { count, error } = await supabase
+        .from('w_wa_accounts')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
+        .in('status', ['connected', 'active'])
+        .not('whatsapp_business_account_id', 'is', null);
+    if (error) throw error;
+
+    const used = Number(count || 0);
+    if (used >= limit) {
+        const err: any = new Error(`WhatsApp number limit reached for ${planInfo.plan_name} plan (${used}/${limit}). Upgrade your plan to add more.`);
+        err.statusCode = 402;
+        err.limit = { resource: 'numbers', used, limit, plan: planInfo };
+        throw err;
+    }
+
+    return null;
+}
+
 const UPLOADS_DIR = path.resolve(process.cwd(), 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -519,7 +738,7 @@ async function inspectMetaTokenPermissions(token: string) {
     const appId = process.env.META_APP_ID;
     const appSecret = process.env.META_APP_SECRET;
     if (!appId || !appSecret || !token) {
-        return { checked: false, missingScopes: [], scopes: [], error: null };
+        return { checked: false, is_valid: null, expires_at: null, missingScopes: [], scopes: [], error: null };
     }
 
     try {
@@ -529,6 +748,8 @@ async function inspectMetaTokenPermissions(token: string) {
         if (!response.ok || data.error) {
             return {
                 checked: true,
+                is_valid: false,
+                expires_at: null,
                 missingScopes: [],
                 scopes: [],
                 error: data.error?.message || 'Unable to inspect Meta token'
@@ -538,10 +759,53 @@ async function inspectMetaTokenPermissions(token: string) {
         const scopes = Array.isArray(data.data?.scopes) ? data.data.scopes : [];
         const requiredScopes = ['whatsapp_business_messaging', 'whatsapp_business_management'];
         const missingScopes = requiredScopes.filter(scope => !scopes.includes(scope));
-        return { checked: true, missingScopes, scopes, error: null };
+        return {
+            checked: true,
+            is_valid: data.data?.is_valid ?? null,
+            expires_at: data.data?.expires_at || null,
+            missingScopes,
+            scopes,
+            error: data.data?.is_valid === false ? 'Meta access token is no longer valid.' : null
+        };
     } catch (err: any) {
-        return { checked: true, missingScopes: [], scopes: [], error: err.message || 'Unable to inspect Meta token' };
+        return { checked: true, is_valid: null, expires_at: null, missingScopes: [], scopes: [], error: err.message || 'Unable to inspect Meta token' };
     }
+}
+
+function getMetaIssueCode(error: any) {
+    const message = String(error?.message || error?.error_user_msg || '').toLowerCase();
+    const code = Number(error?.code);
+    const subcode = Number(error?.error_subcode);
+
+    if (
+        code === 190 ||
+        subcode === 463 ||
+        subcode === 467 ||
+        message.includes('session has expired') ||
+        message.includes('error validating access token') ||
+        message.includes('access token has expired')
+    ) {
+        return 'token_expired';
+    }
+
+    if (code === 10 || code === 200 || message.includes('permission')) return 'permission_missing';
+    return 'meta_access_error';
+}
+
+function addDiagnosticIssue(diagnostics: any, code: string, message: string, metaError?: any) {
+    diagnostics.issue_codes = Array.isArray(diagnostics.issue_codes) ? diagnostics.issue_codes : [];
+    diagnostics.issues = Array.isArray(diagnostics.issues) ? diagnostics.issues : [];
+
+    if (!diagnostics.issue_codes.includes(code)) diagnostics.issue_codes.push(code);
+    if (!diagnostics.issues.includes(message)) diagnostics.issues.push(message);
+
+    if (code === 'token_expired') diagnostics.reconnect_required = true;
+    if (metaError) diagnostics.meta_errors.push({
+        code: metaError.code || null,
+        subcode: metaError.error_subcode || null,
+        type: metaError.type || null,
+        fbtrace_id: metaError.fbtrace_id || null
+    });
 }
 
 function getMetaSendErrorMessage(error: any) {
@@ -618,18 +882,32 @@ async function getMetaAccountDiagnostics(account: any) {
         token_permissions: null,
         phone_number_access: null,
         waba_access: null,
+        issue_codes: [],
+        reconnect_required: false,
+        meta_errors: [],
         send_ready: false,
         issues: []
     };
 
     if (!token) {
-        diagnostics.issues.push('Missing Meta access token. Reconnect this account.');
+        addDiagnosticIssue(diagnostics, 'token_missing', 'Missing Meta access token. Reconnect this account.');
         return diagnostics;
     }
 
     diagnostics.token_permissions = await inspectMetaTokenPermissions(token);
+    if (diagnostics.token_permissions?.is_valid === false) {
+        addDiagnosticIssue(
+            diagnostics,
+            'token_expired',
+            'Meta access token expired. Reconnect this WhatsApp number from Connect with Meta to restore sending, templates, and profile access.'
+        );
+    }
     if (diagnostics.token_permissions?.missingScopes?.length) {
-        diagnostics.issues.push(`Token missing permission(s): ${diagnostics.token_permissions.missingScopes.join(', ')}`);
+        addDiagnosticIssue(
+            diagnostics,
+            'permission_missing',
+            `Token missing permission(s): ${diagnostics.token_permissions.missingScopes.join(', ')}`
+        );
     }
 
     if (account?.phone_number_id) {
@@ -638,13 +916,21 @@ async function getMetaAccountDiagnostics(account: any) {
             const phoneJson: any = await phoneRes.json();
             diagnostics.phone_number_access = phoneJson;
             if (!phoneRes.ok || phoneJson.error) {
-                diagnostics.issues.push(`Token cannot access phone number ${account.phone_number_id}: ${phoneJson.error?.message || 'Unknown Meta error'}`);
+                const issueCode = getMetaIssueCode(phoneJson.error);
+                addDiagnosticIssue(
+                    diagnostics,
+                    issueCode === 'token_expired' ? issueCode : 'phone_access_denied',
+                    issueCode === 'token_expired'
+                        ? 'Meta access token expired. Reconnect this WhatsApp number from Connect with Meta to restore sending, templates, and profile access.'
+                        : `Token cannot access phone number ${account.phone_number_id}: ${phoneJson.error?.message || 'Unknown Meta error'}`,
+                    phoneJson.error
+                );
             }
         } catch (err: any) {
-            diagnostics.issues.push(`Could not validate phone number access: ${err.message}`);
+            addDiagnosticIssue(diagnostics, 'phone_access_check_failed', `Could not validate phone number access: ${err.message}`);
         }
     } else {
-        diagnostics.issues.push('Missing phone_number_id on this account.');
+        addDiagnosticIssue(diagnostics, 'phone_number_missing', 'Missing phone_number_id on this account.');
     }
 
     if (account?.whatsapp_business_account_id) {
@@ -653,15 +939,23 @@ async function getMetaAccountDiagnostics(account: any) {
             const wabaJson: any = await wabaRes.json();
             diagnostics.waba_access = wabaJson;
             if (!wabaRes.ok || wabaJson.error) {
-                diagnostics.issues.push(`Token cannot access WABA ${account.whatsapp_business_account_id}: ${wabaJson.error?.message || 'Unknown Meta error'}`);
+                const issueCode = getMetaIssueCode(wabaJson.error);
+                addDiagnosticIssue(
+                    diagnostics,
+                    issueCode === 'token_expired' ? issueCode : 'waba_access_denied',
+                    issueCode === 'token_expired'
+                        ? 'Meta access token expired. Reconnect this WhatsApp number from Connect with Meta to restore sending, templates, and profile access.'
+                        : `Token cannot access WABA ${account.whatsapp_business_account_id}: ${wabaJson.error?.message || 'Unknown Meta error'}`,
+                    wabaJson.error
+                );
             } else if (account?.phone_number_id && !wabaJson.data?.some((phone: any) => String(phone.id) === String(account.phone_number_id))) {
-                diagnostics.issues.push(`Phone number ${account.phone_number_id} was not found inside WABA ${account.whatsapp_business_account_id} for this token.`);
+                addDiagnosticIssue(diagnostics, 'phone_not_in_waba', `Phone number ${account.phone_number_id} was not found inside WABA ${account.whatsapp_business_account_id} for this token.`);
             }
         } catch (err: any) {
-            diagnostics.issues.push(`Could not validate WABA phone list: ${err.message}`);
+            addDiagnosticIssue(diagnostics, 'waba_access_check_failed', `Could not validate WABA phone list: ${err.message}`);
         }
     } else {
-        diagnostics.issues.push('Missing whatsapp_business_account_id on this account.');
+        addDiagnosticIssue(diagnostics, 'waba_missing', 'Missing whatsapp_business_account_id on this account.');
     }
 
     diagnostics.send_ready = diagnostics.issues.length === 0;
@@ -1130,11 +1424,11 @@ app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
             }));
         const messageCharges = usageLogCharges.length ? usageLogCharges : legacyMessageDebitCharges;
 
-        const planId = orgResult.data?.plan_id || 'free';
-        const currentPlan = plans.find((plan: any) => plan.id === planId) || plans.find((plan: any) => plan.id === 'free') || null;
+        const planId = orgResult.data?.plan_id || null;
+        const currentPlan = planId ? plans.find((plan: any) => plan.id === planId) || null : null;
 
         res.json({
-            organization: orgResult.data || { id: orgId, plan_id: 'free', plan_status: 'active' },
+            organization: orgResult.data || { id: orgId, plan_id: null, plan_status: 'inactive' },
             current_plan: currentPlan,
             plans,
             wallet: walletData || {
@@ -2111,23 +2405,7 @@ app.post("/api/wa/connect/callback", authMiddleware, async (req: any, res) => {
                     const phone_number_id = item.id;
                     const display_phone_number = item.display_phone_number;
 
-                    const { data: existingAccount, error: existingAccountErr } = await supabase
-                        .from('w_wa_accounts')
-                        .select('id')
-                        .eq('organization_id', targetOrgId)
-                        .eq('phone_number_id', phone_number_id)
-                        .maybeSingle();
-                    if (existingAccountErr) throw existingAccountErr;
-
-                    if (!existingAccount?.id) {
-                        await enforcePlanResourceLimit({
-                            organization_id: targetOrgId,
-                            resource: 'numbers',
-                            table: 'w_wa_accounts',
-                            filters: { status: ['connected', 'active'] },
-                            label: 'WhatsApp number',
-                        });
-                    }
+                    await enforceWhatsAppCloudNumberLimit(targetOrgId, phone_number_id);
 
                     // Insert or Update in wa_accounts
                     const { data, error } = await supabase.from('w_wa_accounts').upsert({
@@ -6993,23 +7271,7 @@ app.post('/api/whatsapp/accounts/meta', authMiddleware, async (req, res) => {
         const resolvedName = verifyData.verified_name || name || 'WhatsApp Business API';
         const normalizedPhoneNumberId = String(phone_number_id).trim();
 
-        const { data: existingAccount, error: existingAccountErr } = await supabase
-            .from('w_wa_accounts')
-            .select('id')
-            .eq('organization_id', orgId)
-            .eq('phone_number_id', normalizedPhoneNumberId)
-            .maybeSingle();
-        if (existingAccountErr) throw existingAccountErr;
-
-        if (!existingAccount?.id) {
-            await enforcePlanResourceLimit({
-                organization_id: orgId,
-                resource: 'numbers',
-                table: 'w_wa_accounts',
-                filters: { status: ['connected', 'active'] },
-                label: 'WhatsApp number',
-            });
-        }
+        await enforceWhatsAppCloudNumberLimit(orgId, normalizedPhoneNumberId);
 
         // Upsert the account (token is AES-256 encrypted before storage)
         const { data, error } = await supabase
@@ -7154,6 +7416,104 @@ app.patch('/api/whatsapp/accounts/:id/business-profile', authMiddleware, upload.
 
 // ====== Templates API Connection ======
 
+function normalizeMetaTemplateStatus(status: any) {
+    const value = String(status || 'PENDING').toUpperCase();
+    if (value.includes('APPROVED') || value === 'ACTIVE' || value === 'ACTIVE - QUALITY PENDING') return 'APPROVED';
+    if (value.includes('REJECT')) return 'REJECTED';
+    if (value.includes('PAUSE')) return 'PAUSED';
+    if (value.includes('DISABLE')) return 'DISABLED';
+    if (value.includes('PENDING') || value.includes('IN_APPEAL')) return 'PENDING';
+    return value;
+}
+
+function mergeTemplateRows(metaRows: any[], localRows: any[]) {
+    const byKey = new Map<string, any>();
+    for (const row of localRows || []) {
+        const key = `${String(row.name || '').toLowerCase()}::${String(row.language || 'en_US')}`;
+        byKey.set(key, {
+            id: row.template_id || row.id,
+            local_id: row.id,
+            name: row.name,
+            language: row.language,
+            category: row.category,
+            status: normalizeMetaTemplateStatus(row.status),
+            quality_score: row.quality_score,
+            rejected_reason: row.rejection_reason,
+            components: row.components || row.normalized_payload?.components || [],
+            validation_issues: row.validation_issues || [],
+            risk_score: row.risk_score || 0,
+            submitted_at: row.submitted_at,
+            last_updated: row.updated_at,
+            source: 'local',
+        });
+    }
+    for (const row of metaRows || []) {
+        const key = `${String(row.name || '').toLowerCase()}::${String(row.language || 'en_US')}`;
+        const local = byKey.get(key) || {};
+        byKey.set(key, {
+            ...local,
+            ...row,
+            id: row.id || local.id,
+            status: normalizeMetaTemplateStatus(row.status),
+            quality_score: row.quality_score || row.quality || local.quality_score,
+            rejected_reason: row.rejected_reason || row.reason || local.rejected_reason,
+            source: local.local_id ? 'meta+local' : 'meta',
+        });
+    }
+    return [...byKey.values()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+async function upsertLocalTemplateSubmission(params: {
+    organization_id: string;
+    wa_account_id?: string | null;
+    waba_id?: string | null;
+    template_id?: string | null;
+    name: string;
+    language: string;
+    category: string;
+    status: string;
+    quality_score?: string | null;
+    rejection_reason?: string | null;
+    components?: any[];
+    normalized_payload?: any;
+    validation_issues?: TemplateValidationIssue[];
+    risk_score?: number;
+    meta_response?: any;
+    submitted_by?: string | null;
+    submitted_at?: string | null;
+}) {
+    const status = normalizeMetaTemplateStatus(params.status);
+    const now = new Date().toISOString();
+    const payload: any = {
+        organization_id: params.organization_id,
+        wa_account_id: params.wa_account_id || null,
+        waba_id: params.waba_id || null,
+        template_id: params.template_id || null,
+        name: params.name,
+        language: params.language || 'en_US',
+        category: String(params.category || 'MARKETING').toUpperCase(),
+        status,
+        quality_score: params.quality_score || null,
+        rejection_reason: params.rejection_reason || null,
+        components: params.components || params.normalized_payload?.components || [],
+        normalized_payload: params.normalized_payload || {},
+        validation_issues: params.validation_issues || [],
+        risk_score: Number(params.risk_score || 0),
+        meta_response: params.meta_response || {},
+        submitted_by: params.submitted_by || null,
+        submitted_at: params.submitted_at || (status === 'PENDING' ? now : null),
+        approved_at: status === 'APPROVED' ? now : null,
+        rejected_at: status === 'REJECTED' ? now : null,
+        last_synced_at: now,
+        updated_at: now,
+    };
+
+    const { error } = await supabase
+        .from('w_template_submissions')
+        .upsert(payload, { onConflict: 'organization_id,wa_account_id,name,language' });
+    if (error) console.warn('[Templates] Local cache upsert failed:', error.message);
+}
+
 // Get list of templates
 app.get('/api/whatsapp/templates', authMiddleware, async (req, res) => {
     const orgId = (req as any).organization_id;
@@ -7175,7 +7535,7 @@ app.get('/api/whatsapp/templates', authMiddleware, async (req, res) => {
         const token = decryptToken(account.access_token_encrypted);
         const waba_id = account.whatsapp_business_account_id;
 
-        const response = await fetch(`https://graph.facebook.com/v20.0/${waba_id}/message_templates`, {
+        const response = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?fields=id,name,language,status,category,components,quality_score,rejected_reason&limit=250`, {
             headers: { Authorization: `Bearer ${token}` }
         });
         const json = await response.json();
@@ -7184,10 +7544,45 @@ app.get('/api/whatsapp/templates', authMiddleware, async (req, res) => {
             console.error('Meta API Error:', json);
             return res.status(response.status).json({ error: json.error?.message || 'Failed to fetch templates from Meta' });
         }
-        res.json(json.data || []);
+        const metaTemplates = json.data || [];
+        await Promise.all(metaTemplates.map((template: any) => upsertLocalTemplateSubmission({
+            organization_id: orgId,
+            wa_account_id: account.id,
+            waba_id,
+            template_id: template.id || null,
+            name: template.name,
+            language: template.language || 'en_US',
+            category: template.category || 'MARKETING',
+            status: template.status || 'PENDING',
+            quality_score: template.quality_score || null,
+            rejection_reason: template.rejected_reason || template.reason || null,
+            components: template.components || [],
+            normalized_payload: template,
+            meta_response: template,
+        })));
+
+        const { data: localRows, error: localErr } = await supabase
+            .from('w_template_submissions')
+            .select('*')
+            .eq('organization_id', orgId)
+            .eq('wa_account_id', account.id);
+        if (localErr) console.warn('[Templates] Local cache read failed:', localErr.message);
+
+        res.json(mergeTemplateRows(metaTemplates, localRows || []));
     } catch (err: any) {
         console.error('Error fetching templates:', err);
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Validate Template
+app.post('/api/whatsapp/templates/validate', authMiddleware, async (req, res) => {
+    try {
+        const result = validateWhatsappTemplatePayload(req.body || {});
+        res.json(result);
+    } catch (err: any) {
+        console.error('Validate Template Error:', err);
+        res.status(500).json({ error: err.message || 'Template validation failed' });
     }
 });
 
@@ -7260,6 +7655,26 @@ app.post('/api/whatsapp/templates', authMiddleware, upload.single('file'), async
         }
 
         const payload = { name, category, language, components: parsedComponents };
+        const validation = validateWhatsappTemplatePayload(payload);
+        if (!validation.canSubmit) {
+            return res.status(400).json({
+                error: 'Template has approval-risk issues. Fix the highlighted fields before submitting to Meta.',
+                validation,
+            });
+        }
+
+        const existingRes = await fetch(
+            `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?name=${encodeURIComponent(validation.normalized.name)}&fields=id,name,language,status&limit=50`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const existingJson = await existingRes.json().catch(() => ({}));
+        if (existingRes.ok && Array.isArray(existingJson.data) && existingJson.data.some((tpl: any) => tpl.name === validation.normalized.name && tpl.language === validation.normalized.language)) {
+            return res.status(409).json({
+                error: `Template "${validation.normalized.name}" already exists for ${validation.normalized.language}. Use a new template name before submitting.`,
+                code: 'DUPLICATE_TEMPLATE_NAME',
+                suggested_name: `${validation.normalized.name}_${Date.now().toString().slice(-6)}`,
+            });
+        }
         console.log('[Template] Submitting to Meta:', JSON.stringify(payload, null, 2));
 
         const response = await fetch(`https://graph.facebook.com/v20.0/${waba_id}/message_templates`, {
@@ -7277,13 +7692,49 @@ app.post('/api/whatsapp/templates', authMiddleware, upload.single('file'), async
             const errMsg = json.error?.error_user_msg || json.error?.message || 'Template creation failed';
             const errSubcode = json.error?.error_subcode || json.error?.code || null;
             const errData = json.error?.error_data || null;
+            await upsertLocalTemplateSubmission({
+                organization_id: orgId,
+                wa_account_id: account.id,
+                waba_id,
+                name: validation.normalized.name,
+                language: validation.normalized.language,
+                category: validation.normalized.category,
+                status: 'REJECTED',
+                rejection_reason: errMsg,
+                components: validation.normalized.components,
+                normalized_payload: validation.normalized,
+                validation_issues: validation.issues,
+                risk_score: validation.riskScore,
+                meta_response: json,
+                submitted_by: (req as any).user?.id || null,
+            });
             return res.status(response.status).json({
                 error: errMsg,
+                code: /already exists|duplicate/i.test(errMsg) ? 'DUPLICATE_TEMPLATE_NAME' : 'META_TEMPLATE_CREATE_FAILED',
+                suggested_name: /already exists|duplicate/i.test(errMsg) ? `${validation.normalized.name}_${Date.now().toString().slice(-6)}` : undefined,
                 error_subcode: errSubcode,
                 error_data: errData,
+                validation,
                 meta_error: json.error
             });
         }
+        await upsertLocalTemplateSubmission({
+            organization_id: orgId,
+            wa_account_id: account.id,
+            waba_id,
+            template_id: json.id || json.data?.id || null,
+            name: validation.normalized.name,
+            language: validation.normalized.language,
+            category: validation.normalized.category,
+            status: json.status || 'PENDING',
+            components: validation.normalized.components,
+            normalized_payload: validation.normalized,
+            validation_issues: validation.issues,
+            risk_score: validation.riskScore,
+            meta_response: json,
+            submitted_by: (req as any).user?.id || null,
+            submitted_at: new Date().toISOString(),
+        });
         res.json({ success: true, data: json });
     } catch (err: any) {
         console.error('Create Template Error:', err);
@@ -7455,6 +7906,50 @@ app.post("/webhook", async (req, res) => {
         const metadata = value?.metadata; // has phone_number_id
 
         if (!value) return;
+
+        if (change?.field === 'message_template_status_update' || value?.event === 'message_template_status_update' || value?.message_template_name) {
+            const wabaId = String(entry?.id || value?.waba_id || value?.whatsapp_business_account_id || '');
+            const templateId = value?.message_template_id || value?.template_id || value?.id || null;
+            const templateName = value?.message_template_name || value?.name || value?.template_name || null;
+            const templateLanguage = value?.message_template_language || value?.language || 'en_US';
+            const templateStatus = normalizeMetaTemplateStatus(value?.event || value?.status || value?.message_template_status || 'PENDING');
+            const rejectionReason = value?.reason || value?.rejected_reason || value?.disable_info?.reason || value?.message_template_rejected_reason || null;
+
+            if (!templateName && !templateId) return;
+
+            let query = supabase.from('w_template_submissions').select('id, organization_id, wa_account_id, name, language, category, components, normalized_payload');
+            if (templateId) query = query.eq('template_id', templateId);
+            else query = query.eq('name', templateName).eq('language', templateLanguage);
+            if (wabaId) query = query.eq('waba_id', wabaId);
+            const { data: existing } = await query.maybeSingle();
+
+            if (existing) {
+                await upsertLocalTemplateSubmission({
+                    organization_id: existing.organization_id,
+                    wa_account_id: existing.wa_account_id,
+                    waba_id: wabaId || existing.normalized_payload?.waba_id || null,
+                    template_id: templateId,
+                    name: existing.name,
+                    language: existing.language,
+                    category: value?.category || existing.category,
+                    status: templateStatus,
+                    quality_score: value?.quality_score || value?.quality || null,
+                    rejection_reason: rejectionReason,
+                    components: existing.components || [],
+                    normalized_payload: existing.normalized_payload || {},
+                    meta_response: value,
+                });
+                io.to(`org:${existing.organization_id}`).emit('template_status_updated', {
+                    name: existing.name,
+                    language: existing.language,
+                    status: templateStatus,
+                    rejected_reason: rejectionReason,
+                });
+            } else {
+                console.warn('[Templates] Status webhook received for unknown template:', value);
+            }
+            return;
+        }
 
         // 1. Identify Organization & Account
         const phone_number_id = metadata?.phone_number_id;

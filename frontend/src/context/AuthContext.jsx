@@ -7,14 +7,14 @@ export const useAuth = () => useContext(AuthContext)
 
 // Map raw plan IDs → display names
 function resolvePlanName(plan) {
-    if (!plan) return 'Free'
+    if (!plan) return 'No active plan'
     const p = plan.toLowerCase()
     
     // Check WhatsApp specific plans first to avoid 'monthly'/'quarterly' conflict
     if (p.includes('whatsapp_starter') || p === 'starter') return 'Starter'
     if (p.includes('whatsapp_growth') || p === 'growth') return 'Growth'
     if (p.includes('whatsapp_pro') || p === 'pro') return 'Pro'
-    if (p.includes('whatsapp_free') || p === 'free') return 'Free'
+    if (p.includes('whatsapp_free') || p === 'free') return 'No active plan'
     if (p.includes('whatsapp_premium') || p.includes('premium')) return 'WhatsApp Premium'
     if (p.includes('whatsapp')) return 'WhatsApp Pro'
     
@@ -24,7 +24,7 @@ function resolvePlanName(plan) {
     if (p.includes('half_yearly') || p.includes('max') || p === 'all_in_one_bundle_half_yearly') return 'GAP Max'
     if (p.includes('all_in_one') || p.includes('ultimate') || p.includes('enterprise')) return 'GAP Ultimate Ecosystem'
     
-    if (p === '') return 'Free'
+    if (p === '') return 'No active plan'
     return plan
 }
 
@@ -68,9 +68,9 @@ export function AuthProvider({ children }) {
 
             const isSubActive = sub?.expires_at ? new Date(sub.expires_at) > new Date() : false
             let resolvedPlan = isSubActive
-                ? (sub?.plan_label || sub?.plan_id || 'Free')
-                : 'Free'
-            const resolvedStatus = isSubActive ? 'active' : (sub ? 'expired' : 'free')
+                ? (sub?.plan_label || sub?.plan_id || 'No active plan')
+                : 'No active plan'
+            const resolvedStatus = isSubActive ? 'active' : (sub ? 'expired' : 'inactive')
 
             resolvedPlan = resolvePlanName(resolvedPlan)
 
@@ -131,7 +131,7 @@ export function AuthProvider({ children }) {
         supabase.auth.getSession().then(({ data: { session } }) => {
             setSession(session ?? null)
             if (session?.user) {
-                setUser({ ...session.user, plan: session.user.user_metadata?.plan || 'Free', subscription_status: session.user.user_metadata?.subscription_status || 'active' })
+                setUser({ ...session.user, plan: resolvePlanName(session.user.user_metadata?.plan), subscription_status: session.user.user_metadata?.subscription_status || 'inactive' })
                 fetchUserProfile(session.user)
             } else {
                 setUser(null)
@@ -146,7 +146,7 @@ export function AuthProvider({ children }) {
             console.log('Auth state change:', event, session?.user?.email);
             setSession(session ?? null)
             if (session?.user) {
-                setUser({ ...session.user, plan: session.user.user_metadata?.plan || 'Free', subscription_status: session.user.user_metadata?.subscription_status || 'active' })
+                setUser({ ...session.user, plan: resolvePlanName(session.user.user_metadata?.plan), subscription_status: session.user.user_metadata?.subscription_status || 'inactive' })
                 if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
                     fetchUserProfile(session.user)
                 }

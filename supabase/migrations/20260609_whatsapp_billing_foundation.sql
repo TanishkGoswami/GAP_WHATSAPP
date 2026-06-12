@@ -136,16 +136,6 @@ insert into public.whatsapp_subscription_plans
   (id, name, description, monthly_price_paise, yearly_price_paise, sort_order, limits, features)
 values
   (
-    'free',
-    'Free',
-    'Trial workspace for testing WhatsApp chat and basic automation.',
-    0,
-    0,
-    10,
-    '{"numbers":1,"contacts":200,"agents":1,"flows":2,"broadcasts_per_month":0,"templates":3,"ai_agents":0,"api_access":false,"webhooks":false}'::jsonb,
-    '["1 WhatsApp number","200 contacts","1 team member","2 basic flows","Live chat access","Community support"]'::jsonb
-  ),
-  (
     'starter',
     'Starter',
     'Simple WhatsApp workspace for small shops and service businesses.',
@@ -194,6 +184,9 @@ on conflict (id) do update set
   limits = excluded.limits,
   features = excluded.features,
   updated_at = now();
+
+delete from public.whatsapp_subscription_plans
+where id = 'free' or lower(name) = 'free';
 
 insert into public.whatsapp_rate_cards
   (market, currency, category, rate_paise, pass_through_rate_paise, markup_paise, effective_from, notes)

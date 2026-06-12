@@ -29,6 +29,15 @@ function isCurrentPlan(currentPlan, plan) {
     return currentPlan?.id === plan?.id || currentPlan?.name === plan?.name
 }
 
+function isPaidSubscriptionPlan(plan) {
+    const id = String(plan?.id || '').toLowerCase()
+    const name = String(plan?.name || '').toLowerCase()
+    return id !== 'enterprise'
+        && id !== 'free'
+        && !name.includes('free')
+        && Number(plan?.monthly_price_paise || 0) > 0
+}
+
 async function getFunctionErrorMessage(error, fallback) {
     try {
         if (error?.context?.json) {
@@ -70,10 +79,10 @@ export default function BillingPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
-    const plans = overview?.plans?.length ? overview.plans : FALLBACK_PLANS
+    const plans = (overview?.plans?.length ? overview.plans : FALLBACK_PLANS).filter(isPaidSubscriptionPlan)
     const rateCards = overview?.rate_cards?.length ? overview.rate_cards : FALLBACK_RATE_CARDS
     const categorySpend = overview?.spend?.categories || []
-    const currentPlan = overview?.current_plan || plans.find(plan => plan.id === 'free')
+    const currentPlan = overview?.current_plan || null
     const wallet = overview?.wallet || { balance_paise: 0, currency: 'INR', low_balance_threshold_paise: 10000 }
     const walletTransactions = (overview?.recent_wallet_transactions || overview?.recent_transactions || [])
         .filter(tx => !['message_debit', 'failed_debit'].includes(String(tx.type || '')))
@@ -108,7 +117,7 @@ export default function BillingPage() {
     }, [rateCards])
 
     const handleUpgrade = async (plan) => {
-        if (!plan?.id || plan.id === 'free' || plan.id === 'enterprise' || isCurrentPlan(currentPlan, plan)) return
+        if (!plan?.id || plan.id === 'enterprise' || isCurrentPlan(currentPlan, plan)) return
 
         try {
             setUpgrading(plan.id)
@@ -221,7 +230,7 @@ export default function BillingPage() {
                             <p className="text-sm font-medium text-gray-500">Current Plan</p>
                             <ShieldCheck className="h-5 w-5 text-green-600" />
                         </div>
-                        <p className="mt-3 text-2xl font-semibold text-gray-950">{currentPlan?.name || user?.plan || 'Free'}</p>
+                        <p className="mt-3 text-2xl font-semibold text-gray-950">{currentPlan?.name || user?.plan || 'No active plan'}</p>
                         <p className="mt-1 text-xs text-gray-500">{overview?.organization?.plan_status || user?.subscription_status || 'active'}</p>
                     </div>
 
@@ -427,8 +436,8 @@ export default function BillingPage() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-                        {plans.filter(plan => plan.id !== 'enterprise').map(plan => {
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                        {plans.map(plan => {
                             const price = getPlanPrice(plan, interval)
                             const monthlyEquivalent = getMonthlyEquivalent(plan, interval)
                             const current = isCurrentPlan(currentPlan, plan)
@@ -455,7 +464,7 @@ export default function BillingPage() {
                                     </div>
                                     <button
                                         type="button"
-                                        disabled={current || upgrading === plan.id || plan.id === 'free'}
+                                        disabled={current || upgrading === plan.id}
                                         onClick={() => handleUpgrade(plan)}
                                         className={`mt-5 w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-default disabled:opacity-60 ${
                                             plan.id === 'growth'
@@ -463,7 +472,7 @@ export default function BillingPage() {
                                                 : 'bg-gray-950 text-white hover:bg-gray-800'
                                         }`}
                                     >
-                                        {upgrading === plan.id ? 'Processing...' : current ? 'Current Plan' : plan.id === 'free' ? 'Free Plan' : `Upgrade to ${plan.name}`}
+                                        {upgrading === plan.id ? 'Processing...' : current ? 'Current Plan' : `Upgrade to ${plan.name}`}
                                     </button>
                                     <ul className="mt-5 space-y-3">
                                         {normalizePlanFeatures(plan).slice(0, 7).map(feature => (

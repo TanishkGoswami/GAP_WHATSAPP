@@ -156,8 +156,8 @@ export default function BotAgents() {
         return { total: agents.length, active, unknown, trainedChars }
     }, [agents])
 
-    const currentPlanName = user?.plan || 'Free'
-    const currentPlanConfig = FALLBACK_PLANS.find(p => p.id.toLowerCase() === currentPlanName.toLowerCase() || p.name.toLowerCase() === currentPlanName.toLowerCase()) || FALLBACK_PLANS.find(p => p.id === 'free')
+    const currentPlanName = user?.plan || 'No active plan'
+    const currentPlanConfig = FALLBACK_PLANS.find(p => p.id.toLowerCase() === currentPlanName.toLowerCase() || p.name.toLowerCase() === currentPlanName.toLowerCase())
     const aiAgentLimit = currentPlanConfig?.limits?.ai_agents ?? 0
     const isLimitReached = aiAgentLimit !== -1 && agents.length >= aiAgentLimit
 

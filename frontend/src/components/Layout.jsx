@@ -23,6 +23,7 @@ export default function Layout() {
     const isOwner = userRole === 'owner'
     const isLiveChat = location.pathname === '/live-chat'
     const isFlowBuilder = location.pathname.startsWith('/flow-builder')
+    const isIndustryLibrary = location.pathname.startsWith('/templates/industries')
     const displayName = memberProfile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'
     const avatarColor = memberProfile?.avatar_color || user?.user_metadata?.avatar_color || '#4f46e5'
     const userEmail = memberProfile?.email || user?.email || ''
@@ -285,7 +286,7 @@ export default function Layout() {
                 </header>
 
                 {/* Main Content */}
-                <main className={`min-w-0 flex-1 ${isLiveChat ? 'overflow-hidden p-0' : isFlowBuilder ? 'overflow-y-auto p-0' : 'overflow-y-auto p-3 sm:p-5 lg:p-6'}`}>
+                <main className={`min-w-0 flex-1 ${isLiveChat ? 'overflow-hidden p-0' : (isFlowBuilder || isIndustryLibrary) ? 'overflow-y-auto p-0' : 'overflow-y-auto p-3 sm:p-5 lg:p-6'}`}>
                     <Outlet />
                 </main>
 
