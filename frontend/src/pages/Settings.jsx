@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield } from 'lucide-react'
+import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield, Activity, Calendar } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { useNotificationSound } from '../hooks/useNotificationSound'
@@ -30,9 +30,10 @@ const readStoredText = (key, fallback) => {
 
 export default function Settings() {
     const { session, userRole, loginType, apiCall, user, memberProfile } = useAuth()
+    const avatarColor = memberProfile?.avatar_color || user?.user_metadata?.avatar_color || '#4f46e5'
     const { alertDialog, confirmDialog } = useDialog()
     const [billingOverview, setBillingOverview] = useState(null)
-    const [isLoadingBilling, setIsLoadingBilling] = useState(false)
+    const [isLoadingBilling, setIsLoadingBilling] = useState(true)
     const {
         isEnabled: notificationSoundEnabled,
         setIsEnabled: setNotificationSoundEnabled,
@@ -280,19 +281,19 @@ export default function Settings() {
     const getFallbackCycleDates = (createdAt, billingCycle = 'monthly') => {
         const created = createdAt ? new Date(createdAt) : new Date()
         const now = new Date()
-        
+
         let start = new Date(now.getFullYear(), now.getMonth(), created.getDate())
         if (start > now) {
             start = new Date(now.getFullYear(), now.getMonth() - 1, created.getDate())
         }
-        
+
         let end = new Date(start)
         if (billingCycle === 'yearly') {
             end.setFullYear(start.getFullYear() + 1)
         } else {
             end.setMonth(start.getMonth() + 1)
         }
-        
+
         return {
             start: start.toISOString(),
             end: end.toISOString()
@@ -376,7 +377,7 @@ export default function Settings() {
             })
             const data = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(data?.error || 'Failed to disconnect account')
-            
+
             setProfileSuccess('Account disconnected successfully.')
             if (selectedAccountId === id) {
                 setSelectedAccountId('')
@@ -677,10 +678,15 @@ export default function Settings() {
 
                     return (
                         <div className="bg-gray-50/60">
-                            <div className="flex flex-col gap-4 border-b border-gray-200 bg-white px-4 py-5 sm:px-8 sm:py-6 lg:flex-row lg:items-start lg:justify-between">
-                                <div>
-                                    <h2 className="text-xl font-semibold text-gray-900">General</h2>
-                                    <p className="mt-1 text-sm text-gray-500">Manage WhatsApp Business profiles across all connected numbers.</p>
+                            <div className="flex flex-col gap-4 border-b border-gray-200 bg-white px-4 py-5 sm:px-8 sm:py-6 lg:flex-row lg:items-center lg:justify-between">
+                                <div className="flex items-center gap-4">
+                                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white border border-gray-200 shadow-sm p-2">
+                                        <img src="/logo.png" alt="GetAiPilot" className="h-full w-full object-contain" />
+                                    </span>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-gray-900 leading-tight">General</h2>
+                                        <p className="mt-1 text-sm text-gray-500">Manage your WhatsApp Business profile and settings across all connected numbers.</p>
+                                    </div>
                                 </div>
                                 <button
                                     type="button"
@@ -691,392 +697,456 @@ export default function Settings() {
                                     Refresh
                                 </button>
                             </div>
-                            
+
                             {/* Profile & Subscription Overview Card */}
                             <div className="border-b border-gray-200 bg-white px-4 py-6 sm:px-8">
                                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                                    {/* User Profile Details */}
-                                    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-gray-50/50 p-6 shadow-sm transition-all duration-300 hover:shadow-md">
-                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    {/* Business Profile Details */}
+                                    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 hover:shadow-md min-h-[220px] flex flex-col justify-between">
+                                        <div>
+                                            <h4 className="text-sm font-bold text-gray-900 tracking-tight mb-4">Business profile</h4>
                                             <div className="flex items-center gap-4">
-                                                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-xl font-bold text-white shadow-md">
-                                                    {getUserInitials()}
+                                                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white shadow-md overflow-hidden"
+                                                    style={avatarColor?.startsWith('/images/avatars/') ? {} : { backgroundColor: avatarColor || '#6366f1' }}>
+                                                    {avatarColor?.startsWith('/images/avatars/') ? (
+                                                        <img src={avatarColor} className="h-full w-full object-cover" alt="User avatar" />
+                                                    ) : (
+                                                        getUserInitials()
+                                                    )}
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div className="flex items-center flex-wrap gap-2">
-                                                        <h3 className="truncate text-lg font-bold text-gray-900">
+                                                        <h3 className="truncate text-base font-bold text-gray-900 leading-none">
                                                             {memberProfile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || 'User'}
                                                         </h3>
-                                                        <span className="inline-flex shrink-0 items-center rounded-full bg-neutral-900 px-2.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider">
-                                                            {userRole || 'Owner'}
+                                                        <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/10">
+                                                            {userRole ? userRole.charAt(0).toUpperCase() + userRole.slice(1) : 'Owner'}
                                                         </span>
                                                     </div>
-                                                    <p className="truncate text-sm text-gray-500 mt-0.5">
+                                                    <p className="truncate text-xs text-gray-500 mt-1.5">
                                                         {memberProfile?.email || user?.email || 'N/A'}
                                                     </p>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <div className="mt-6 border-t border-gray-100 pt-5 space-y-3">
-                                            <div className="flex items-center justify-between text-xs">
-                                                <span className="font-semibold text-gray-400 uppercase tracking-wider">User ID</span>
-                                                <span className="font-mono font-semibold text-gray-600">
-                                                    {user?.id ? `${user.id.substring(0, 8)}...${user.id.slice(-4)}` : 'N/A'}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between text-xs">
-                                                <span className="font-semibold text-gray-400 uppercase tracking-wider">Account Status</span>
-                                                <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full ring-1 ring-inset ring-emerald-600/10">
-                                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                        <div className="mt-6 border-t border-gray-100 pt-5 space-y-4">
+                                            {/* Account Status */}
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                                                        <Activity className="h-4.5 w-4.5" />
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <p className="text-xs font-bold text-gray-900 leading-none">Account status</p>
+                                                        <p className="text-[10px] text-gray-400 mt-1">Your account is active and in good standing.</p>
+                                                    </div>
+                                                </div>
+                                                <span className="inline-flex items-center gap-1.5 font-bold text-[10px] text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full ring-1 ring-inset ring-emerald-600/10 uppercase tracking-wider">
                                                     Active
                                                 </span>
                                             </div>
-                                            <div className="flex items-center justify-between text-xs">
-                                                <span className="font-semibold text-gray-400 uppercase tracking-wider">Joined Date</span>
-                                                <span className="font-semibold text-gray-600">{getJoinedDate()}</span>
+
+                                            {/* Joined Date */}
+                                            <div className="flex items-center gap-3">
+                                                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                                                    <Calendar className="h-4.5 w-4.5" />
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-bold text-gray-900 leading-none">Joined on</p>
+                                                    <p className="text-[10px] text-gray-500 mt-1 font-semibold">{getJoinedDate()}</p>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
-
                                     {/* Subscription & Plan Details */}
-                                    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-indigo-50/10 p-6 shadow-sm transition-all duration-300 hover:shadow-md min-h-[220px] flex flex-col justify-between">
-                                        {/* 3D Asset watermark */}
-                                        <div className="absolute -right-6 -bottom-6 h-36 w-36 opacity-90 pointer-events-none select-none transform rotate-12 transition-transform duration-500 hover:scale-105">
-                                            <img src="/images/money.png" alt="3D Currency Coins" className="h-full w-full object-contain" />
+                                    {!billingOverview ? (
+                                        <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm min-h-[220px] flex flex-col justify-between animate-pulse">
+                                            <div>
+                                                <div className="flex gap-2">
+                                                    <div className="h-6 w-24 bg-gray-250 bg-slate-200 rounded-full"></div>
+                                                    <div className="h-6 w-16 bg-gray-250 bg-slate-200 rounded-full"></div>
+                                                </div>
+                                                <div className="mt-4 h-8 w-32 bg-gray-250 bg-slate-200 rounded-lg"></div>
+                                                <div className="mt-2 h-4 w-48 bg-gray-250 bg-slate-200 rounded-lg"></div>
+                                            </div>
+                                            <div className="mt-6 h-12 w-full bg-gray-250 bg-slate-100 rounded-xl"></div>
                                         </div>
+                                    ) : (() => {
+                                        const planId = billingOverview?.organization?.plan_id || user?.plan;
+                                        const isActivePlan = (billingOverview?.organization?.plan_status === 'active' || user?.subscription_status === 'active') && !!planId;
 
-                                        <div className="relative z-10">
-                                            <div className="flex items-center gap-2">
-                                                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
-                                                    <Sparkles className="h-3 w-3" />
-                                                    Active Plan
-                                                </span>
-                                                {endDate && (
-                                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${
-                                                        daysLeft < 5
-                                                            ? 'bg-rose-50 text-rose-700 ring-rose-600/10 animate-pulse'
-                                                            : 'bg-gray-50 text-gray-600 ring-gray-500/10'
-                                                    }`}>
-                                                        {daysLeft} days left
-                                                    </span>
+                                        return (
+                                            <div className="relative bg-purple-50 overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-indigo-50/10 p-6 shadow-sm transition-all duration-300 hover:shadow-md min-h-[220px] flex flex-col justify-between">
+                                                {/* 3D Asset watermark */}
+                                                <div className="absolute -right-6 -bottom-6 h-36 w-36 opacity-90 pointer-events-none select-none transform rotate-12 transition-transform duration-500 hover:scale-105">
+                                                    <img src="/images/money.png" alt="3D Currency Coins" className="h-full w-full object-contain" />
+                                                </div>
+
+                                                <div className="relative z-10">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${isActivePlan ? 'bg-indigo-50 text-indigo-700 ring-indigo-700/10' : 'bg-gray-100 text-gray-650 ring-gray-500/10'}`}>
+                                                            <Sparkles className="h-3 w-3" />
+                                                            {isActivePlan ? 'Active Plan' : 'Subscription Plan'}
+                                                        </span>
+                                                        {isActivePlan && endDate && (
+                                                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${daysLeft < 5
+                                                                ? 'bg-rose-50 text-rose-700 ring-rose-600/10 animate-pulse'
+                                                                : 'bg-gray-50 text-gray-650 ring-gray-500/10'
+                                                                }`}>
+                                                                {daysLeft} days left
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <h4 className="mt-3 text-2xl font-bold text-gray-900 tracking-tight">
+                                                        {isActivePlan ? (billingOverview?.current_plan?.name || planId) : 'Free Tier'}
+                                                    </h4>
+                                                    <p className="mt-1 text-xs text-gray-500 font-medium">
+                                                        {isActivePlan ? `Cycle: ${formatPlanDate(startDate)} – ${formatPlanDate(endDate)}` : 'No active subscription plan.'}
+                                                    </p>
+                                                </div>
+
+                                                {/* Upgrade / Subscription recommendations */}
+                                                {isActivePlan ? (
+                                                    getUpgradeRecommendation(billingOverview?.current_plan?.id || planId) ? (
+                                                        <div className="relative z-10 mt-6 rounded-xl bg-white/75 backdrop-blur-md border border-white/40 p-4 shadow-sm flex items-center justify-between gap-4">
+                                                            <div className="min-w-0">
+                                                                <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Available Upgrade</p>
+                                                                <h5 className="text-sm font-bold text-gray-900 mt-0.5">
+                                                                    Upgrade to {getUpgradeRecommendation(billingOverview?.current_plan?.id || planId).name}
+                                                                </h5>
+                                                                <p className="text-[11px] text-gray-500 mt-0.5 truncate">
+                                                                    Unlock: {getUpgradeRecommendation(billingOverview?.current_plan?.id || planId).features.join(' • ')}
+                                                                </p>
+                                                            </div>
+                                                            <Link
+                                                                to="/billing"
+                                                                className="inline-flex shrink-0 items-center justify-center h-9 w-9 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
+                                                            >
+                                                                <ArrowRight className="h-4 w-4" />
+                                                            </Link>
+                                                        </div>
+                                                    ) : null
+                                                ) : (
+                                                    <div className="relative z-10 mt-6 rounded-xl bg-white/75 backdrop-blur-md border border-white/40 p-4 shadow-sm flex items-center justify-between gap-4">
+                                                        <div className="min-w-0">
+                                                            <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Get WhatsApp Plan</p>
+                                                            <h5 className="text-sm font-bold text-gray-900 mt-0.5">
+                                                                Subscribe to a WhatsApp Plan
+                                                            </h5>
+                                                            <p className="text-[11px] text-gray-500 mt-0.5">
+                                                                Unlock official cloud API broadcasts, template messages & flows.
+                                                            </p>
+                                                        </div>
+                                                        <Link
+                                                            to="/billing"
+                                                            className="inline-flex shrink-0 items-center justify-center h-9 w-9 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
+                                                        >
+                                                            <ArrowRight className="h-4 w-4" />
+                                                        </Link>
+                                                    </div>
                                                 )}
                                             </div>
-                                            <h4 className="mt-3 text-2xl font-bold text-gray-900 tracking-tight">
-                                                {billingOverview?.current_plan?.name || billingOverview?.organization?.plan_id || 'Starter'}
-                                            </h4>
-                                            <p className="mt-1 text-xs text-gray-500 font-medium">
-                                                Cycle: {formatPlanDate(startDate)} – {formatPlanDate(endDate)}
-                                            </p>
-                                        </div>
-
-                                    {/* Upgrade recommendations */}
-                                    {getUpgradeRecommendation(billingOverview?.current_plan?.id || billingOverview?.organization?.plan_id) ? (
-                                        <div className="relative z-10 mt-6 rounded-xl bg-white/75 backdrop-blur-md border border-white/40 p-4 shadow-sm flex items-center justify-between gap-4">
-                                            <div className="min-w-0">
-                                                <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Available Upgrade</p>
-                                                <h5 className="text-sm font-bold text-gray-900 mt-0.5">
-                                                    Upgrade to {getUpgradeRecommendation(billingOverview?.current_plan?.id || billingOverview?.organization?.plan_id).name}
-                                                </h5>
-                                                <p className="text-[11px] text-gray-500 mt-0.5 truncate">
-                                                    Unlock: {getUpgradeRecommendation(billingOverview?.current_plan?.id || billingOverview?.organization?.plan_id).features.join(' • ')}
-                                                </p>
-                                            </div>
-                                            <Link
-                                                to="/billing"
-                                                className="inline-flex shrink-0 items-center justify-center h-9 w-9 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
-                                            >
-                                                <ArrowRight className="h-4 w-4" />
-                                            </Link>
-                                        </div>
-                                    ) : (
-                                        <div className="relative z-10 mt-6 rounded-xl bg-white/75 backdrop-blur-md border border-white/40 p-4 shadow-sm flex items-center gap-3">
-                                            <Shield className="h-5 w-5 text-indigo-600 shrink-0" />
-                                            <div>
-                                                <h5 className="text-xs font-bold text-gray-900">Ultimate Plan Active</h5>
-                                                <p className="text-[11px] text-gray-500 mt-0.5">You are on the highest tier. Enjoy unlimited access!</p>
-                                            </div>
-                                        </div>
-                                    )}
+                                        );
+                                    })()}
                                 </div>
                             </div>
-                        </div>
 
-                        {profileError && (
-                            <div className="mx-4 mt-5 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/50 px-4 py-3 text-xs leading-relaxed text-amber-800 sm:mx-8 sm:mt-6">
-                                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                                <span>{profileError}</span>
-                            </div>
-                        )}
-
-                        {profileSuccess && (
-                            <div className="mx-4 mt-5 flex items-center gap-2.5 rounded-xl border border-green-200 bg-green-50/50 px-4 py-3 text-xs font-medium text-green-800 sm:mx-8 sm:mt-6">
-                                <Check className="h-4 w-4 shrink-0 text-green-600" />
-                                <span>{profileSuccess}</span>
-                            </div>
-                        )}
-
-                        {isLoadingAccounts ? (
-                            <div className="py-16 text-center text-sm text-gray-500">Loading WhatsApp accounts...</div>
-                        ) : accounts.length === 0 ? (
-                            <div className="m-8 rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center">
-                                <PhoneCall className="mx-auto h-10 w-10 text-gray-300" />
-                                <h3 className="mt-3 text-sm font-semibold text-gray-900">No WhatsApp accounts connected</h3>
-                                <p className="mt-1 text-sm text-gray-500">Connect an account first, then you can edit its business profile here.</p>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-1 gap-0 xl:grid-cols-[320px_1fr]">
-                                <aside className="border-b border-gray-200 bg-white p-6 xl:border-b-0 xl:border-r">
-                                    <div className="mb-4 text-[10px] font-bold uppercase tracking-wider text-gray-400">Connected accounts</div>
-                                    <div className="space-y-3">
-                                    {accounts.map(account => (
-                                        <div
-                                            key={account.id}
-                                            onClick={() => setSelectedAccountId(account.id)}
-                                            className={`w-full cursor-pointer rounded-2xl border p-4 text-left transition-all duration-300 hover:shadow-sm ${
-                                                selectedAccountId === account.id 
-                                                    ? 'border-indigo-600 bg-gradient-to-br from-white to-indigo-50/20 ring-1 ring-indigo-600' 
-                                                    : 'border-gray-200 bg-white hover:border-gray-300'
-                                            }`}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
-                                                    selectedAccountId === account.id ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'
-                                                }`}>
-                                                    <Globe className="h-5 w-5" />
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <div className="truncate text-sm font-semibold text-gray-900">{account.name || 'WhatsApp Business'}</div>
-                                                    <div className="truncate text-xs text-gray-500">{account.display_phone_number || account.phone_number_id}</div>
-                                                </div>
-                                            </div>
-                                            <div className="mt-3.5 flex items-center justify-between text-xs">
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                                                        (account.status || 'connected') === 'connected' 
-                                                            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/10' 
-                                                            : 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/10'
-                                                    }`}>
-                                                        <span className={`h-1 w-1 rounded-full ${
-                                                            (account.status || 'connected') === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-                                                        }`} />
-                                                        {account.status || 'connected'}
-                                                    </span>
-                                                    <span className="text-[11px] text-gray-400 font-medium">ID {String(account.phone_number_id || '').slice(-5)}</span>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => handleDisconnectAccount(e, account.id)}
-                                                    className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 transition-all duration-200 border border-transparent hover:border-rose-100"
-                                                    title="Disconnect Account"
-                                                >
-                                                    <Trash2 className="h-4 w-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    </div>
-                                </aside>
-
-                                <form onSubmit={saveBusinessProfile} className="min-w-0 bg-gray-50/40">
-                                    <div className="border-b border-gray-200 bg-white px-8 py-5">
-                                        <div className="flex items-center justify-between gap-4">
-                                            <div>
-                                                <h3 className="text-base font-semibold text-gray-900">Business profile</h3>
-                                                <p className="mt-1 text-sm text-gray-500">These details are shown to customers on WhatsApp where Meta supports them.</p>
-                                                {lastProfileSyncAt && (
-                                                    <p className="mt-1 text-xs text-gray-400">
-                                                        Last read from Meta at {lastProfileSyncAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => loadBusinessProfile(selectedAccountId)}
-                                                    disabled={isLoadingProfile}
-                                                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-                                                >
-                                                    {isLoadingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                                                    Sync from Meta
-                                                </button>
-                                            </div>
+                            {profileError && (
+                                <div className="mx-4 mt-5 flex items-center justify-between gap-4 rounded-2xl border border-blue-100 bg-[#f4f8ff] p-4 text-xs leading-relaxed text-blue-900 sm:mx-8 sm:mt-6 relative">
+                                    <div className="flex items-start gap-3.5">
+                                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#e6f0ff] text-blue-600 shadow-sm">
+                                            <ShieldCheck className="h-5 w-5" />
+                                        </span>
+                                        <div className="min-w-0">
+                                            <p className="font-medium text-gray-750">
+                                                {profileError}
+                                            </p>
+                                            <a
+                                                href="https://getaipilot.in/whatsapp-docs"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-block mt-1 font-bold text-blue-650 hover:underline"
+                                            >
+                                                Learn more
+                                            </a>
                                         </div>
                                     </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setProfileError('')}
+                                        className="text-gray-405 hover:text-gray-700 rounded-md p-1 transition-colors self-start sm:self-center"
+                                        aria-label="Dismiss warning"
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                </div>
+                            )}
 
-                                    <div className="space-y-6 p-8">
-                                        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                                            <div className="mb-5">
-                                                <h4 className="text-sm font-bold text-gray-900">Profile identity</h4>
-                                                <p className="mt-1 text-xs text-gray-500">Photo and internal label for this connected number.</p>
-                                            </div>
+                            {profileSuccess && (
+                                <div className="mx-4 mt-5 flex items-center gap-2.5 rounded-xl border border-green-200 bg-green-50/50 px-4 py-3 text-xs font-medium text-green-800 sm:mx-8 sm:mt-6">
+                                    <Check className="h-4 w-4 shrink-0 text-green-600" />
+                                    <span>{profileSuccess}</span>
+                                </div>
+                            )}
 
-                                            <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[210px_1fr]">
-                                                <div className="rounded-2xl border border-gray-200 bg-gray-50/50 p-4">
-                                                    <div className="mx-auto flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white shadow-sm">
-                                                    {(profileImagePreview || businessProfile.profile_picture_url) ? (
-                                                        <img
-                                                            src={profileImagePreview || businessProfile.profile_picture_url}
-                                                            alt="Business profile"
-                                                            className="h-full w-full object-cover"
-                                                        />
-                                                    ) : (
-                                                        <Image className="h-9 w-9 text-gray-300" />
-                                                    )}
+                            {isLoadingAccounts ? (
+                                <div className="py-16 text-center text-sm text-gray-500">Loading WhatsApp accounts...</div>
+                            ) : accounts.length === 0 ? (
+                                <div className="m-8 rounded-xl border border-dashed border-gray-300 bg-white p-8 text-center">
+                                    <PhoneCall className="mx-auto h-10 w-10 text-gray-300" />
+                                    <h3 className="mt-3 text-sm font-semibold text-gray-900">No WhatsApp accounts connected</h3>
+                                    <p className="mt-1 text-sm text-gray-500">Connect an account first, then you can edit its business profile here.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 gap-0 xl:grid-cols-[320px_1fr]">
+                                    <aside className="border-b border-gray-200 bg-white p-6 xl:border-b-0 xl:border-r">
+                                        <div className="mb-4 text-[10px] font-bold uppercase tracking-wider text-gray-400">Connected accounts</div>
+                                        <div className="space-y-3">
+                                            {accounts.map(account => (
+                                                <div
+                                                    key={account.id}
+                                                    onClick={() => setSelectedAccountId(account.id)}
+                                                    className={`w-full cursor-pointer rounded-2xl border p-4 text-left transition-all duration-300 hover:shadow-sm ${selectedAccountId === account.id
+                                                        ? 'border-indigo-600 bg-gradient-to-br from-white to-indigo-50/20 ring-1 ring-indigo-600'
+                                                        : 'border-gray-200 bg-white hover:border-gray-300'
+                                                        }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${selectedAccountId === account.id ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'
+                                                            }`}>
+                                                            <Globe className="h-5 w-5" />
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <div className="truncate text-sm font-semibold text-gray-900">{account.name || 'WhatsApp Business'}</div>
+                                                            <div className="truncate text-xs text-gray-500">{account.display_phone_number || account.phone_number_id}</div>
+                                                        </div>
                                                     </div>
-                                                    <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-gray-205 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
-                                                    <Upload className="h-4 w-4" />
-                                                    Upload photo
-                                                    <input
-                                                        type="file"
-                                                        accept="image/jpeg,image/png"
-                                                        className="hidden"
-                                                        onChange={(e) => {
-                                                            const file = e.target.files?.[0] || null
-                                                            setProfileImageFile(file)
-                                                            setProfileImagePreview(file ? URL.createObjectURL(file) : '')
-                                                        }}
-                                                    />
-                                                    </label>
-                                                    <p className="mt-2.5 text-center text-[10px] leading-relaxed text-gray-400">Use a clear square JPG or PNG. Meta may review business branding.</p>
-                                                    <div className="mt-4 rounded-xl border border-amber-200/80 bg-amber-50/50 p-3.5 text-[11px] leading-relaxed text-amber-800 flex items-start gap-2">
-                                                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600" />
-                                                        <p>WhatsApp Cloud API supports profile photo here, but does not expose a cover/banner image field.</p>
-                                                    </div>
-                                                </div>
-
-                                                <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                                                    <label className="block">
-                                                    <span className="text-xs font-semibold text-gray-700">Account label in this app</span>
-                                                    <div className="relative mt-1.5">
-                                                        <User className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                                                        <input
-                                                            value={businessProfile.local_name}
-                                                            onChange={(e) => setBusinessProfile(p => ({ ...p, local_name: e.target.value }))}
-                                                            className="h-10 w-full rounded-lg border-gray-200 bg-white pl-10 pr-3 text-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                                            placeholder="Support number"
-                                                        />
-                                                    </div>
-                                                    </label>
-                                                    <label className="block">
-                                                    <span className="text-xs font-semibold text-gray-700">Business category</span>
-                                                    <div className="relative mt-1.5">
-                                                        <SlidersHorizontal className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                                                        <select
-                                                            value={businessProfile.vertical}
-                                                            onChange={(e) => setBusinessProfile(p => ({ ...p, vertical: e.target.value }))}
-                                                            className="h-10 w-full rounded-lg border-gray-200 bg-white pl-10 pr-10 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                    <div className="mt-3.5 flex items-center justify-between text-xs">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${(account.status || 'connected') === 'connected'
+                                                                ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/10'
+                                                                : 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/10'
+                                                                }`}>
+                                                                <span className={`h-1 w-1 rounded-full ${(account.status || 'connected') === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                                                                    }`} />
+                                                                {account.status || 'connected'}
+                                                            </span>
+                                                            <span className="text-[11px] text-gray-400 font-medium">ID {String(account.phone_number_id || '').slice(-5)}</span>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => handleDisconnectAccount(e, account.id)}
+                                                            className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 transition-all duration-200 border border-transparent hover:border-rose-100"
+                                                            title="Disconnect Account"
                                                         >
-                                                            <option value="">Select category</option>
-                                                            {['AUTO', 'BEAUTY', 'APPAREL', 'EDU', 'ENTERTAIN', 'EVENT_PLAN', 'FINANCE', 'GROCERY', 'GOVT', 'HOTEL', 'HEALTH', 'NONPROFIT', 'PROF_SERVICES', 'RETAIL', 'TRAVEL', 'RESTAURANT', 'OTHER'].map(value => (
-                                                                <option key={value} value={value}>{value.replace(/_/g, ' ')}</option>
-                                                            ))}
-                                                        </select>
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
                                                     </div>
-                                                    </label>
-                                                    <label className="block lg:col-span-2">
-                                                    <span className="text-xs font-semibold text-gray-700">About / bio</span>
-                                                    <span className="ml-2 text-[11px] text-gray-400">Usually the first line people notice in WhatsApp profile.</span>
-                                                    <div className="relative mt-1.5">
-                                                        <FileText className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                                                        <input
-                                                            value={businessProfile.about}
-                                                            onChange={(e) => setBusinessProfile(p => ({ ...p, about: e.target.value }))}
-                                                            maxLength={139}
-                                                            className="h-10 w-full rounded-lg border-gray-200 bg-white pl-10 pr-3 text-sm focus:border-indigo-500 focus:ring-indigo-500"
-                                                            placeholder="Short WhatsApp bio"
-                                                        />
-                                                    </div>
-                                                        <div className="mt-1 text-right text-[10px] text-gray-400">{businessProfile.about.length}/139</div>
-                                                    </label>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </aside>
+
+                                    <form onSubmit={saveBusinessProfile} className="min-w-0 bg-gray-50/40">
+                                        <div className="border-b border-gray-200 bg-white px-8 py-5">
+                                            <div className="flex items-center justify-between gap-4">
+                                                <div>
+                                                    <h3 className="text-base font-semibold text-gray-900">Business profile</h3>
+                                                    <p className="mt-1 text-sm text-gray-500">These details are shown to customers on WhatsApp where Meta supports them.</p>
+                                                    {lastProfileSyncAt && (
+                                                        <p className="mt-1 text-xs text-gray-400">
+                                                            Last read from Meta at {lastProfileSyncAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => loadBusinessProfile(selectedAccountId)}
+                                                        disabled={isLoadingProfile}
+                                                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                                    >
+                                                        {isLoadingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                                                        Sync from Meta
+                                                    </button>
                                                 </div>
                                             </div>
-                                        </section>
+                                        </div>
 
-                                        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-                                            <div className="mb-5">
-                                                <h4 className="text-sm font-bold text-gray-900">Business details</h4>
-                                                <p className="mt-1 text-xs text-gray-500">Customer-facing description and ways to contact the business.</p>
-                                            </div>
+                                        <div className="space-y-6 p-8">
+                                            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                                                <div className="mb-5">
+                                                    <h4 className="text-sm font-bold text-gray-900">Profile identity</h4>
+                                                    <p className="mt-1 text-xs text-gray-500">Photo and internal label for this connected number.</p>
+                                                </div>
 
-                                            <div className="grid grid-cols-1 gap-5 2xl:grid-cols-2">
-                                                <label className="block 2xl:col-span-2">
-                                                    <span className="text-xs font-semibold text-gray-700">Business description</span>
-                                                    <span className="ml-2 text-[11px] text-gray-400">Can take time to appear in customer WhatsApp apps because WhatsApp clients cache profiles.</span>
-                                                    <textarea
-                                                        value={businessProfile.description}
-                                                        onChange={(e) => setBusinessProfile(p => ({ ...p, description: e.target.value }))}
-                                                        rows={4}
-                                                        className="mt-1.5 w-full resize-y rounded-lg border-gray-200 text-sm leading-5 focus:border-indigo-500 focus:ring-indigo-500"
-                                                        placeholder="Tell customers what this account is for"
-                                                    />
-                                                </label>
-                                                <label className="block">
-                                                    <span className="mb-1.5 block text-xs font-semibold text-gray-700">Email</span>
-                                                    <div className="relative">
-                                                        <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                                                        <input
-                                                            value={businessProfile.email}
-                                                            onChange={(e) => setBusinessProfile(p => ({ ...p, email: e.target.value }))}
-                                                            className="h-11 w-full rounded-lg border-gray-200 bg-white pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500"
-                                                            placeholder="support@example.com"
-                                                        />
+                                                <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[210px_1fr]">
+                                                    <div className="rounded-2xl border border-gray-200 bg-gray-50/50 p-4">
+                                                        <div className="mx-auto flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white shadow-sm">
+                                                            {(profileImagePreview || businessProfile.profile_picture_url) ? (
+                                                                <img
+                                                                    src={profileImagePreview || businessProfile.profile_picture_url}
+                                                                    alt="Business profile"
+                                                                    className="h-full w-full object-cover"
+                                                                />
+                                                            ) : (
+                                                                <Image className="h-9 w-9 text-gray-300" />
+                                                            )}
+                                                        </div>
+                                                        <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-gray-205 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                                                            <Upload className="h-4 w-4" />
+                                                            Upload photo
+                                                            <input
+                                                                type="file"
+                                                                accept="image/jpeg,image/png"
+                                                                className="hidden"
+                                                                onChange={(e) => {
+                                                                    const file = e.target.files?.[0] || null
+                                                                    setProfileImageFile(file)
+                                                                    setProfileImagePreview(file ? URL.createObjectURL(file) : '')
+                                                                }}
+                                                            />
+                                                        </label>
+                                                        <p className="mt-2.5 text-center text-[10px] leading-relaxed text-gray-400">Use a clear square JPG or PNG. Meta may review business branding.</p>
+                                                        <div className="mt-4 rounded-xl border border-amber-200/80 bg-amber-50/50 p-3.5 text-[11px] leading-relaxed text-amber-800 flex items-start gap-2">
+                                                            <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600" />
+                                                            <p>WhatsApp Cloud API supports profile photo here, but does not expose a cover/banner image field.</p>
+                                                        </div>
                                                     </div>
-                                                </label>
-                                                <label className="block">
-                                                    <span className="mb-1.5 block text-xs font-semibold text-gray-700">Websites</span>
-                                                    <div className="relative">
-                                                        <LinkIcon className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+
+                                                    <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                                                        <label className="block">
+                                                            <span className="text-xs font-semibold text-gray-700">Account label in this app</span>
+                                                            <div className="relative mt-1.5">
+                                                                <User className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                                                <input
+                                                                    value={businessProfile.local_name}
+                                                                    onChange={(e) => setBusinessProfile(p => ({ ...p, local_name: e.target.value }))}
+                                                                    className="h-10 w-full rounded-lg border-gray-200 bg-white pl-10 pr-3 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                                    placeholder="Support number"
+                                                                />
+                                                            </div>
+                                                        </label>
+                                                        <label className="block">
+                                                            <span className="text-xs font-semibold text-gray-700">Business category</span>
+                                                            <div className="relative mt-1.5">
+                                                                <SlidersHorizontal className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                                                <select
+                                                                    value={businessProfile.vertical}
+                                                                    onChange={(e) => setBusinessProfile(p => ({ ...p, vertical: e.target.value }))}
+                                                                    className="h-10 w-full rounded-lg border-gray-200 bg-white pl-10 pr-10 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                                >
+                                                                    <option value="">Select category</option>
+                                                                    {['AUTO', 'BEAUTY', 'APPAREL', 'EDU', 'ENTERTAIN', 'EVENT_PLAN', 'FINANCE', 'GROCERY', 'GOVT', 'HOTEL', 'HEALTH', 'NONPROFIT', 'PROF_SERVICES', 'RETAIL', 'TRAVEL', 'RESTAURANT', 'OTHER'].map(value => (
+                                                                        <option key={value} value={value}>{value.replace(/_/g, ' ')}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </label>
+                                                        <label className="block lg:col-span-2">
+                                                            <span className="text-xs font-semibold text-gray-700">About / bio</span>
+                                                            <span className="ml-2 text-[11px] text-gray-400">Usually the first line people notice in WhatsApp profile.</span>
+                                                            <div className="relative mt-1.5">
+                                                                <FileText className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                                                <input
+                                                                    value={businessProfile.about}
+                                                                    onChange={(e) => setBusinessProfile(p => ({ ...p, about: e.target.value }))}
+                                                                    maxLength={139}
+                                                                    className="h-10 w-full rounded-lg border-gray-200 bg-white pl-10 pr-3 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                                    placeholder="Short WhatsApp bio"
+                                                                />
+                                                            </div>
+                                                            <div className="mt-1 text-right text-[10px] text-gray-400">{businessProfile.about.length}/139</div>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </section>
+
+                                            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                                                <div className="mb-5">
+                                                    <h4 className="text-sm font-bold text-gray-900">Business details</h4>
+                                                    <p className="mt-1 text-xs text-gray-500">Customer-facing description and ways to contact the business.</p>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 gap-5 2xl:grid-cols-2">
+                                                    <label className="block 2xl:col-span-2">
+                                                        <span className="text-xs font-semibold text-gray-700">Business description</span>
+                                                        <span className="ml-2 text-[11px] text-gray-400">Can take time to appear in customer WhatsApp apps because WhatsApp clients cache profiles.</span>
                                                         <textarea
-                                                            value={businessProfile.websites}
-                                                            onChange={(e) => setBusinessProfile(p => ({ ...p, websites: e.target.value }))}
-                                                            rows={2}
-                                                            className="min-h-[44px] w-full resize-y rounded-lg border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500"
-                                                            placeholder={'https://example.com\nhttps://shop.example.com'}
+                                                            value={businessProfile.description}
+                                                            onChange={(e) => setBusinessProfile(p => ({ ...p, description: e.target.value }))}
+                                                            rows={4}
+                                                            className="mt-1.5 w-full resize-y rounded-lg border-gray-200 text-sm leading-5 focus:border-indigo-500 focus:ring-indigo-500"
+                                                            placeholder="Tell customers what this account is for"
                                                         />
-                                                    </div>
-                                                </label>
-                                                <label className="block">
-                                                    <span className="mb-1.5 block text-xs font-semibold text-gray-700">Address</span>
-                                                    <div className="relative">
-                                                        <Building2 className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                                                        <textarea
-                                                            value={businessProfile.address}
-                                                            onChange={(e) => setBusinessProfile(p => ({ ...p, address: e.target.value }))}
-                                                            rows={2}
-                                                            className="min-h-[44px] w-full resize-y rounded-lg border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500"
-                                                            placeholder="Business address"
-                                                        />
-                                                    </div>
-                                                </label>
-                                            </div>
-                                        </section>
+                                                    </label>
+                                                    <label className="block">
+                                                        <span className="mb-1.5 block text-xs font-semibold text-gray-700">Email</span>
+                                                        <div className="relative">
+                                                            <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                                            <input
+                                                                value={businessProfile.email}
+                                                                onChange={(e) => setBusinessProfile(p => ({ ...p, email: e.target.value }))}
+                                                                className="h-11 w-full rounded-lg border-gray-200 bg-white pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500"
+                                                                placeholder="support@example.com"
+                                                            />
+                                                        </div>
+                                                    </label>
+                                                    <label className="block">
+                                                        <span className="mb-1.5 block text-xs font-semibold text-gray-700">Websites</span>
+                                                        <div className="relative">
+                                                            <LinkIcon className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                                            <textarea
+                                                                value={businessProfile.websites}
+                                                                onChange={(e) => setBusinessProfile(p => ({ ...p, websites: e.target.value }))}
+                                                                rows={2}
+                                                                className="min-h-[44px] w-full resize-y rounded-lg border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500"
+                                                                placeholder={'https://example.com\nhttps://shop.example.com'}
+                                                            />
+                                                        </div>
+                                                    </label>
+                                                    <label className="block">
+                                                        <span className="mb-1.5 block text-xs font-semibold text-gray-700">Address</span>
+                                                        <div className="relative">
+                                                            <Building2 className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                                            <textarea
+                                                                value={businessProfile.address}
+                                                                onChange={(e) => setBusinessProfile(p => ({ ...p, address: e.target.value }))}
+                                                                rows={2}
+                                                                className="min-h-[44px] w-full resize-y rounded-lg border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500"
+                                                                placeholder="Business address"
+                                                            />
+                                                        </div>
+                                                    </label>
+                                                </div>
+                                            </section>
 
-                                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 text-xs leading-relaxed text-indigo-900 flex gap-2.5">
-                                            <Info className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
-                                            <div>
-                                                <div className="font-semibold text-indigo-950">Meta and WhatsApp app visibility</div>
-                                                <p className="mt-1 text-indigo-950/80">After saving, this page reads the profile back from Meta. If Meta shows the new value here but WhatsApp still shows an old one, the customer WhatsApp app is using cached profile data. The short About/bio is usually more visible than the longer business description.</p>
+                                            <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 text-xs leading-relaxed text-indigo-900 flex gap-2.5">
+                                                <Info className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
+                                                <div>
+                                                    <div className="font-semibold text-indigo-950">Meta and WhatsApp app visibility</div>
+                                                    <p className="mt-1 text-indigo-950/80">After saving, this page reads the profile back from Meta. If Meta shows the new value here but WhatsApp still shows an old one, the customer WhatsApp app is using cached profile data. The short About/bio is usually more visible than the longer business description.</p>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
 
-                                    <div className="sticky bottom-0 flex items-center justify-between border-t border-gray-200 bg-white/95 px-8 py-4 backdrop-blur-md z-20">
-                                        <div className="text-xs text-gray-400 font-medium">
-                                            Changes apply to the selected WhatsApp account only.
+                                        <div className="sticky bottom-0 flex items-center justify-between border-t border-gray-200 bg-white/95 px-8 py-4 backdrop-blur-md z-20">
+                                            <div className="text-xs text-gray-400 font-medium">
+                                                Changes apply to the selected WhatsApp account only.
+                                            </div>
+                                            <button
+                                                type="submit"
+                                                disabled={isSavingProfile || isLoadingProfile}
+                                                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                                            >
+                                                {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                                                Save changes
+                                            </button>
                                         </div>
-                                        <button
-                                            type="submit"
-                                            disabled={isSavingProfile || isLoadingProfile}
-                                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 transition-colors"
-                                        >
-                                            {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                            Save changes
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        )}
+                                    </form>
+                                </div>
+                            )}
                         </div>
                     );
                 })()}
@@ -1386,35 +1456,35 @@ export default function Settings() {
                                     </div>
                                 </div>
                                 <div className="divide-y divide-gray-100">
-                            {isLoadingKnowledge ? (
-                                <div className="px-5 py-10 text-center text-sm text-gray-500">Loading knowledge base...</div>
-                            ) : documents.length === 0 ? (
-                                <div className="px-5 py-10 text-center text-sm text-gray-500">No knowledge documents yet.</div>
-                            ) : documents.map((doc) => (
-                                <div key={doc.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-10 w-10 bg-white rounded-lg border border-gray-200 flex items-center justify-center text-gray-500">
-                                            <FileText className="h-5 w-5" />
+                                    {isLoadingKnowledge ? (
+                                        <div className="px-5 py-10 text-center text-sm text-gray-500">Loading knowledge base...</div>
+                                    ) : documents.length === 0 ? (
+                                        <div className="px-5 py-10 text-center text-sm text-gray-500">No knowledge documents yet.</div>
+                                    ) : documents.map((doc) => (
+                                        <div key={doc.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-10 w-10 bg-white rounded-lg border border-gray-200 flex items-center justify-center text-gray-500">
+                                                    <FileText className="h-5 w-5" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-sm font-medium text-gray-900">{doc.name}</h4>
+                                                    <p className="text-xs text-gray-500">{doc.size} • {doc.date}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className={`text-xs font-medium px-2 py-1 rounded-full ${doc.status === 'INDEXED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                                                    }`}>
+                                                    {doc.status}
+                                                </span>
+                                                <button
+                                                    onClick={() => handleDelete(doc.id)}
+                                                    className="text-gray-400 hover:text-red-600 transition-colors"
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </button>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <h4 className="text-sm font-medium text-gray-900">{doc.name}</h4>
-                                            <p className="text-xs text-gray-500">{doc.size} • {doc.date}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${doc.status === 'INDEXED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                                            }`}>
-                                            {doc.status}
-                                        </span>
-                                        <button
-                                            onClick={() => handleDelete(doc.id)}
-                                            className="text-gray-400 hover:text-red-600 transition-colors"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+                                    ))}
                                 </div>
                             </div>
                         </div>
@@ -1465,71 +1535,76 @@ export default function Settings() {
                                                     ? 'bg-red-400'
                                                     : 'bg-amber-400'
                                             return (
-                                            <tr key={member.id} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="flex items-center">
-                                                        <div className="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center text-white font-bold"
-                                                            style={{ backgroundColor: member.avatar_color || '#6366f1' }}>
-                                                            {member.name?.charAt(0)?.toUpperCase()}
-                                                        </div>
-                                                        <div className="ml-4">
-                                                            <div className="text-sm font-medium text-gray-900">{member.name}</div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="text-sm text-gray-500">{member.email}</div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <select
-                                                        value={member.role}
-                                                        onChange={(e) => updateRole(member.id, e.target.value)}
-                                                        disabled={member.role === 'owner'}
-                                                        className="text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                                                    >
-                                                        <option value="owner">Owner</option>
-                                                        <option value="admin">Admin</option>
-                                                        <option value="agent">Agent</option>
-                                                    </select>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="space-y-1">
-                                                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyles}`}>
-                                                            <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${dotStyles}`} />
-                                                            {inviteStatus === 'active' ? 'Active' : inviteStatus === 'expired' ? 'Invite expired' : 'Invite pending'}
-                                                        </span>
-                                                        {inviteStatus !== 'active' && member.invite_expires_at ? (
-                                                            <div className="flex items-center gap-1 text-xs text-gray-400">
-                                                                <Clock className="h-3 w-3" />
-                                                                Expires {formatInviteExpiry(member.invite_expires_at)}
+                                                <tr key={member.id} className="hover:bg-gray-50 transition-colors">
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <div className="flex items-center">
+                                                            <div className="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center text-white font-bold overflow-hidden"
+                                                                style={member.avatar_color?.startsWith('/images/avatars/') ? {} : { backgroundColor: member.avatar_color || '#6366f1' }}>
+                                                                {member.avatar_color?.startsWith('/images/avatars/') ? (
+                                                                    <img src={member.avatar_color} className="h-full w-full object-cover" alt={member.name} />
+                                                                ) : (
+                                                                    member.name?.charAt(0)?.toUpperCase()
+                                                                )}
                                                             </div>
-                                                        ) : null}
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        {inviteStatus !== 'active' && member.role !== 'owner' ? (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => resendInvite(member)}
-                                                                disabled={resendingMemberId === member.id}
-                                                                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-                                                            >
-                                                                {resendingMemberId === member.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                                                                Resend
-                                                            </button>
-                                                        ) : null}
-                                                        <button
-                                                            onClick={() => removeMember(member.id)}
+                                                            <div className="ml-4">
+                                                                <div className="text-sm font-medium text-gray-900">{member.name}</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <div className="text-sm text-gray-500">{member.email}</div>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <select
+                                                            value={member.role}
+                                                            onChange={(e) => updateRole(member.id, e.target.value)}
                                                             disabled={member.role === 'owner'}
-                                                            className="text-red-600 hover:text-red-900 disabled:opacity-50"
+                                                            className="text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
                                                         >
-                                                            <Trash className="h-4 w-4" />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        )})}
+                                                            <option value="owner">Owner</option>
+                                                            <option value="admin">Admin</option>
+                                                            <option value="agent">Agent</option>
+                                                        </select>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <div className="space-y-1">
+                                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyles}`}>
+                                                                <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${dotStyles}`} />
+                                                                {inviteStatus === 'active' ? 'Active' : inviteStatus === 'expired' ? 'Invite expired' : 'Invite pending'}
+                                                            </span>
+                                                            {inviteStatus !== 'active' && member.invite_expires_at ? (
+                                                                <div className="flex items-center gap-1 text-xs text-gray-400">
+                                                                    <Clock className="h-3 w-3" />
+                                                                    Expires {formatInviteExpiry(member.invite_expires_at)}
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            {inviteStatus !== 'active' && member.role !== 'owner' ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => resendInvite(member)}
+                                                                    disabled={resendingMemberId === member.id}
+                                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                                                                >
+                                                                    {resendingMemberId === member.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                                                                    Resend
+                                                                </button>
+                                                            ) : null}
+                                                            <button
+                                                                onClick={() => removeMember(member.id)}
+                                                                disabled={member.role === 'owner'}
+                                                                className="text-red-600 hover:text-red-900 disabled:opacity-50"
+                                                            >
+                                                                <Trash className="h-4 w-4" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
                                     </tbody>
                                 </table>
                             </div>

@@ -873,6 +873,23 @@ function toSafeWhatsappAccount(account: any) {
 }
 
 async function getMetaAccountDiagnostics(account: any) {
+    const isMeta = Boolean(account?.whatsapp_business_account_id || account?.access_token_encrypted);
+    if (!isMeta) {
+        const connected = account?.status === 'connected' || account?.status === 'active';
+        return {
+            account_id: account?.id || null,
+            connection_type: 'qr_session',
+            send_ready: connected,
+            issue_codes: connected ? [] : ['qr_disconnected'],
+            reconnect_required: false,
+            meta_errors: [],
+            issues: connected ? [] : ['QR session is not active/connected.'],
+            diagnostics_summary: connected
+                ? 'QR testing session connected.'
+                : 'QR testing session is not connected.'
+        };
+    }
+
     const token = account?.access_token_encrypted ? decryptToken(account.access_token_encrypted) : '';
     const diagnostics: any = {
         account_id: account?.id || null,
@@ -1261,9 +1278,19 @@ function decodeSupabaseJwtRole(token: string | null | undefined): string | null 
 const SUPABASE_KEY_ROLE = decodeSupabaseJwtRole(SUPABASE_SERVICE_ROLE_KEY);
 const INVITE_TTL_HOURS = Number(process.env.TEAM_INVITE_TTL_HOURS || 24);
 
+const billingOverviewCache = new Map<string, { data: any; expiresAt: number }>()
+
 app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
-    const orgId = req.organization_id;
-    const userId = req.user?.id;
+    const orgId = req.organization_id
+    const userId = req.user?.id
+    const bypassCache = req.query.refresh === 'true'
+
+    if (orgId && !bypassCache) {
+        const cached = billingOverviewCache.get(String(orgId))
+        if (cached && cached.expiresAt > Date.now()) {
+            return res.json(cached.data)
+        }
+    }
     const now = new Date();
     const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
     const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
@@ -1454,7 +1481,7 @@ app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
         const planId = orgData.plan_id || null;
         const currentPlan = planId ? plans.find((plan: any) => plan.id === planId) || null : null;
 
-        res.json({
+        const result = {
             organization: orgData,
             current_plan: currentPlan,
             plans,
@@ -1481,10 +1508,168 @@ app.get('/api/billing/overview', authMiddleware, async (req: any, res) => {
                 usage_table_missing: !!monthUsageResult.error,
                 rate_card_table_missing: !!rateCardsResult.error
             }
-        });
+        }
+
+        if (orgId) {
+            billingOverviewCache.set(String(orgId), {
+                data: result,
+                expiresAt: Date.now() + 15000 // 15 seconds TTL
+            })
+        }
+
+        res.json(result)
     } catch (err: any) {
         console.error('[billing/overview] Error:', err);
         res.status(500).json({ error: err.message || 'Failed to load billing overview' });
+    }
+});
+
+app.get('/api/billing/wallet', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const userId = req.user?.id;
+
+    try {
+        if (!orgId) return res.status(400).json({ error: 'organization_id is required' });
+
+        const { data: walletData, error: walletError } = await supabase
+            .from('whatsapp_wallets')
+            .select('organization_id, balance_paise, currency, low_balance_threshold_paise')
+            .eq('organization_id', orgId)
+            .maybeSingle();
+
+        if (walletError) {
+            throw walletError;
+        }
+
+        let wallet = walletData;
+        if (!wallet && userId) {
+            const { data: createdWallet, error: createWalletError } = await supabase
+                .from('whatsapp_wallets')
+                .insert({ organization_id: orgId, currency: DEFAULT_BILLING_CURRENCY })
+                .select('organization_id, balance_paise, currency, low_balance_threshold_paise')
+                .maybeSingle();
+            if (!createWalletError && createdWallet) {
+                wallet = createdWallet;
+            }
+        }
+
+        res.json({
+            wallet: wallet || {
+                organization_id: orgId,
+                balance_paise: 0,
+                currency: DEFAULT_BILLING_CURRENCY,
+                low_balance_threshold_paise: 10000
+            }
+        });
+    } catch (err: any) {
+        console.error('[billing/wallet] Error:', err);
+        res.status(500).json({ error: err.message || 'Failed to load wallet data' });
+    }
+});
+
+app.get('/api/billing/notifications', authMiddleware, async (req: any, res) => {
+    const orgId = req.organization_id;
+    const userId = req.user?.id;
+
+    try {
+        if (!orgId) return res.status(400).json({ error: 'organization_id is required' });
+
+        const [walletResult, transactionsResult, orgResult] = await Promise.all([
+            supabase
+                .from('whatsapp_wallets')
+                .select('balance_paise, currency, low_balance_threshold_paise')
+                .eq('organization_id', orgId)
+                .maybeSingle(),
+            supabase
+                .from('whatsapp_wallet_transactions')
+                .select('id, type, amount_paise, currency, status, description, created_at')
+                .eq('organization_id', orgId)
+                .order('created_at', { ascending: false })
+                .limit(10),
+            supabase
+                .from('organizations')
+                .select('plan_id, plan_status, plan_end_date')
+                .eq('id', orgId)
+                .maybeSingle()
+        ]);
+
+        const notificationsList: any[] = [];
+
+        // 1. Wallet Balance Warning Alert
+        const wallet = walletResult.data;
+        if (wallet) {
+            const balancePaise = wallet.balance_paise || 0;
+            const threshold = wallet.low_balance_threshold_paise || 10000;
+            if (balancePaise < threshold) {
+                const balanceINR = (balancePaise / 100).toFixed(2);
+                notificationsList.push({
+                    id: `wallet-low-balance-${orgId}`,
+                    type: 'critical',
+                    title: 'Low Wallet Balance Alert',
+                    message: `Your WhatsApp wallet balance is low (₹${balanceINR}). Top up now to prevent automated message broadcasts from being paused.`,
+                    time: new Date().toISOString(),
+                    link: '/billing'
+                });
+            }
+        }
+
+        // 2. Transaction Success / Fail Notifications
+        const transactions = transactionsResult.data || [];
+        transactions.forEach((tx: any) => {
+            const amountINR = (Math.abs(tx.amount_paise || 0) / 100).toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
+            
+            if (tx.type === 'recharge' || tx.type === 'credit_adjustment') {
+                if (tx.status === 'completed') {
+                    notificationsList.push({
+                        id: `tx-success-${tx.id}`,
+                        type: 'success',
+                        title: 'Wallet Recharged Successfully',
+                        message: `Successfully added ${amountINR} to your message credit balance.`,
+                        time: tx.created_at,
+                        link: '/billing'
+                    });
+                } else if (tx.status === 'failed' || tx.status === 'pending') {
+                    const ageMs = Date.now() - new Date(tx.created_at).getTime();
+                    const fifteenMins = 15 * 60 * 1000;
+                    if (tx.status === 'failed' || ageMs > fifteenMins) {
+                        notificationsList.push({
+                            id: `tx-failed-${tx.id}`,
+                            type: tx.status === 'pending' ? 'warning' : 'error',
+                            title: tx.status === 'pending' ? 'Wallet Recharge Incomplete' : 'Wallet Recharge Payment Failed',
+                            message: tx.status === 'pending' 
+                                ? `Payment of ${amountINR} remains incomplete or was cancelled.` 
+                                : `Payment of ${amountINR} failed. Reference: ${tx.description || 'N/A'}.`,
+                            time: tx.created_at,
+                            link: '/billing'
+                        });
+                    }
+                }
+            }
+        });
+
+        // 3. Plan Expiry Checks (2 Days or 1 Day)
+        const org = orgResult.data;
+        if (org && org.plan_end_date && org.plan_status === 'active') {
+            const planName = org.plan_id ? String(org.plan_id).toUpperCase() : 'PLATFORM';
+            const msLeft = new Date(org.plan_end_date).getTime() - Date.now();
+            const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+
+            if (daysLeft <= 2 && daysLeft > 0) {
+                notificationsList.push({
+                    id: `plan-expiry-${orgId}-${daysLeft}`,
+                    type: 'critical',
+                    title: `Subscription Expiring in ${daysLeft} Day${daysLeft > 1 ? 's' : ''}`,
+                    message: `Your WhatsApp ${planName} subscription will expire in ${daysLeft} day${daysLeft > 1 ? 's' : ''} on ${new Date(org.plan_end_date).toLocaleDateString('en-IN')}. Renew today to ensure uninterrupted service.`,
+                    time: new Date().toISOString(),
+                    link: '/billing'
+                });
+            }
+        }
+
+        res.json({ notifications: notificationsList });
+    } catch (err: any) {
+        console.error('[billing/notifications] Error:', err);
+        res.status(500).json({ error: err.message || 'Failed to load notifications' });
     }
 });
 
@@ -5388,8 +5573,8 @@ app.patch('/api/team/my-profile', authMiddleware, async (req: any, res) => {
 
         if (!name) return res.status(400).json({ error: 'Name is required' });
         if (name.length > 80) return res.status(400).json({ error: 'Name must be 80 characters or less' });
-        if (avatarColor && !/^#[0-9a-fA-F]{6}$/.test(avatarColor)) {
-            return res.status(400).json({ error: 'Invalid avatar color' });
+        if (avatarColor && !/^#[0-9a-fA-F]{6}$/.test(avatarColor) && !avatarColor.startsWith('/images/avatars/')) {
+            return res.status(400).json({ error: 'Invalid avatar color or image path' });
         }
 
         const updatePayload: any = {

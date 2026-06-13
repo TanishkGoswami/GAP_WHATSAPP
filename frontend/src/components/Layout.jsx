@@ -2,7 +2,7 @@ import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import Sidebar from './Sidebar'
 import Modal from './Modal'
-import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield, ExternalLink, Menu, Moon, SunMedium } from 'lucide-react'
+import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield, ExternalLink, Menu, Moon, SunMedium, X, CheckCircle2, AlertTriangle, Check, Sparkles, ArrowRight } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { formatINRFromPaise } from '../config/whatsappPricing'
 
@@ -24,11 +24,138 @@ export default function Layout() {
     const [walletBalance, setWalletBalance] = useState(null)
     const [isWalletLoading, setIsWalletLoading] = useState(true)
 
+    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
+    const [notifications, setNotifications] = useState([])
+    const [readIds, setReadIds] = useState(() => {
+        try {
+            const stored = localStorage.getItem('gap_read_notifications')
+            return stored ? JSON.parse(stored) : []
+        } catch {
+            return []
+        }
+    })
+    const [dismissedIds, setDismissedIds] = useState(() => {
+        try {
+            const stored = localStorage.getItem('gap_dismissed_notifications')
+            return stored ? JSON.parse(stored) : []
+        } catch {
+            return []
+        }
+    })
+    const [isLoadingNotifications, setIsLoadingNotifications] = useState(true)
+    const [profileBilling, setProfileBilling] = useState(null)
+    const [isLoadingProfileBilling, setIsLoadingProfileBilling] = useState(false)
+
+    // Save to localStorage when states change
+    useEffect(() => {
+        localStorage.setItem('gap_read_notifications', JSON.stringify(readIds))
+    }, [readIds])
+
+    useEffect(() => {
+        localStorage.setItem('gap_dismissed_notifications', JSON.stringify(dismissedIds))
+    }, [dismissedIds])
+
+    // Relative time formatting utility
+    const formatRelativeTime = (dateInput) => {
+        if (!dateInput) return '';
+        try {
+            const date = new Date(dateInput);
+            const now = new Date();
+            const diffMs = now.getTime() - date.getTime();
+            if (diffMs < 0) return 'Just now';
+
+            const diffMins = Math.floor(diffMs / 60000);
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+
+            const diffHours = Math.floor(diffMins / 60);
+            if (diffHours < 24) return `${diffHours}h ago`;
+
+            const diffDays = Math.floor(diffHours / 24);
+            if (diffDays === 1) return 'Yesterday';
+            if (diffDays < 7) return `${diffDays}d ago`;
+
+            return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        } catch {
+            return 'Recently';
+        }
+    };
+
+    // Fetch dynamic notifications from database endpoint
+    const fetchNotifications = async () => {
+        if (!user) return;
+        try {
+            const res = await apiCall(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/billing/notifications`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data?.notifications) {
+                    setNotifications(data.notifications);
+                }
+            }
+        } catch (err) {
+            console.error('Failed to fetch notifications in Layout:', err);
+        } finally {
+            setIsLoadingNotifications(false);
+        }
+    };
+
+    useEffect(() => {
+        if (user) {
+            fetchNotifications();
+            const intervalId = setInterval(fetchNotifications, 60000);
+            return () => clearInterval(intervalId);
+        }
+    }, [user, apiCall]);
+
+    // Compute active list and unread count via useMemo
+    const visibleNotifications = useMemo(() => {
+        return notifications
+            .filter(n => !dismissedIds.includes(n.id))
+            .map(n => ({
+                ...n,
+                read: readIds.includes(n.id)
+            }));
+    }, [notifications, readIds, dismissedIds]);
+
+    const unreadCount = useMemo(() => {
+        return visibleNotifications.filter(n => !n.read).length;
+    }, [visibleNotifications]);
+
+    // Close on click outside
+    useEffect(() => {
+        if (!isNotificationsOpen) return;
+        const handleOutsideClick = (e) => {
+            if (!e.target.closest('.gap-bell-dropdown-container')) {
+                setIsNotificationsOpen(false);
+            }
+        };
+        document.addEventListener('click', handleOutsideClick);
+        return () => document.removeEventListener('click', handleOutsideClick);
+    }, [isNotificationsOpen]);
+
+    const handleMarkAllAsRead = () => {
+        const unreadItems = visibleNotifications.filter(n => !n.read);
+        const newReadIds = [...readIds, ...unreadItems.map(n => n.id)];
+        setReadIds(newReadIds);
+    }
+
+    const handleMarkAsRead = (id) => {
+        if (!readIds.includes(id)) {
+            setReadIds(prev => [...prev, id]);
+        }
+    }
+
+    const handleDismissNotification = (id, e) => {
+        e.stopPropagation()
+        setDismissedIds(prev => [...prev, id]);
+    }
+
+
     useEffect(() => {
         let active = true;
         const fetchWallet = async () => {
             try {
-                const res = await apiCall(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/billing/overview`);
+                const res = await apiCall(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/billing/wallet`);
                 if (res.ok) {
                     const data = await res.json();
                     if (active && data?.wallet) {
@@ -50,6 +177,72 @@ export default function Layout() {
             active = false;
         };
     }, [user, location.pathname, apiCall]);
+
+    useEffect(() => {
+        if (!isProfileOpen || !user) return;
+        let active = true;
+        const fetchProfileBilling = async () => {
+            setIsLoadingProfileBilling(true);
+            try {
+                const res = await apiCall(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/billing/overview`);
+                if (res.ok && active) {
+                    const data = await res.json();
+                    setProfileBilling(data);
+                }
+            } catch (err) {
+                console.error('Failed to fetch profile billing in Layout:', err);
+            } finally {
+                if (active) setIsLoadingProfileBilling(false);
+            }
+        };
+        fetchProfileBilling();
+        return () => {
+            active = false;
+        };
+    }, [isProfileOpen, user, apiCall]);
+
+    const formatPlanDate = (dateString) => {
+        if (!dateString) return 'N/A'
+        try {
+            const date = new Date(dateString)
+            if (Number.isNaN(date.getTime())) return 'N/A'
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        } catch {
+            return 'N/A'
+        }
+    }
+
+    const getDaysRemaining = (endDateString) => {
+        if (!endDateString) return null
+        try {
+            const end = new Date(endDateString)
+            const now = new Date()
+            const diffTime = end.getTime() - now.getTime()
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+            return diffDays > 0 ? diffDays : 0
+        } catch {
+            return null
+        }
+    }
+
+    const getUpgradeRecommendation = (currentPlanId) => {
+        const pId = String(currentPlanId || '').toLowerCase()
+        if (pId.includes('pro') || pId.includes('ultimate') || pId.includes('max') || pId.includes('ecosystem')) {
+            return null
+        }
+        if (pId.includes('growth')) {
+            return {
+                name: 'Pro',
+                price: '₹3,499/mo',
+                features: ['50,000 contacts', '10 agents', 'API & Webhooks']
+            }
+        }
+        return {
+            name: 'Growth',
+            price: '₹1,999/mo',
+            features: ['10,000 contacts', 'Unlimited flows', 'Broadcast campaigns']
+        }
+    }
 
     const isOwner = userRole === 'owner'
     const isLiveChat = location.pathname === '/live-chat'
@@ -119,7 +312,7 @@ export default function Layout() {
                     <div className="h-16 w-16 bg-gradient-to-tr from-indigo-500 to-purple-600 text-white rounded-2xl flex items-center justify-center mb-6 shadow-lg rotate-3 hover:rotate-0 transition-transform duration-300">
                         <img src="/logo.png" alt="GetAiPilot" className="h-9 w-9 object-contain" />
                     </div>
-                    
+
                     <h2 className="text-2xl font-black text-gray-900 tracking-tight">GAP WhatsApp Access Locked</h2>
                     <p className="text-sm text-gray-500 mt-2 leading-relaxed max-w-sm">
                         An active WhatsApp Starter, Growth, Pro, or All-in-One plan subscription is required to access your WhatsApp automations.
@@ -263,7 +456,7 @@ export default function Layout() {
                             <button
                                 type="button"
                                 onClick={() => navigate('/billing')}
-                                className="group flex items-center gap-2.5 rounded-full border border-gray-200 bg-white pl-2 pr-4 py-1.5 hover:bg-gray-50/80 hover:border-gray-300 hover:-translate-y-0.5 active:scale-[0.98] transition-all duration-200 shadow-sm cursor-pointer"
+                                className="group flex items-center gap-2.5 rounded-full border border-gray-200 bg-white pl-2 pr-4 py-1 hover:bg-gray-50/80 hover:border-gray-300  active:scale-[0.98] transition-all duration-200 shadow-sm cursor-pointer"
                                 title="Message Wallet Balance (Click to recharge)"
                             >
                                 <div className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 border border-emerald-100/30 overflow-hidden">
@@ -275,7 +468,7 @@ export default function Layout() {
                                 </div>
                                 <div className="flex flex-col items-start leading-none">
                                     <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider group-hover:text-gray-500 transition-colors">Wallet</span>
-                                    <span className="mt-0.5 text-xs font-bold text-gray-800 tracking-tight">
+                                    <span className=" text-xs font-bold text-gray-800 tracking-tight">
                                         {isWalletLoading ? (
                                             <span className="inline-block h-3.5 w-12 animate-pulse rounded bg-gray-200" />
                                         ) : (
@@ -289,19 +482,17 @@ export default function Layout() {
                             <button
                                 type="button"
                                 onClick={() => setIsNightLight(prev => !prev)}
-                                className={`relative inline-flex h-9 w-[86px] items-center rounded-full border p-1 transition-all duration-300 ease-out ${
-                                    isNightLight
-                                        ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                                        : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                                }`}
+                                className={`relative inline-flex h-9 w-[86px] items-center rounded-full border p-1 transition-all duration-300 ease-out ${isNightLight
+                                    ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                                    : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                    }`}
                                 aria-label={isNightLight ? 'Switch to normal light' : 'Switch to night light'}
                                 aria-pressed={isNightLight}
                             >
                                 <span className="sr-only">{isNightLight ? 'Night Light is on' : 'Light mode is on'}</span>
                                 <span
-                                    className={`absolute left-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/5 transition-transform duration-300 ease-out ${
-                                        isNightLight ? 'translate-x-[49px] text-amber-700' : 'translate-x-0 text-[#0064b7]'
-                                    }`}
+                                    className={`absolute left-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white shadow-sm ring-1 ring-black/5 transition-transform duration-300 ease-out ${isNightLight ? 'translate-x-[49px] text-amber-700' : 'translate-x-0 text-[#0064b7]'
+                                        }`}
                                 >
                                     {isNightLight ? <Moon className="h-4 w-4" /> : <SunMedium className="h-4 w-4" />}
                                 </span>
@@ -313,9 +504,144 @@ export default function Layout() {
                                 </span>
                             </button>
                         </div>
-                        <button className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500">
-                            <Bell className="h-5 w-5" />
-                        </button>
+                        <div className="relative gap-bell-dropdown-container">
+                            <button
+                                type="button"
+                                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                                className={`relative rounded-full p-2 transition-colors duration-200 ${isNotificationsOpen ? 'bg-gray-150 text-gray-800' : 'text-gray-400 hover:bg-gray-105 hover:text-gray-505'}`}
+                                aria-label="Open notifications tray"
+                            >
+                                <Bell className="h-5 w-5 text-gray-450 hover:text-gray-600 transition-colors" />
+                                {unreadCount > 0 && (
+                                    <span className="absolute right-1.5 top-1.5 flex h-2 w-2">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-450 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                    </span>
+                                )}
+                            </button>
+
+                            {/* Dropdown panel */}
+                            <div
+                                className={`absolute right-0 mt-3 w-80 sm:w-96 origin-top-right rounded-2xl overflow-hidden border border-gray-200/90 bg-white/95 backdrop-blur-md shadow-2xl transition-all duration-200 ease-out transform z-50 ${isNotificationsOpen
+                                    ? 'opacity-100 scale-100 translate-y-0'
+                                    : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
+                                    }`}
+                            >
+                                {/* Header */}
+                                <div className="flex items-center justify-between border-b border-gray-150/70 px-4 py-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm font-bold text-gray-950">Inbox Alerts</span>
+                                        {unreadCount > 0 && (
+                                            <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-650 ring-1 ring-inset ring-red-600/10">
+                                                {unreadCount} new
+                                            </span>
+                                        )}
+                                    </div>
+                                    {unreadCount > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={handleMarkAllAsRead}
+                                            className="text-xs font-semibold text-[#128C7E] hover:text-[#075E54] hover:underline transition-colors"
+                                        >
+                                            Mark all as read
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Body */}
+                                <div className="max-h-[340px] overflow-y-auto divide-y divide-gray-100">
+                                    {isLoadingNotifications ? (
+                                        <div className="p-4 space-y-3">
+                                            {[1, 2, 3].map(i => (
+                                                <div key={i} className="flex gap-3 items-start animate-pulse">
+                                                    <div className="h-8 w-8 rounded-xl bg-slate-100 border border-slate-200 shrink-0" />
+                                                    <div className="flex-1 space-y-2 py-0.5">
+                                                        <div className="h-3 bg-slate-200 rounded w-1/3" />
+                                                        <div className="h-2.5 bg-slate-200 rounded w-5/6" />
+                                                        <div className="h-2 bg-slate-100/80 rounded w-1/4" />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : visibleNotifications.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 border border-gray-100 text-gray-400">
+                                                <Check className="h-5 w-5" />
+                                            </div>
+                                            <p className="mt-3 text-xs font-semibold text-gray-950">Inbox is clean</p>
+                                            <p className="mt-1 text-[11px] text-gray-500">No warnings or recent account updates to show.</p>
+                                        </div>
+                                    ) : (
+                                        visibleNotifications.map(item => {
+                                            const isCritical = item.type === 'critical';
+                                            const isError = item.type === 'error';
+                                            const isSuccess = item.type === 'success';
+
+                                            return (
+                                                <div
+                                                    key={item.id}
+                                                    onClick={() => {
+                                                        handleMarkAsRead(item.id);
+                                                        setIsNotificationsOpen(false);
+                                                        if (item.link) navigate(item.link);
+                                                    }}
+                                                    className={`group relative flex items-start gap-3 p-3.5 text-left transition-all cursor-pointer hover:bg-slate-50/70 ${!item.read ? 'bg-emerald-50/[0.04]' : ''}`}
+                                                >
+                                                    {/* Left indicator line */}
+                                                    {!item.read && (
+                                                        <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#128C7E]" />
+                                                    )}
+
+                                                    {/* Icon container */}
+                                                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border shadow-sm ${isCritical
+                                                        ? 'bg-rose-50 border-rose-100/50 text-rose-600 animate-pulse'
+                                                        : isError
+                                                            ? 'bg-red-50 border-red-100/50 text-red-650'
+                                                            : isSuccess
+                                                                ? 'bg-emerald-50 border-emerald-100/50 text-emerald-600'
+                                                                : 'bg-gray-50 border-gray-100 text-gray-600'
+                                                        }`}
+                                                    >
+                                                        {isCritical ? (
+                                                            <AlertTriangle className="h-4.5 w-4.5" />
+                                                        ) : isError ? (
+                                                            <AlertCircle className="h-4.5 w-4.5" />
+                                                        ) : isSuccess ? (
+                                                            <CheckCircle2 className="h-4.5 w-4.5" />
+                                                        ) : (
+                                                            <Bell className="h-4.5 w-4.5" />
+                                                        )}
+                                                    </div>
+
+                                                    {/* Text details */}
+                                                    <div className="min-w-0 flex-1 pr-4">
+                                                        <p className={`text-xs font-bold leading-tight ${!item.read ? 'text-gray-950' : 'text-gray-600'}`}>
+                                                            {item.title}
+                                                        </p>
+                                                        <p className="mt-1 text-[11px] leading-normal text-gray-500">
+                                                            {item.message}
+                                                        </p>
+                                                        <span className="mt-1.5 block text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                                                            {formatRelativeTime(item.time)}
+                                                        </span>
+                                                    </div>
+
+                                                    {/* Dismiss button */}
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => handleDismissNotification(item.id, e)}
+                                                        className="absolute right-2.5 top-2.5 rounded-md p-1 text-gray-350 opacity-0 hover:bg-gray-150/70 hover:text-gray-700 group-hover:opacity-100 transition-all focus:opacity-100"
+                                                        aria-label="Dismiss notification"
+                                                    >
+                                                        <X className="h-3.5 w-3.5" />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+                        </div>
                         <div className="relative flex min-w-0 items-center gap-2 sm:gap-3">
                             <button
                                 type="button"
@@ -324,10 +650,16 @@ export default function Layout() {
                                 title="Edit profile"
                             >
                                 <div
-                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                                    style={{ backgroundColor: avatarColor }}
+                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white overflow-hidden"
+                                    style={avatarColor?.startsWith('/images/avatars/') ? {} : { backgroundColor: avatarColor }}
                                 >
-                                    {isProfileLoading ? <User className="h-4 w-4" /> : avatarInitials.toUpperCase()}
+                                    {isProfileLoading ? (
+                                        <User className="h-4 w-4" />
+                                    ) : avatarColor?.startsWith('/images/avatars/') ? (
+                                        <img src={avatarColor} className="h-full w-full object-cover" alt={displayName} />
+                                    ) : (
+                                        avatarInitials.toUpperCase()
+                                    )}
                                 </div>
                                 <span className="hidden max-w-[120px] truncate text-sm font-medium capitalize text-gray-700 sm:inline">{displayName}</span>
                             </button>
@@ -347,93 +679,201 @@ export default function Layout() {
                     <Outlet />
                 </main>
 
-                {/* Logout Confirmation Modal */}
+                {/* Profile Modal */}
                 <Modal
                     isOpen={isProfileOpen}
                     onClose={() => !isSavingProfile && setIsProfileOpen(false)}
                     title="My Profile"
                     maxWidth="max-w-lg"
                 >
-                    <form onSubmit={handleSaveProfile} className="space-y-5">
-                        <div className="flex items-center gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <form onSubmit={handleSaveProfile} className="space-y-4 font-sans">
+                        {/* Header card (Vercel/Apple Style) */}
+                        <div className="flex items-center gap-4 rounded-2xl border border-neutral-100 bg-[#fafafa]/50 p-4 relative overflow-hidden">
                             <div
-                                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white shadow-sm"
-                                style={{ backgroundColor: profileDraft.avatar_color }}
+                                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white shadow-sm ring-4 ring-white overflow-hidden"
+                                style={profileDraft.avatar_color?.startsWith('/images/avatars/') ? {} : { backgroundColor: profileDraft.avatar_color }}
                             >
-                                {String(profileDraft.name || displayName || 'U').trim().charAt(0).toUpperCase() || 'U'}
+                                {profileDraft.avatar_color?.startsWith('/images/avatars/') ? (
+                                    <img src={profileDraft.avatar_color} className="h-full w-full object-cover" alt="Profile preview" />
+                                ) : (
+                                    String(profileDraft.name || displayName || 'U').trim().charAt(0).toUpperCase() || 'U'
+                                )}
                             </div>
                             <div className="min-w-0">
-                                <div className="truncate text-sm font-semibold text-gray-900">{profileDraft.name || displayName}</div>
-                                <div className="truncate text-xs text-gray-500">{userEmail}</div>
+                                <h3 className="truncate text-base font-bold text-neutral-900 tracking-tight">{profileDraft.name || displayName}</h3>
+                                <p className="truncate text-xs font-medium text-neutral-400 mt-0.5">{userEmail}</p>
                             </div>
                         </div>
 
                         {profileError && (
-                            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                            <div className="rounded-xl border border-red-200 bg-red-50/50 px-4 py-2.5 text-xs text-red-700 font-medium">
                                 {profileError}
                             </div>
                         )}
 
+                        {/* Display Name Input */}
                         <label className="block">
-                            <span className="mb-1.5 block text-sm font-medium text-gray-700">Display name</span>
+                            <span className="mb-1.5 block text-xs font-bold text-neutral-400 uppercase tracking-wider">Display name</span>
                             <input
                                 value={profileDraft.name}
                                 onChange={(e) => setProfileDraft(prev => ({ ...prev, name: e.target.value }))}
                                 maxLength={80}
-                                className="h-11 w-full rounded-lg border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                className="h-10 w-full rounded-xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-800 transition-all placeholder-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-1 focus:ring-neutral-900"
                                 placeholder="Your name"
                             />
                         </label>
 
-                        <div>
-                            <div className="mb-2 text-sm font-medium text-gray-700">Avatar color</div>
-                            <div className="flex flex-wrap gap-2">
-                                {avatarColors.map(color => (
-                                    <button
-                                        key={color}
-                                        type="button"
-                                        onClick={() => setProfileDraft(prev => ({ ...prev, avatar_color: color }))}
-                                        className={`h-9 w-9 rounded-full border-2 transition-transform hover:scale-105 ${profileDraft.avatar_color === color ? 'border-gray-900' : 'border-white ring-1 ring-gray-200'}`}
-                                        style={{ backgroundColor: color }}
-                                        aria-label={`Use avatar color ${color}`}
-                                    />
-                                ))}
+                        {/* Avatar Customization */}
+                        <div className="space-y-4">
+                            <div>
+                                <div className="mb-2 text-xs font-bold text-neutral-450 uppercase tracking-wider">Avatar Color Theme</div>
+                                <div className="flex flex-wrap gap-2.5">
+                                    {avatarColors.map(color => (
+                                        <button
+                                            key={color}
+                                            type="button"
+                                            onClick={() => setProfileDraft(prev => ({ ...prev, avatar_color: color }))}
+                                            className={`h-7 w-7 rounded-full border-2 transition-all duration-200 hover:scale-105 active:scale-95 ${profileDraft.avatar_color === color ? 'border-neutral-900 ring-2 ring-neutral-900/10' : 'border-white ring-1 ring-neutral-200'}`}
+                                            style={{ backgroundColor: color }}
+                                            aria-label={`Use avatar color ${color}`}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="mb-2 text-xs font-bold text-neutral-450 uppercase tracking-wider">Or Select Premium Character Avatar</div>
+                                <div className="grid grid-cols-4 gap-3">
+                                    {[
+                                        { path: '/images/avatars/male_one.png', label: 'Male Avatar 1' },
+                                        { path: '/images/avatars/male_two.png', label: 'Male Avatar 2' },
+                                        { path: '/images/avatars/female_one.png', label: 'Female Avatar 1' },
+                                        { path: '/images/avatars/female_two.png', label: 'Female Avatar 2' },
+                                    ].map(av => (
+                                        <button
+                                            key={av.path}
+                                            type="button"
+                                            onClick={() => setProfileDraft(prev => ({ ...prev, avatar_color: av.path }))}
+                                            className={`group relative aspect-square rounded-2xl border-2 overflow-hidden transition-all duration-200 hover:scale-105 active:scale-95 ${profileDraft.avatar_color === av.path ? 'border-neutral-900 ring-2 ring-neutral-900/10 bg-neutral-50' : 'border-neutral-100 hover:border-neutral-300 bg-[#fafafa]/50'}`}
+                                            aria-label={av.label}
+                                        >
+                                            <img src={av.path} className="h-full w-full object-cover p-1 transition-transform group-hover:scale-110" alt={av.label} />
+                                            {profileDraft.avatar_color === av.path && (
+                                                <div className="absolute inset-0 bg-neutral-900/5 flex items-center justify-center">
+                                                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-900 text-white shadow-sm ring-1 ring-white">
+                                                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3.5">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
+                        {/* Compact Integrated Billing section */}
+                        {isLoadingProfileBilling && !profileBilling ? (
+                            <div className="rounded-2xl border border-neutral-100 bg-[#fafafa]/50 p-4 animate-pulse h-[88px] flex flex-col justify-between">
+                                <div className="space-y-2">
+                                    <div className="h-3.5 bg-neutral-200 rounded w-1/4" />
+                                    <div className="h-4 bg-neutral-200 rounded w-1/3" />
+                                </div>
+                                <div className="h-3 bg-neutral-150 rounded w-1/2" />
+                            </div>
+                        ) : (() => {
+                            const planId = profileBilling?.organization?.plan_id || user?.plan;
+                            const isActivePlan = (profileBilling?.organization?.plan_status === 'active' || user?.subscription_status === 'active') && !!planId;
+                            const endDate = profileBilling?.organization?.plan_end_date;
+                            const daysLeft = endDate ? getDaysRemaining(endDate) : null;
+                            const upgradeRecommend = planId ? getUpgradeRecommendation(planId) : null;
+
+                            return (
+                                <div className="rounded-2xl border border-neutral-100 bg-gradient-to-br from-white to-[#fafafa] p-4 relative overflow-hidden transition-all duration-300 hover:border-neutral-200">
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="text-[10px] font-bold tracking-wider text-neutral-400 uppercase">Subscription Plan</span>
+                                                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset ${isActivePlan ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/10' : 'bg-neutral-100 text-neutral-600 ring-neutral-500/10'}`}>
+                                                    {isActivePlan ? 'Active' : 'No Plan'}
+                                                </span>
+                                                {isActivePlan && daysLeft !== null && (
+                                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset ${daysLeft < 5 ? 'bg-rose-50 text-rose-700 ring-rose-600/10 animate-pulse' : 'bg-indigo-50 text-indigo-700 ring-indigo-700/10'}`}>
+                                                        {daysLeft} days left
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <h4 className="text-base font-bold text-neutral-900 mt-1.5">
+                                                {isActivePlan ? (profileBilling?.current_plan?.name || planId) : 'Free Tier'}
+                                            </h4>
+                                            <p className="text-[11px] text-neutral-500 mt-0.5">
+                                                {isActivePlan ? `Cycle ends on ${formatPlanDate(endDate)}` : 'Access basic free WhatsApp features.'}
+                                            </p>
+                                        </div>
+
+                                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setIsProfileOpen(false);
+                                                    navigate('/billing');
+                                                }}
+                                                className="inline-flex items-center gap-1 rounded-xl bg-neutral-950 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-neutral-800 active:scale-[0.98] transition-all cursor-pointer shadow-sm"
+                                            >
+                                                {isActivePlan ? 'Manage Billing' : 'Upgrade Plan'}
+                                                <ArrowRight className="h-3 w-3" />
+                                            </button>
+                                            {isActivePlan && upgradeRecommend && (
+                                                <span className="text-[9px] font-semibold text-neutral-455">
+                                                    Next: {upgradeRecommend.name}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+
+                        {/* Grid of details (Email / Role) */}
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <div className="rounded-lg border border-gray-200 bg-white p-3">
-                                <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-400">
-                                    <Mail className="h-3.5 w-3.5" />
-                                    Email
+                            <div className="rounded-2xl border border-neutral-100 bg-[#fafafa]/50 p-3.5 flex items-center gap-3">
+                                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-neutral-100 text-neutral-500 shadow-sm">
+                                    <Mail className="h-4 w-4" />
+                                </span>
+                                <div className="min-w-0">
+                                    <span className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider">Email Address</span>
+                                    <span className="block truncate text-sm font-semibold text-neutral-800 mt-0.5">{userEmail || 'Not available'}</span>
                                 </div>
-                                <div className="truncate text-sm text-gray-700">{userEmail || 'Not available'}</div>
                             </div>
-                            <div className="rounded-lg border border-gray-200 bg-white p-3">
-                                <div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-gray-400">
-                                    <Shield className="h-3.5 w-3.5" />
-                                    Role
+                            <div className="rounded-2xl border border-neutral-100 bg-[#fafafa]/50 p-3.5 flex items-center gap-3">
+                                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-neutral-100 text-neutral-500 shadow-sm">
+                                    <Shield className="h-4 w-4" />
+                                </span>
+                                <div className="min-w-0">
+                                    <span className="block text-[9px] font-bold text-neutral-400 uppercase tracking-wider">Workspace Role</span>
+                                    <span className="block truncate text-sm font-semibold text-neutral-800 mt-0.5">{roleLabel}</span>
                                 </div>
-                                <div className="text-sm text-gray-700">{roleLabel}</div>
                             </div>
                         </div>
 
-                        <div className="flex justify-end gap-3 pt-2">
+                        {/* Actions (Vercel/Apple style) */}
+                        <div className="flex justify-end gap-2.5 pt-3 border-t border-neutral-100">
                             <button
                                 type="button"
                                 onClick={() => setIsProfileOpen(false)}
                                 disabled={isSavingProfile}
-                                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                                className="h-10 rounded-xl border border-neutral-200 bg-white px-4 text-xs font-bold text-neutral-600 hover:bg-neutral-50 active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="submit"
                                 disabled={isSavingProfile}
-                                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                                className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-neutral-950 px-4 text-xs font-bold text-white hover:bg-neutral-800 active:scale-[0.98] transition-all disabled:opacity-50 cursor-pointer shadow-sm shadow-neutral-950/10"
                             >
-                                {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                Save profile
+                                {isSavingProfile ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                                Save Changes
                             </button>
                         </div>
                     </form>
