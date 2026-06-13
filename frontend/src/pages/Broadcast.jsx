@@ -537,7 +537,7 @@ export default function Broadcast() {
     }
 
     return (
-        <div className="max-w-6xl mx-auto space-y-10 pb-16">
+        <div className="mx-auto max-w-7xl space-y-8 pb-16">
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Broadcasts</h1>
@@ -764,15 +764,17 @@ export default function Broadcast() {
                     {/* Step Content */}
                     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
                         {currentStep === 1 && (
-                            <div className="grid gap-0 lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)]">
+                            <div className="grid gap-0 lg:grid-cols-[minmax(260px,0.85fr)_minmax(360px,1fr)_minmax(280px,0.8fr)]">
                                 <div className="border-b border-gray-100 bg-gray-50 p-6 lg:border-b-0 lg:border-r lg:p-8">
-                                    <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#eef7ff] text-[#0064b7]">
-                                        <LayoutGrid className="h-5 w-5" />
-                                    </div>
-                                    <h2 className="mt-4 text-xl font-semibold text-gray-950">Campaign Details</h2>
-                                    <p className="mt-2 text-sm leading-6 text-gray-600">Campaign ka naam, WhatsApp account, aur optional schedule set karein. Agar schedule empty hai to campaign immediately launch hoga.</p>
-                                    <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
-                                        Broadcasts ke liye sirf official Meta API account use hoga. QR session accounts inbox testing ke liye hain.
+                                    <div className="flex h-full flex-col justify-center">
+                                        <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#eef7ff] text-[#0064b7]">
+                                            <LayoutGrid className="h-5 w-5" />
+                                        </div>
+                                        <h2 className="mt-5 text-xl font-semibold text-gray-950">Campaign Details</h2>
+                                        <p className="mt-3 text-sm leading-6 text-gray-600">Campaign ka naam, WhatsApp account, aur optional schedule set karein. Agar schedule empty hai to campaign immediately launch hoga.</p>
+                                        <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
+                                            Broadcasts ke liye sirf official Meta API account use hoga. QR session accounts inbox testing ke liye hain.
+                                        </div>
                                     </div>
                                 </div>
 
@@ -828,6 +830,16 @@ export default function Broadcast() {
                                             />
                                         </div>
                                         <p className="mt-2 text-xs text-gray-500">Leave empty to send immediately.</p>
+                                    </div>
+                                </div>
+
+                                <div className="border-t border-gray-100 bg-white p-6 lg:border-l lg:border-t-0 lg:p-8">
+                                    <div className="flex h-full min-h-[300px] items-center justify-center overflow-hidden rounded-xl bg-[#edf8f1]">
+                                        <img
+                                            src="/images/broadcast.png"
+                                            alt="Broadcast campaign illustration"
+                                            className="h-full min-h-[300px] w-full object-cover"
+                                        />
                                     </div>
                                 </div>
                             </div>

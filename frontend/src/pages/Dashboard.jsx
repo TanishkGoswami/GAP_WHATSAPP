@@ -295,13 +295,13 @@ function FirstRunOnboarding() {
     return (
         <section className="overflow-hidden rounded-lg border border-[#b9dcfb] bg-white">
             <div className="grid gap-0 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-                <div className="border-b border-[#d9ecfd] bg-[#eef7ff] p-5 sm:p-6 xl:border-b-0 xl:border-r">
+                <div className="relative border-b border-[#d9ecfd] bg-[#eef7ff] p-5 sm:p-6 lg:min-h-[260px] xl:border-b-0 xl:border-r">
                     <div className="inline-flex items-center gap-2 rounded-full border border-[#b9dcfb] bg-white px-3 py-1 text-xs font-semibold text-[#0064b7]">
                         <Sparkles className="h-3.5 w-3.5" />
                         First-time setup
                     </div>
-                    <h2 className="mt-4 text-2xl font-semibold leading-tight text-black">Dashboard empty hai because WhatsApp account abhi connected nahi hai.</h2>
-                    <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-700">
+                    <h2 className="mt-4 text-2xl font-semibold leading-tight text-black lg:max-w-[560px]">Dashboard empty hai because WhatsApp account abhi connected nahi hai.</h2>
+                    <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-700 lg:max-w-[560px]">
                         Non-tech flow simple hai: pehle WhatsApp business number connect karo, phir wallet/templates setup karo. Uske baad chats, delivery reports, broadcasts and AI automation yahin real data ke saath show honge.
                     </p>
                     <div className="mt-5 flex flex-col gap-3 sm:flex-row">
@@ -321,6 +321,12 @@ function FirstRunOnboarding() {
                             Need a new number?
                         </Link>
                     </div>
+                    <img
+                        src="/images/dashboad-scope.png"
+                        alt="Dashboard scope preview"
+                        className="pointer-events-none absolute bottom-5 right-8 hidden w-[260px] object-contain lg:block xl:w-[285px]"
+                        loading="lazy"
+                    />
                 </div>
                 <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
                     {steps.map(step => (
