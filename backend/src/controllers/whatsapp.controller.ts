@@ -1,0 +1,668 @@
+import { Response } from 'express';
+import { supabase } from '../config/supabase.js';
+import { encryptToken, decryptToken } from '../utils/crypto.js';
+import { cleanText, cleanNullableText, isValidEmail } from '../utils/format.js';
+import { validateWhatsappTemplatePayload, TemplateValidationIssue } from '../utils/whatsapp.js';
+import { enforceWhatsAppCloudNumberLimit } from '../services/billing.service.js';
+import {
+    inspectMetaTokenPermissions,
+    toSafeWhatsappAccount,
+    getMetaAccountDiagnostics,
+    getOrgWhatsappAccount,
+    fetchMetaBusinessProfile,
+    uploadMetaProfilePicture,
+    updateMetaBusinessProfile
+} from '../services/meta.service.js';
+
+const GRAPH_API_VERSION = process.env.META_API_VERSION || 'v20.0';
+
+export async function getNumberRequests(req: any, res: Response) {
+    const orgId = req.organization_id;
+
+    try {
+        if (!orgId) return res.status(400).json({ error: 'No organization found' });
+
+        const { data, error } = await supabase
+            .from('whatsapp_number_requests')
+            .select('id, business_name, country, preferred_region, use_case, expected_monthly_messages, contact_name, contact_email, contact_phone, status, admin_notes, created_at, updated_at')
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        if (error) throw error;
+        res.json({ requests: data || [] });
+    } catch (err: any) {
+        console.error('[whatsapp/number-requests] List error:', err);
+        res.status(500).json({ error: err.message || 'Failed to load number requests' });
+    }
+}
+
+export async function createNumberRequest(req: any, res: Response) {
+    const orgId = req.organization_id;
+    const userId = req.user?.id || null;
+
+    try {
+        if (!orgId) return res.status(400).json({ error: 'No organization found' });
+
+        const businessName = cleanText(req.body?.business_name, 160);
+        const country = cleanText(req.body?.country || 'India', 80);
+        const preferredRegion = cleanNullableText(req.body?.preferred_region, 120);
+        const useCase = cleanText(req.body?.use_case, 800);
+        const contactName = cleanNullableText(req.body?.contact_name, 120);
+        const contactEmail = cleanNullableText(req.body?.contact_email, 160);
+        const contactPhone = cleanNullableText(req.body?.contact_phone, 40);
+        const expectedMonthlyMessagesRaw = req.body?.expected_monthly_messages;
+        const expectedMonthlyMessages = expectedMonthlyMessagesRaw === '' || expectedMonthlyMessagesRaw === null || expectedMonthlyMessagesRaw === undefined
+            ? null
+            : Number(expectedMonthlyMessagesRaw);
+
+        const errors: string[] = [];
+        if (!businessName) errors.push('Business name is required.');
+        if (!country) errors.push('Country is required.');
+        if (!useCase || useCase.length < 20) errors.push('Use case must explain the business requirement in at least 20 characters.');
+        if (contactEmail && !isValidEmail(contactEmail)) errors.push('Contact email is invalid.');
+        if (expectedMonthlyMessages !== null && (!Number.isInteger(expectedMonthlyMessages) || expectedMonthlyMessages < 0)) {
+            errors.push('Expected monthly messages must be a positive whole number.');
+        }
+        if (!contactEmail && !contactPhone) errors.push('Provide at least one contact email or phone number.');
+
+        if (errors.length) return res.status(400).json({ error: errors[0], errors });
+
+        const { data, error } = await supabase
+            .from('whatsapp_number_requests')
+            .insert({
+                organization_id: orgId,
+                user_id: userId,
+                business_name: businessName,
+                country,
+                preferred_region: preferredRegion,
+                use_case: useCase,
+                expected_monthly_messages: expectedMonthlyMessages,
+                contact_name: contactName,
+                contact_email: contactEmail,
+                contact_phone: contactPhone,
+                status: 'requested',
+                metadata: {
+                    source: 'self_serve_app',
+                    official_onboarding_model: 'assisted_request'
+                }
+            })
+            .select('id, business_name, country, preferred_region, use_case, expected_monthly_messages, contact_name, contact_email, contact_phone, status, admin_notes, created_at, updated_at')
+            .single();
+
+        if (error) throw error;
+        res.status(201).json({ success: true, request: data });
+    } catch (err: any) {
+        console.error('[whatsapp/number-requests] Create error:', err);
+        res.status(500).json({ error: err.message || 'Failed to submit number request' });
+    }
+}
+
+export async function getAccounts(req: any, res: Response) {
+    const orgId = req.organization_id;
+
+    try {
+        if (!orgId) throw new Error('No organization found');
+
+        const { data, error } = await supabase
+            .from('w_wa_accounts')
+            .select('*')
+            .eq('organization_id', orgId)
+            .neq('status', 'disconnected')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        const safeData = (data || []).map((acc: any) => toSafeWhatsappAccount(acc));
+        res.json(safeData);
+    } catch (err: any) {
+        console.error('Error fetching accounts:', err);
+        res.status(500).json({ error: err.message });
+    }
+}
+
+export async function addMetaAccount(req: any, res: Response) {
+    const { phone_number_id, waba_id, access_token, display_phone_number, name } = req.body;
+    const orgId = req.organization_id;
+
+    if (!phone_number_id || !access_token) {
+        return res.status(400).json({ error: 'phone_number_id and access_token are required' });
+    }
+
+    try {
+        if (!orgId) throw new Error('No organization found. Make sure your Supabase is configured correctly.');
+
+        const verifyUrl = `https://graph.facebook.com/v21.0/${String(phone_number_id).trim()}?fields=id,display_phone_number,verified_name&access_token=${String(access_token).trim()}`;
+        const verifyRes = await fetch(verifyUrl);
+        const verifyData: any = await verifyRes.json();
+        if (verifyData.error) {
+            return res.status(400).json({ error: `Meta API error: ${verifyData.error.message}` });
+        }
+
+        const tokenInspection = await inspectMetaTokenPermissions(String(access_token).trim());
+        if (tokenInspection.checked && tokenInspection.missingScopes.length > 0) {
+            return res.status(400).json({
+                error: `This Meta token can access the phone number but cannot be used for sending. Missing permission(s): ${tokenInspection.missingScopes.join(', ')}. Generate a System User token with whatsapp_business_messaging and whatsapp_business_management.`
+            });
+        }
+        if (tokenInspection.error) {
+            console.warn('[whatsapp/accounts/meta] Could not inspect Meta token permissions:', tokenInspection.error);
+        }
+
+        const resolvedDisplayPhone = verifyData.display_phone_number || display_phone_number || null;
+        const resolvedName = verifyData.verified_name || name || 'WhatsApp Business API';
+        const normalizedPhoneNumberId = String(phone_number_id).trim();
+
+        await enforceWhatsAppCloudNumberLimit(orgId, normalizedPhoneNumberId);
+
+        const { data, error } = await supabase
+            .from('w_wa_accounts')
+            .upsert({
+                organization_id: orgId,
+                phone_number_id: normalizedPhoneNumberId,
+                whatsapp_business_account_id: waba_id ? String(waba_id).trim() : null,
+                access_token_encrypted: encryptToken(String(access_token).trim()),
+                display_phone_number: resolvedDisplayPhone,
+                name: resolvedName,
+                status: 'connected'
+            }, { onConflict: 'phone_number_id' })
+            .select('*')
+            .single();
+
+        if (error) {
+            console.error('Supabase upsert error:', error);
+            throw new Error(error.message);
+        }
+        res.json({ success: true, account: toSafeWhatsappAccount(data) });
+    } catch (err: any) {
+        console.error('Error saving Meta account:', err);
+        res.status(err.statusCode || 500).json({ error: err.message, limit: err.limit });
+    }
+}
+
+export async function deleteAccount(req: any, res: Response) {
+    const { id } = req.params;
+    const orgId = req.organization_id;
+    try {
+        const { error } = await supabase
+            .from('w_wa_accounts')
+            .update({ status: 'disconnected', access_token_encrypted: null })
+            .eq('id', id)
+            .eq('organization_id', orgId);
+
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+}
+
+export async function getAccountDiagnostics(req: any, res: Response) {
+    const { id } = req.params;
+    const orgId = req.organization_id;
+
+    try {
+        const { data: account, error } = await supabase
+            .from('w_wa_accounts')
+            .select('id, organization_id, phone_number_id, whatsapp_business_account_id, access_token_encrypted, display_phone_number, name, status')
+            .eq('id', id)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!account?.id) return res.status(404).json({ error: 'WhatsApp account not found' });
+
+        res.json(await getMetaAccountDiagnostics(account));
+    } catch (err: any) {
+        console.error('WhatsApp account diagnostics error:', err);
+        res.status(500).json({ error: err.message || 'Failed to inspect WhatsApp account' });
+    }
+}
+
+export async function getBusinessProfile(req: any, res: Response) {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const account = await getOrgWhatsappAccount(id, orgId);
+        if (!account?.id) return res.status(404).json({ error: 'WhatsApp account not found' });
+
+        const { access_token_encrypted, ...safeAccount } = account;
+        let profile: any = {};
+        let profileError: string | null = null;
+
+        try {
+            profile = await fetchMetaBusinessProfile(account);
+        } catch (err: any) {
+            profileError = err.message || 'Failed to fetch profile from Meta';
+        }
+
+        res.json({
+            account: safeAccount,
+            profile,
+            profile_error: profileError
+        });
+    } catch (err: any) {
+        console.error('Business profile fetch error:', err);
+        res.status(500).json({ error: err.message || 'Failed to fetch business profile' });
+    }
+}
+
+export async function updateBusinessProfile(req: any, res: Response) {
+    const orgId = req.organization_id;
+    const { id } = req.params;
+
+    try {
+        const account = await getOrgWhatsappAccount(id, orgId);
+        if (!account?.id) return res.status(404).json({ error: 'WhatsApp account not found' });
+
+        const token = account.access_token_encrypted ? decryptToken(account.access_token_encrypted) : '';
+        if (!token) return res.status(400).json({ error: 'Selected account is missing a Meta access token' });
+
+        const localName = String(req.body.local_name || '').trim();
+        if (localName && localName !== account.name) {
+            const { error: nameErr } = await supabase
+                .from('w_wa_accounts')
+                .update({ name: localName })
+                .eq('id', id)
+                .eq('organization_id', orgId);
+            if (nameErr) throw nameErr;
+        }
+
+        let profilePictureHandle: string | null = null;
+        if (req.file) {
+            if (!['image/jpeg', 'image/png'].includes(String(req.file.mimetype || ''))) {
+                return res.status(400).json({ error: 'Profile picture must be a JPG or PNG image. WEBP is not accepted by Meta for WhatsApp profile pictures.' });
+            }
+            profilePictureHandle = await uploadMetaProfilePicture(req.file, token);
+        }
+
+        await updateMetaBusinessProfile(account, req.body, profilePictureHandle);
+
+        const refreshedAccount = await getOrgWhatsappAccount(id, orgId);
+        const profile = await fetchMetaBusinessProfile(refreshedAccount);
+        const { access_token_encrypted, ...safeAccount } = refreshedAccount;
+
+        res.json({
+            success: true,
+            account: safeAccount,
+            profile
+        });
+    } catch (err: any) {
+        console.error('Business profile update error:', err);
+        res.status(500).json({ error: err.message || 'Failed to update business profile' });
+    }
+}
+
+function normalizeMetaTemplateStatus(status: any) {
+    const value = String(status || 'PENDING').toUpperCase();
+    if (value.includes('APPROVED') || value === 'ACTIVE' || value === 'ACTIVE - QUALITY PENDING') return 'APPROVED';
+    if (value.includes('REJECT')) return 'REJECTED';
+    if (value.includes('PAUSE')) return 'PAUSED';
+    if (value.includes('DISABLE')) return 'DISABLED';
+    if (value.includes('PENDING') || value.includes('IN_APPEAL')) return 'PENDING';
+    return value;
+}
+
+function mergeTemplateRows(metaRows: any[], localRows: any[]) {
+    const byKey = new Map<string, any>();
+    for (const row of localRows || []) {
+        const key = `${String(row.name || '').toLowerCase()}::${String(row.language || 'en_US')}`;
+        byKey.set(key, {
+            id: row.template_id || row.id,
+            local_id: row.id,
+            name: row.name,
+            language: row.language,
+            category: row.category,
+            status: normalizeMetaTemplateStatus(row.status),
+            quality_score: row.quality_score,
+            rejected_reason: row.rejection_reason,
+            components: row.components || row.normalized_payload?.components || [],
+            validation_issues: row.validation_issues || [],
+            risk_score: row.risk_score || 0,
+            submitted_at: row.submitted_at,
+            last_updated: row.updated_at,
+            source: 'local',
+        });
+    }
+    for (const row of metaRows || []) {
+        const key = `${String(row.name || '').toLowerCase()}::${String(row.language || 'en_US')}`;
+        const local = byKey.get(key) || {};
+        byKey.set(key, {
+            ...local,
+            ...row,
+            id: row.id || local.id,
+            status: normalizeMetaTemplateStatus(row.status),
+            quality_score: row.quality_score || row.quality || local.quality_score,
+            rejected_reason: row.rejected_reason || row.reason || local.rejected_reason,
+            source: local.local_id ? 'meta+local' : 'meta',
+        });
+    }
+    return [...byKey.values()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+async function upsertLocalTemplateSubmission(params: {
+    organization_id: string;
+    wa_account_id?: string | null;
+    waba_id?: string | null;
+    template_id?: string | null;
+    name: string;
+    language: string;
+    category: string;
+    status: string;
+    quality_score?: string | null;
+    rejection_reason?: string | null;
+    components?: any[];
+    normalized_payload?: any;
+    validation_issues?: TemplateValidationIssue[];
+    risk_score?: number;
+    meta_response?: any;
+    submitted_by?: string | null;
+    submitted_at?: string | null;
+}) {
+    const status = normalizeMetaTemplateStatus(params.status);
+    const now = new Date().toISOString();
+    const payload: any = {
+        organization_id: params.organization_id,
+        wa_account_id: params.wa_account_id || null,
+        waba_id: params.waba_id || null,
+        template_id: params.template_id || null,
+        name: params.name,
+        language: params.language || 'en_US',
+        category: String(params.category || 'MARKETING').toUpperCase(),
+        status,
+        quality_score: params.quality_score || null,
+        rejection_reason: params.rejection_reason || null,
+        components: params.components || params.normalized_payload?.components || [],
+        normalized_payload: params.normalized_payload || {},
+        validation_issues: params.validation_issues || [],
+        risk_score: Number(params.risk_score || 0),
+        meta_response: params.meta_response || {},
+        submitted_by: params.submitted_by || null,
+        submitted_at: params.submitted_at || (status === 'PENDING' ? now : null),
+        approved_at: status === 'APPROVED' ? now : null,
+        rejected_at: status === 'REJECTED' ? now : null,
+        last_synced_at: now,
+        updated_at: now,
+    };
+
+    const { error } = await supabase
+        .from('w_template_submissions')
+        .upsert(payload, { onConflict: 'organization_id,wa_account_id,name,language' });
+    if (error) console.warn('[Templates] Local cache upsert failed:', error.message);
+}
+
+export async function getTemplates(req: any, res: Response) {
+    const orgId = req.organization_id;
+
+    try {
+        if (!orgId) throw new Error('No organization found');
+
+        const { data: accounts } = await supabase
+            .from('w_wa_accounts')
+            .select('*')
+            .eq('organization_id', orgId)
+            .not('whatsapp_business_account_id', 'is', null);
+
+        if (!accounts || accounts.length === 0) {
+            return res.json([]);
+        }
+
+        const account = accounts[0];
+        const token = decryptToken(account.access_token_encrypted);
+        const waba_id = account.whatsapp_business_account_id;
+
+        const response = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?fields=id,name,language,status,category,components,quality_score,rejected_reason&limit=250`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        const json = await response.json();
+
+        if (!response.ok) {
+            console.error('Meta API Error:', json);
+            return res.status(response.status).json({ error: json.error?.message || 'Failed to fetch templates from Meta' });
+        }
+        const metaTemplates = json.data || [];
+        await Promise.all(metaTemplates.map((template: any) => upsertLocalTemplateSubmission({
+            organization_id: orgId,
+            wa_account_id: account.id,
+            waba_id,
+            template_id: template.id || null,
+            name: template.name,
+            language: template.language || 'en_US',
+            category: template.category || 'MARKETING',
+            status: template.status || 'PENDING',
+            quality_score: template.quality_score || null,
+            rejection_reason: template.rejected_reason || template.reason || null,
+            components: template.components || [],
+            normalized_payload: template,
+            meta_response: template,
+        })));
+
+        const { data: localRows, error: localErr } = await supabase
+            .from('w_template_submissions')
+            .select('*')
+            .eq('organization_id', orgId)
+            .eq('wa_account_id', account.id);
+        if (localErr) console.warn('[Templates] Local cache read failed:', localErr.message);
+
+        res.json(mergeTemplateRows(metaTemplates, localRows || []));
+    } catch (err: any) {
+        console.error('Error fetching templates:', err);
+        res.status(500).json({ error: err.message });
+    }
+}
+
+export async function validateTemplate(req: any, res: Response) {
+    try {
+        const result = validateWhatsappTemplatePayload(req.body || {});
+        res.json(result);
+    } catch (err: any) {
+        console.error('Validate Template Error:', err);
+        res.status(500).json({ error: err.message || 'Template validation failed' });
+    }
+}
+
+export async function createTemplate(req: any, res: Response) {
+    const orgId = req.organization_id;
+    const { name, category, language, components } = req.body;
+    const file = req.file;
+
+    try {
+        if (!orgId) throw new Error('No organization found');
+
+        const { data: accounts } = await supabase
+            .from('w_wa_accounts')
+            .select('*')
+            .eq('organization_id', orgId)
+            .not('whatsapp_business_account_id', 'is', null);
+
+        if (!accounts || accounts.length === 0) {
+            return res.status(400).json({ error: 'No connected Meta account found' });
+        }
+
+        const account = accounts[0];
+        const token = decryptToken(account.access_token_encrypted);
+        const waba_id = account.whatsapp_business_account_id;
+
+        let parsedComponents = [];
+        try {
+            parsedComponents = JSON.parse(components || '[]');
+        } catch (e) {
+            return res.status(400).json({ error: 'Invalid components format' });
+        }
+
+        if (file) {
+            const appId = process.env.META_APP_ID;
+            if (!appId) throw new Error('META_APP_ID is not configured. Cannot upload media for templates.');
+
+            const initUrl = new URL(`https://graph.facebook.com/v20.0/${appId}/uploads`);
+            initUrl.searchParams.set('file_length', String(file.size));
+            initUrl.searchParams.set('file_type', file.mimetype);
+            initUrl.searchParams.set('access_token', token);
+
+            const initRes = await fetch(initUrl, { method: 'POST' });
+            const initJson = await initRes.json();
+            if (!initRes.ok) throw new Error(initJson.error?.message || 'Upload initialization failed');
+
+            const uploadSessionId = initJson.id;
+
+            const uploadRes = await fetch(`https://graph.facebook.com/v20.0/${uploadSessionId}`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `OAuth ${token}`,
+                    file_offset: '0',
+                    'Content-Type': file.mimetype || 'application/octet-stream'
+                },
+                body: file.buffer as any
+            });
+            const uploadJson = await uploadRes.json();
+            if (!uploadRes.ok) throw new Error(uploadJson.error?.message || 'File upload failed');
+
+            const handle = uploadJson.h;
+
+            const headerObj = parsedComponents.find((c: any) => c.type === 'HEADER');
+            if (headerObj && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerObj.format)) {
+                headerObj.example = { header_handle: [handle] };
+            }
+        }
+
+        const payload = { name, category, language, components: parsedComponents };
+        const validation = validateWhatsappTemplatePayload(payload);
+        if (!validation.canSubmit) {
+            return res.status(400).json({
+                error: 'Template has approval-risk issues. Fix the highlighted fields before submitting to Meta.',
+                validation,
+            });
+        }
+
+        const existingRes = await fetch(
+            `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?name=${encodeURIComponent(validation.normalized.name)}&fields=id,name,language,status&limit=50`,
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const existingJson = await existingRes.json().catch(() => ({}));
+        if (existingRes.ok && Array.isArray(existingJson.data) && existingJson.data.some((tpl: any) => tpl.name === validation.normalized.name && tpl.language === validation.normalized.language)) {
+            return res.status(409).json({
+                error: `Template "${validation.normalized.name}" already exists for ${validation.normalized.language}. Use a new template name before submitting.`,
+                code: 'DUPLICATE_TEMPLATE_NAME',
+                suggested_name: `${validation.normalized.name}_${Date.now().toString().slice(-6)}`,
+            });
+        }
+
+        const response = await fetch(`https://graph.facebook.com/v20.0/${waba_id}/message_templates`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+        const json = await response.json();
+
+        if (!response.ok) {
+            const errMsg = json.error?.error_user_msg || json.error?.message || 'Template creation failed';
+            const errSubcode = json.error?.error_subcode || json.error?.code || null;
+            const errData = json.error?.error_data || null;
+            await upsertLocalTemplateSubmission({
+                organization_id: orgId,
+                wa_account_id: account.id,
+                waba_id,
+                name: validation.normalized.name,
+                language: validation.normalized.language,
+                category: validation.normalized.category,
+                status: 'REJECTED',
+                rejection_reason: errMsg,
+                components: validation.normalized.components,
+                normalized_payload: validation.normalized,
+                validation_issues: validation.issues,
+                risk_score: validation.riskScore,
+                meta_response: json,
+                submitted_by: req.user?.id || null,
+            });
+            return res.status(response.status).json({
+                error: errMsg,
+                code: /already exists|duplicate/i.test(errMsg) ? 'DUPLICATE_TEMPLATE_NAME' : 'META_TEMPLATE_CREATE_FAILED',
+                suggested_name: /already exists|duplicate/i.test(errMsg) ? `${validation.normalized.name}_${Date.now().toString().slice(-6)}` : undefined,
+                error_subcode: errSubcode,
+                error_data: errData,
+                validation,
+                meta_error: json.error
+            });
+        }
+        await upsertLocalTemplateSubmission({
+            organization_id: orgId,
+            wa_account_id: account.id,
+            waba_id,
+            template_id: json.id || json.data?.id || null,
+            name: validation.normalized.name,
+            language: validation.normalized.language,
+            category: validation.normalized.category,
+            status: json.status || 'PENDING',
+            components: validation.normalized.components,
+            normalized_payload: validation.normalized,
+            validation_issues: validation.issues,
+            risk_score: validation.riskScore,
+            meta_response: json,
+            submitted_by: req.user?.id || null,
+            submitted_at: new Date().toISOString(),
+        });
+        res.json({ success: true, data: json });
+    } catch (err: any) {
+        console.error('Create Template Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+}
+
+export async function deleteTemplate(req: any, res: Response) {
+    const orgId = req.organization_id;
+    const { name } = req.params;
+
+    try {
+        if (!orgId) throw new Error('No organization found');
+
+        const { data: accounts } = await supabase
+            .from('w_wa_accounts')
+            .select('*')
+            .eq('organization_id', orgId)
+            .not('whatsapp_business_account_id', 'is', null);
+
+        if (!accounts || accounts.length === 0) {
+            return res.status(400).json({ error: 'No connected Meta account found' });
+        }
+
+        const account = accounts[0];
+        const token = decryptToken(account.access_token_encrypted);
+        const waba_id = account.whatsapp_business_account_id;
+
+        let deleteUrl = `https://graph.facebook.com/v20.0/${waba_id}/message_templates?name=${encodeURIComponent(name)}`;
+        try {
+            const listRes = await fetch(
+                `https://graph.facebook.com/v20.0/${waba_id}/message_templates?name=${encodeURIComponent(name)}&fields=id,name,status`,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const listJson = await listRes.json();
+            if (listRes.ok && listJson.data?.length > 0) {
+                const hsmId = listJson.data[0].id;
+                deleteUrl = `https://graph.facebook.com/v20.0/${waba_id}/message_templates?name=${encodeURIComponent(name)}&hsm_id=${hsmId}`;
+            }
+        } catch (lookupErr) {
+            console.warn('[Template Delete] Could not fetch hsm_id, using name-only delete:', lookupErr);
+        }
+
+        const response = await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        const json = await response.json();
+
+        if (!response.ok) {
+            let errMsg = json.error?.message || 'Template deletion failed';
+            if (json.error?.code === 100 || errMsg.includes('permission')) {
+                errMsg = 'Permission denied by Meta. Your connected account needs WhatsApp Business Management admin access to delete templates. You can delete it directly from Meta Business Manager.';
+            }
+            return res.status(response.status).json({ error: errMsg });
+        }
+        res.json({ success: true });
+    } catch (err: any) {
+        console.error('Delete Template Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+}
