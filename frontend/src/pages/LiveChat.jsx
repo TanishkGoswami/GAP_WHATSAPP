@@ -10,6 +10,7 @@ import { AudioPlayerProvider } from '../components/AudioPlayerManager'
 import AudioMessageBubble from '../components/AudioMessageBubble'
 import AudioRecorderOrUploader from '../components/AudioRecorderOrUploader'
 import { useNotificationSound } from '../hooks/useNotificationSound'
+import TourButton from '../onboarding/TourButton'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -2333,7 +2334,7 @@ export default function LiveChat() {
                             ))}
                         </select>
                     </div>
-                    <div className="relative">
+                    <div data-tour="chat-search" className="relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
                         <input
                             type="text"
@@ -2343,7 +2344,7 @@ export default function LiveChat() {
                             className="w-full rounded-full border-0 bg-gray-100 py-2.5 pl-11 pr-4 text-sm text-gray-700 placeholder:text-gray-500 outline-none transition-colors focus:bg-white focus:ring-1 focus:ring-green-500/40"
                         />
                     </div>
-                    <div className="relative mt-2 flex items-center gap-2 overflow-x-auto pb-1" data-chat-filter-menu>
+                    <div data-tour="chat-filters" className="relative mt-2 flex items-center gap-2 overflow-x-auto pb-1" data-chat-filter-menu>
                         {[
                             { id: 'all', label: 'All' },
                             { id: 'read', label: 'Read' },
@@ -2601,7 +2602,7 @@ export default function LiveChat() {
                 ) : (
                     <>
                         {/* Chat Header */}
-                        <div className="z-10 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-[#f0f2f5] px-3 sm:px-4">
+                        <div data-tour="chat-header" className="z-10 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-[#f0f2f5] px-3 sm:px-4">
                             <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                                 <button onClick={() => setSelectedChat(null)} className="lg:hidden p-1 -ml-1 text-gray-600">
                                     <ChevronLeft className="h-6 w-6" />
@@ -2638,6 +2639,7 @@ export default function LiveChat() {
                                 </div>
                             </div>
                                 <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
+                                    <TourButton compact />
                                     {/* Assign Agent Dropdown */}
                                     <div className="relative hidden sm:block" data-assign-menu>
                                         <button
@@ -3092,7 +3094,7 @@ export default function LiveChat() {
                         )}
 
                         {/* Input Area */}
-                        <div className={`px-4 py-2.5 lg:px-5 ${isInternalNote ? 'border-t border-amber-200 bg-amber-50' : 'bg-[#f0f2f5]'}`}>
+                        <div data-tour="chat-composer" className={`px-4 py-2.5 lg:px-5 ${isInternalNote ? 'border-t border-amber-200 bg-amber-50' : 'bg-[#f0f2f5]'}`}>
                             <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-[1180px] items-end gap-2">
                                 <div className="flex items-center gap-1 pb-0.5">
                                     <div className="relative">

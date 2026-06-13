@@ -4,6 +4,7 @@ import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBa
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { useNotificationSound } from '../hooks/useNotificationSound'
+import TourButton from '../onboarding/TourButton'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const DESKTOP_NOTIFICATION_KEY = 'gap_desktop_notifications_enabled'
@@ -637,7 +638,10 @@ export default function Settings() {
         <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 px-0 sm:px-2 lg:flex-row lg:gap-8 lg:px-6">
             {/* Sidebar */}
             <div className="w-full flex-shrink-0 lg:w-60">
-                <h1 className="mb-4 text-2xl font-bold text-gray-900 lg:mb-6">Settings</h1>
+                <div className="mb-4 flex items-center justify-between gap-3 lg:mb-6">
+                    <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+                    <TourButton compact />
+                </div>
                 <nav className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
                     {['General', 'Notifications', 'Knowledge Base', 'Integrations', 'Team Members', 'Developer API'].map((tab) => {
                         const id = tab.toLowerCase().replace(' ', '_')
@@ -1081,7 +1085,7 @@ export default function Settings() {
                     );
                 })()}
                 {activeTab === 'notifications' && (
-                    <div className="bg-gray-50/60">
+                    <div data-tour="settings-notifications" className="bg-gray-50/60">
                         <div className="border-b border-gray-200 bg-white px-4 py-5 sm:px-8 sm:py-6">
                             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                 <div className="max-w-3xl">
@@ -1307,7 +1311,7 @@ export default function Settings() {
                     </div>
                 )}
                 {activeTab === 'knowledge_base' && (
-                    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                    <div data-tour="settings-knowledge" className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                         <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-8 py-6">
                             <div>
                                 <h2 className="text-lg font-semibold text-gray-900">Knowledge Base</h2>
@@ -1422,7 +1426,7 @@ export default function Settings() {
                 )}
 
                 {activeTab === 'team_members' && isAdmin && (
-                    <div className="p-8">
+                    <div data-tour="settings-team" className="p-8">
                         <div className="flex justify-between items-center mb-8">
                             <div>
                                 <h2 className="text-lg font-medium text-gray-900">Team Members</h2>
@@ -1668,7 +1672,7 @@ export default function Settings() {
                 )}
 
                 {activeTab === 'developer_api' && (
-                    <div className="relative min-h-[600px] overflow-hidden">
+                    <div data-tour="settings-developer" className="relative min-h-[600px] overflow-hidden">
                         <div className="pointer-events-none select-none p-8 space-y-8 blur-[3px] opacity-45">
                             <div>
                                 <h2 className="text-lg font-medium text-gray-900">Developer API</h2>

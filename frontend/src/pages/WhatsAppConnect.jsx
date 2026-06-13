@@ -23,6 +23,7 @@ import WhatsAppLogin from '../components/WhatsAppLogin'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { formatINRFromPaise } from '../config/whatsappPricing'
+import TourButton from '../onboarding/TourButton'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${API_URL}/api`
@@ -274,6 +275,7 @@ export default function WhatsAppConnect() {
                             <button
                                 type="button"
                                 onClick={handleEmbeddedSignup}
+                                data-tour="connect-primary"
                                 disabled={embedStatus === 'loading' || embedStatus === 'saving'}
                                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#0070d1] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#0064b7] disabled:cursor-not-allowed disabled:bg-[#79b8ef]"
                             >
@@ -296,6 +298,7 @@ export default function WhatsAppConnect() {
                                 <PhoneCall className="h-4 w-4" />
                                 I need a new number
                             </Link>
+                            <TourButton />
                         </div>
                     </div>
                     <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-1">
@@ -336,7 +339,7 @@ export default function WhatsAppConnect() {
             </section>
 
             {metaAccounts.length > 0 && (
-                <section className="mb-10 mt-6">
+                <section data-tour="connect-accounts" className="mb-10 mt-6">
                     <div className="mb-8 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                             <div className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1.5 text-[11px] font-semibold text-gray-800">
@@ -387,7 +390,7 @@ export default function WhatsAppConnect() {
             </section>
 
             <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-                <div className="rounded-lg border border-[#b9dcfb] bg-white lg:col-span-3">
+                <div data-tour="connect-primary" className="rounded-lg border border-[#b9dcfb] bg-white lg:col-span-3">
                     <div className="border-b border-green-100 bg-green-50/80 p-5 sm:p-6">
                         <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-green-600 px-3 py-1 text-xs font-bold uppercase text-white">
                             <ShieldCheck className="h-3.5 w-3.5" />
@@ -463,7 +466,7 @@ export default function WhatsAppConnect() {
             </section>
 
             {metaAccounts.length === 0 && (
-                <section className="rounded-lg border border-gray-200 bg-white">
+                <section data-tour="connect-accounts" className="rounded-lg border border-gray-200 bg-white">
                     <div className="flex flex-col gap-3 border-b border-gray-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                         <div>
                             <h2 className="text-lg font-semibold text-gray-950">Connected numbers</h2>
@@ -502,7 +505,7 @@ export default function WhatsAppConnect() {
             )}
 
             <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <div className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+                <div data-tour="connect-manual" className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
                     <button
                         type="button"
                         onClick={() => setManualOpen(prev => !prev)}

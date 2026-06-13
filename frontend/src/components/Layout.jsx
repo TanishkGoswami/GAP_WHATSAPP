@@ -4,6 +4,8 @@ import Sidebar from './Sidebar'
 import Modal from './Modal'
 import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield, ExternalLink, Menu, Moon, SunMedium } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { OnboardingProvider } from '../onboarding/OnboardingProvider'
+import TourButton from '../onboarding/TourButton'
 import { formatINRFromPaise } from '../config/whatsappPricing'
 
 const NIGHT_LIGHT_KEY = 'gap_night_light_enabled'
@@ -231,6 +233,7 @@ export default function Layout() {
     }
 
     return (
+        <OnboardingProvider>
         <div className="fixed inset-0 flex min-w-0 bg-[#f5f7fa]">
             <Sidebar
                 onRequestLogout={handleLogoutClick}
@@ -245,6 +248,7 @@ export default function Layout() {
                         <button
                             type="button"
                             onClick={() => setIsMobileNavOpen(true)}
+                            data-tour="mobile-menu-button"
                             className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 md:hidden"
                             aria-label="Open navigation"
                         >
@@ -259,6 +263,7 @@ export default function Layout() {
                     </div>
 
                     <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+                        <TourButton compact />
                         {user && (
                             <button
                                 type="button"
@@ -343,7 +348,7 @@ export default function Layout() {
                 </header>
 
                 {/* Main Content */}
-                <main className={`min-w-0 flex-1 ${isLiveChat ? 'overflow-hidden p-0' : (isFlowBuilder || isIndustryLibrary) ? 'overflow-y-auto p-0' : 'overflow-y-auto p-3 sm:p-5 lg:p-6'}`}>
+                <main data-tour="page-content" className={`min-w-0 flex-1 ${isLiveChat ? 'overflow-hidden p-0' : (isFlowBuilder || isIndustryLibrary) ? 'overflow-y-auto p-0' : 'overflow-y-auto p-3 sm:p-5 lg:p-6'}`}>
                     <Outlet />
                 </main>
 
@@ -531,5 +536,6 @@ export default function Layout() {
                 </Modal>
             </div>
         </div>
+        </OnboardingProvider>
     )
 }

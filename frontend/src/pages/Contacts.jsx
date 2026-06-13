@@ -32,6 +32,7 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
+import TourButton from '../onboarding/TourButton'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
@@ -510,6 +511,7 @@ export default function Contacts() {
                         <p className="mt-1 text-sm text-gray-500">Manage customer profiles, account ownership, and tags.</p>
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
+                        <TourButton />
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -520,6 +522,7 @@ export default function Contacts() {
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
+                            data-tour="contacts-import"
                             className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
                         >
                             <Upload className="h-4 w-4" />
@@ -528,6 +531,7 @@ export default function Contacts() {
                         <button
                             type="button"
                             onClick={openNewContact}
+                            data-tour="contacts-add"
                             className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-100 hover:bg-indigo-700"
                         >
                             <Plus className="h-4 w-4" />
@@ -565,7 +569,7 @@ export default function Contacts() {
                     </div>
                 ) : null}
 
-                <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div data-tour="contacts-filters" className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                     <div className="grid grid-cols-1 gap-3 xl:flex xl:flex-row">
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
@@ -585,7 +589,7 @@ export default function Contacts() {
                     </div>
                 </div>
 
-                <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                <div data-tour="contacts-table" className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                     <div className="overflow-x-auto">
                         <table className="w-full min-w-[980px] text-left text-sm">
                             <thead className="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase text-gray-500">
