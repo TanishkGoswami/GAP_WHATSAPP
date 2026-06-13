@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { createElement, useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -33,7 +33,7 @@ export default function Settings() {
     const { session, userRole, loginType, apiCall, user, memberProfile } = useAuth()
     const { alertDialog, confirmDialog } = useDialog()
     const [billingOverview, setBillingOverview] = useState(null)
-    const [isLoadingBilling, setIsLoadingBilling] = useState(false)
+    const [, setIsLoadingBilling] = useState(false)
     const {
         isEnabled: notificationSoundEnabled,
         setIsEnabled: setNotificationSoundEnabled,
@@ -481,7 +481,7 @@ export default function Settings() {
         }
     }
 
-    const [apiKey, setApiKey] = useState('sk_live_51M...')
+    const [apiKey] = useState('sk_live_51M...')
     const [copied, setCopied] = useState(false)
 
     const copyToClipboard = () => {
@@ -1752,7 +1752,7 @@ export default function Settings() {
     )
 }
 
-function NotificationStatusCard({ icon: Icon, title, value, text, tone }) {
+function NotificationStatusCard({ icon, title, value, text, tone }) {
     const toneClass = {
         green: 'bg-emerald-50 text-emerald-700 border-emerald-100',
         amber: 'bg-amber-50 text-amber-800 border-amber-100',
@@ -1768,7 +1768,7 @@ function NotificationStatusCard({ icon: Icon, title, value, text, tone }) {
                     <p className="mt-1 text-2xl font-light leading-none text-gray-950">{value}</p>
                 </div>
                 <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${toneClass}`}>
-                    <Icon className="h-5 w-5" />
+                    {createElement(icon, { className: 'h-5 w-5' })}
                 </span>
             </div>
             <p className="mt-4 text-sm leading-6 text-gray-500">{text}</p>
