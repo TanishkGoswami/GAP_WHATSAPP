@@ -338,7 +338,7 @@ export default function WhatsAppConnect() {
                 />
             </section>
 
-            {metaAccounts.length > 0 && (
+            {activeConnections.length > 0 && (
                 <section data-tour="connect-accounts" className="mb-10 mt-6">
                     <div className="mb-8 flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
                         <div>
@@ -465,7 +465,7 @@ export default function WhatsAppConnect() {
                 </div>
             </section>
 
-            {metaAccounts.length === 0 && (
+            {activeConnections.length === 0 && (
                 <section data-tour="connect-accounts" className="rounded-lg border border-gray-200 bg-white">
                     <div className="flex flex-col gap-3 border-b border-gray-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                         <div>

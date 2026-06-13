@@ -197,15 +197,15 @@ export default function Dashboard() {
                     </Panel>
 
                     <div data-tour="dashboard-health">
-                    <Panel title="System health" subtitle="Current account, inbox, and automation state." action={<Gauge className="h-4 w-4 text-gray-400" />}>
-                        <div className="space-y-2.5">
-                            <HealthRow icon={Smartphone} label="WhatsApp accounts" value={`${fmt(model.accounts.active)} active / ${fmt(model.accounts.total)} total`} active={n(model.accounts.active) > 0} />
-                            <HealthRow icon={MessageSquareText} label="Conversations" value={fmt(model.conversations.total)} active />
-                            <HealthRow icon={Bot} label="Bot active chats" value={fmt(model.conversations.botActive)} active />
-                            <HealthRow icon={FileText} label="AI summaries ready" value={fmt(model.conversations.summariesReady)} active />
-                            <HealthRow icon={AlertTriangle} label="Unread messages" value={fmt(model.conversations.unread)} active={n(model.conversations.unread) === 0} />
-                        </div>
-                    </Panel>
+                        <Panel title="System health" subtitle="Current account, inbox, and automation state." action={<Gauge className="h-4 w-4 text-gray-400" />}>
+                            <div className="space-y-2.5">
+                                <HealthRow icon={Smartphone} label="WhatsApp accounts" value={`${fmt(model.accounts.active)} active / ${fmt(model.accounts.total)} total`} active={n(model.accounts.active) > 0} />
+                                <HealthRow icon={MessageSquareText} label="Conversations" value={fmt(model.conversations.total)} active />
+                                <HealthRow icon={Bot} label="Bot active chats" value={fmt(model.conversations.botActive)} active />
+                                <HealthRow icon={FileText} label="AI summaries ready" value={fmt(model.conversations.summariesReady)} active />
+                                <HealthRow icon={AlertTriangle} label="Unread messages" value={fmt(model.conversations.unread)} active={n(model.conversations.unread) === 0} />
+                            </div>
+                        </Panel>
                     </div>
                 </section>
 
