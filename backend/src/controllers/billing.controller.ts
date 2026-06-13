@@ -6,7 +6,7 @@ import {
     DEFAULT_BILLING_CURRENCY 
 } from '../utils/billing.js';
 
-export async function getBillingOverview(req: any, res: Response) {
+export const getBillingOverview = async (req: any, res: Response) => {
     const orgId = req.organization_id;
     const userId = req.user?.id;
     const now = new Date();
@@ -229,6 +229,26 @@ export async function getBillingOverview(req: any, res: Response) {
         });
     } catch (err: any) {
         console.error('[billing/overview] Error:', err);
-        res.status(500).json({ error: err.message || 'Failed to load billing overview' });
+        res.status(500).json({ error: err.message || 'Failed to fetch billing overview' });
     }
-}
+};
+
+export const getWallet = async (req: any, res: Response) => {
+  const orgId = req.organization_id;
+  try {
+    const { data: wallet, error } = await supabase
+      .from('whatsapp_wallets')
+      .select('balance_paise, currency')
+      .eq('organization_id', orgId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    res.json({
+      wallet: wallet || { balance_paise: 0, currency: "INR" }
+    });
+  } catch (err: any) {
+    console.error('Error fetching wallet:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch wallet' });
+  }
+};
