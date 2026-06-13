@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Check, ChevronDown, CreditCard, Loader2, Megaphone, ReceiptText, ShieldCheck, Wallet } from 'lucide-react'
+import { AlertCircle, Check, ChevronDown, CreditCard, Loader2, Megaphone, ReceiptText, ShieldCheck, Wallet, Plus, ArrowRight, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../supabaseClient'
@@ -54,21 +54,46 @@ async function getFunctionErrorMessage(error, fallback) {
 export default function BillingPage() {
     const { user, refreshProfile, apiCall } = useAuth()
     const [interval, setInterval] = useState(1)
-    const [overview, setOverview] = useState(null)
-    const [loading, setLoading] = useState(true)
+    const [overview, setOverview] = useState(() => {
+        try {
+            const cached = localStorage.getItem(`gap_billing_overview_${user?.id || 'default'}`)
+            return cached ? JSON.parse(cached) : null
+        } catch {
+            return null
+        }
+    })
+    const [loading, setLoading] = useState(() => {
+        try {
+            const cached = localStorage.getItem(`gap_billing_overview_${user?.id || 'default'}`)
+            return !cached
+        } catch {
+            return true
+        }
+    })
     const [error, setError] = useState('')
     const [upgrading, setUpgrading] = useState(null)
     const [recharging, setRecharging] = useState(null)
     const [isMessageBillingOpen, setIsMessageBillingOpen] = useState(false)
+    const [isCustomMode, setIsCustomMode] = useState(false)
+    const [customAmount, setCustomAmount] = useState('')
 
     useEffect(() => {
         let cancelled = false
-        setLoading(true)
+        if (!overview) {
+            setLoading(true)
+        }
         apiCall(`${API_BASE}/billing/overview`)
             .then(async res => {
                 const data = await res.json().catch(() => ({}))
                 if (!res.ok) throw new Error(data?.error || 'Failed to load billing')
-                if (!cancelled) setOverview(data)
+                if (!cancelled) {
+                    setOverview(data)
+                    try {
+                        localStorage.setItem(`gap_billing_overview_${user?.id || 'default'}`, JSON.stringify(data))
+                    } catch (e) {
+                        console.warn('Failed to cache billing:', e)
+                    }
+                }
             })
             .catch(err => {
                 if (!cancelled) setError(err.message || 'Failed to load billing')
@@ -78,7 +103,7 @@ export default function BillingPage() {
             })
         return () => { cancelled = true }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [user?.id])
 
     const plans = (overview?.plans?.length ? overview.plans : FALLBACK_PLANS).filter(isPaidSubscriptionPlan)
     const rateCards = overview?.rate_cards?.length ? overview.rate_cards : FALLBACK_RATE_CARDS
@@ -180,6 +205,20 @@ export default function BillingPage() {
         }
     }
 
+    const handleCustomSubmit = async () => {
+        const amt = parseFloat(customAmount)
+        if (isNaN(amt) || amt <= 0) {
+            alert('Please enter a valid amount.')
+            return
+        }
+        if (amt < 100) {
+            alert('Minimum recharge amount is ₹100.')
+            return
+        }
+        const amountPaise = Math.round(amt * 100)
+        await handleWalletRecharge(amountPaise)
+    }
+
     if (loading) {
         return (
             <div className="min-h-screen bg-gray-50 p-6">
@@ -277,7 +316,7 @@ export default function BillingPage() {
                                 </p>
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+                        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap items-center">
                             {[50000, 100000, 250000, 500000].map(amount => (
                                 <button
                                     key={amount}
@@ -292,11 +331,74 @@ export default function BillingPage() {
                                         <Wallet className="h-4 w-4 text-indigo-400 transition-transform group-hover:scale-110" />
                                     )}
                                     <span>{formatINRFromPaise(amount)}</span>
-                                    
+
                                     {/* Subtle glow effect behind button */}
                                     <div className="absolute -inset-px -z-10 rounded-xl bg-gradient-to-r from-indigo-500/20 to-purple-500/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                                 </button>
                             ))}
+
+                            {isCustomMode ? (
+                                <div className="relative inline-flex min-w-[150px] sm:min-w-[180px] items-center gap-2 overflow-hidden rounded-xl border border-indigo-400/40 bg-white/10 pl-3 pr-2 py-2 text-sm font-semibold text-white backdrop-blur-md shadow-lg shadow-indigo-500/10 transition-all duration-300">
+                                    <span className="text-indigo-400 font-bold select-none">₹</span>
+                                    <input
+                                        type="number"
+                                        value={customAmount}
+                                        onChange={(e) => setCustomAmount(e.target.value)}
+                                        placeholder="Amount"
+                                        min="100"
+                                        className="w-16 sm:w-20 bg-transparent border-0 outline-none p-0 text-sm font-bold text-white placeholder-white/30 focus:ring-0 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        autoFocus
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                handleCustomSubmit()
+                                            } else if (e.key === 'Escape') {
+                                                setIsCustomMode(false)
+                                                setCustomAmount('')
+                                            }
+                                        }}
+                                    />
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            type="button"
+                                            onClick={handleCustomSubmit}
+                                            disabled={recharging !== null || !customAmount}
+                                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white transition-all hover:bg-indigo-500 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                                            title="Proceed to pay"
+                                        >
+                                            {recharging !== null ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
+                                            ) : (
+                                                <ArrowRight className="h-3.5 w-3.5" />
+                                            )}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsCustomMode(false)
+                                                setCustomAmount('')
+                                            }}
+                                            disabled={recharging !== null}
+                                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-white/70 transition-all hover:bg-white/20 hover:text-white hover:scale-105 active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
+                                            title="Cancel"
+                                        >
+                                            <X className="h-3.5 w-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsCustomMode(true)}
+                                    disabled={recharging !== null}
+                                    className="group relative inline-flex min-w-[100px] sm:min-w-[120px] items-center justify-center gap-2 overflow-hidden rounded-xl border border-dashed border-white/20 bg-white/5 px-4 py-3 text-sm font-semibold text-white/85 backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:border-solid hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:text-white hover:shadow-lg hover:shadow-indigo-500/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    <Plus className="h-4 w-4 text-indigo-400 transition-transform group-hover:scale-110" />
+                                    <span>Custom</span>
+
+                                    {/* Subtle glow effect behind button */}
+                                    <div className="absolute -inset-px -z-10 rounded-xl bg-gradient-to-r from-indigo-500/20 to-purple-500/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                                </button>
+                            )}
                         </div>
                     </div>
                 </section>
@@ -424,9 +526,8 @@ export default function BillingPage() {
                                         key={item.months}
                                         type="button"
                                         onClick={() => setInterval(item.months)}
-                                        className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition sm:flex-none ${
-                                            interval === item.months ? 'bg-[#128C7E] text-white shadow-sm' : 'text-gray-600 hover:bg-emerald-50 hover:text-[#075E54]'
-                                        }`}
+                                        className={`flex-1 rounded-lg px-4 py-2 text-sm font-semibold transition sm:flex-none ${interval === item.months ? 'bg-[#128C7E] text-white shadow-sm' : 'text-gray-600 hover:bg-emerald-50 hover:text-[#075E54]'
+                                            }`}
                                     >
                                         {item.label}
                                         {item.discount > 0 && <span className="ml-2 text-xs text-green-500">-{item.discount}%</span>}
@@ -449,9 +550,8 @@ export default function BillingPage() {
                             return (
                                 <article
                                     key={plan.id}
-                                    className={`relative rounded-xl border p-5 ${
-                                        plan.id === 'growth' ? 'border-[#128C7E] bg-gradient-to-br from-[#075E54] via-[#0b6f63] to-[#128C7E] text-white shadow-lg shadow-emerald-900/10' : 'border-gray-200 bg-white text-gray-950'
-                                    }`}
+                                    className={`relative rounded-xl border p-5 ${plan.id === 'growth' ? 'border-[#128C7E] bg-gradient-to-br from-[#075E54] via-[#0b6f63] to-[#128C7E] text-white shadow-lg shadow-emerald-900/10' : 'border-gray-200 bg-white text-gray-950'
+                                        }`}
                                 >
                                     {badge && !current && (
                                         <span className="absolute right-4 top-4 rounded-full bg-green-500 px-2.5 py-1 text-xs font-bold text-white">
@@ -473,11 +573,10 @@ export default function BillingPage() {
                                         type="button"
                                         disabled={current || upgrading === plan.id}
                                         onClick={() => handleUpgrade(plan)}
-                                        className={`mt-5 w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-default disabled:opacity-60 ${
-                                            plan.id === 'growth'
-                                                ? 'bg-white text-[#075E54] hover:bg-emerald-50'
-                                                : 'bg-[#128C7E] text-white hover:bg-[#075E54]'
-                                        }`}
+                                        className={`mt-5 w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-default disabled:opacity-60 ${plan.id === 'growth'
+                                            ? 'bg-white text-[#075E54] hover:bg-emerald-50'
+                                            : 'bg-[#128C7E] text-white hover:bg-[#075E54]'
+                                            }`}
                                     >
                                         {upgrading === plan.id ? 'Processing...' : current ? 'Current Plan' : `Upgrade to ${plan.name}`}
                                     </button>
@@ -529,7 +628,7 @@ export default function BillingPage() {
                                                         const invoiceNo = `GAP-${new Date(tx.created_at).getFullYear()}-${tx.id.split('-')[0].toUpperCase()}`;
                                                         const customerName = user?.user_metadata?.organization_name || user?.user_metadata?.full_name || 'Customer';
                                                         const amountFormatted = formatINRFromPaise(Math.abs(tx.amount_paise));
-                                                        
+
                                                         const receiptContent = `
                                                             <html>
                                                             <head>

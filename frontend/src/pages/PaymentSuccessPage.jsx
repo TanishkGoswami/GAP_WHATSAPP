@@ -18,7 +18,7 @@ async function getFunctionErrorMessage(error, fallback) {
 
 export default function PaymentSuccessPage() {
     const navigate = useNavigate()
-    const { refreshProfile } = useAuth()
+    const { user, refreshProfile } = useAuth()
     const [verifying, setVerifying] = useState(true)
     const [plan, setPlan] = useState(null)
     const [walletRecharge, setWalletRecharge] = useState(null)
@@ -41,6 +41,12 @@ export default function PaymentSuccessPage() {
                     if (fnError) throw new Error(await getFunctionErrorMessage(fnError, 'Payment verification failed'))
                     if (data?.plan) setPlan(data.plan)
                     if (kind === 'wallet') setWalletRecharge(data)
+                    
+                    try {
+                        localStorage.removeItem(`gap_billing_overview_${user?.id || 'default'}`)
+                    } catch (e) {
+                        console.warn('Failed to clear cached billing:', e)
+                    }
                 }
                 await refreshProfile()
             } catch (err) {
