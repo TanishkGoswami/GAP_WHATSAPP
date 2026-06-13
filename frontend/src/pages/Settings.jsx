@@ -34,7 +34,7 @@ export default function Settings() {
     const avatarColor = memberProfile?.avatar_color || user?.user_metadata?.avatar_color || '#4f46e5'
     const { alertDialog, confirmDialog } = useDialog()
     const [billingOverview, setBillingOverview] = useState(null)
-    const [isLoadingBilling, setIsLoadingBilling] = useState(true)
+    const [, setIsLoadingBilling] = useState(true)
     const {
         isEnabled: notificationSoundEnabled,
         setIsEnabled: setNotificationSoundEnabled,

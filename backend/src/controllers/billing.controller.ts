@@ -252,3 +252,8 @@ export const getWallet = async (req: any, res: Response) => {
     res.status(500).json({ error: err.message || 'Failed to fetch wallet' });
   }
 };
+
+export const getNotifications = async (req: any, res: Response) => {
+  // Stub for now to prevent 404s on frontend
+  res.json({ notifications: [] });
+};

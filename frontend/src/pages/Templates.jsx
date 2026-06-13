@@ -199,12 +199,10 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
     const [templates, setTemplates] = useState([])
     const [loading, setLoading] = useState(true)
-    const [hasConnectedAccount, setHasConnectedAccount] = useState(false)
     const [fetchError, setFetchError] = useState('')
 
     // Prefill state
     const [prefilledTemplate, setPrefilledTemplate] = useState(null);
-    const [isAdding, setIsAdding] = useState(false);
 
     // Industry library filter state
     const [activeIndustry, setActiveIndustry] = useState('All Industries')
@@ -256,13 +254,6 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
         setLoading(true)
         setFetchError('')
         try {
-            // Check if account is connected
-            const accRes = await apiCall(`${API_URL}/api/whatsapp/accounts`);
-            if (accRes.ok) {
-                const accounts = await accRes.json();
-                setHasConnectedAccount(Array.isArray(accounts) && accounts.length > 0);
-            }
-
             // Fetch templates
             const tplRes = await apiCall(`${API_URL}/api/whatsapp/templates`);
             const tplData = await tplRes.json();
@@ -536,7 +527,6 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                         ) : (
                             <div className="space-y-10">
                                 {Object.keys(groupedLibrary).map(industryName => {
-                                    const meta = industryMeta[industryName] || { emoji: '📋', from: 'from-gray-500', to: 'to-gray-600', light: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' };
                                     return (
                                         <div key={industryName}>
                                             {/* Industry section header */}
@@ -665,13 +655,6 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
 
     return (
         <div className="space-y-6">
-            {isAdding && (
-                <div className="fixed inset-0 bg-white/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-3">
-                    <Loader2 className="h-10 w-10 text-green-600 animate-spin" />
-                    <p className="text-sm font-semibold text-gray-800 animate-pulse">Adding template to your account...</p>
-                    <p className="text-xs text-gray-500">Uploading media and submitting to Meta for approval.</p>
-                </div>
-            )}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Message Templates</h1>
@@ -1051,7 +1034,6 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
     const [submitError, setSubmitError] = useState('')
 
     const fieldClass = 'w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-500/20 placeholder:text-gray-400'
-    const selectClass = `${fieldClass} appearance-none pr-9`
     const normalizedName = data.name.trim()
     const bodyLength = data.bodyText.length
     const previewFileUrl = useMemo(() => file ? URL.createObjectURL(file) : '', [file])
