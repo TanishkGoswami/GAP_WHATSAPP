@@ -51,7 +51,7 @@ export default function WhatsAppConnect() {
 
     const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
     const isSecureForMetaLogin = window.location.protocol === 'https:' || isLocalHost
-    const metaAccounts = useMemo(() => accounts.filter(acc => acc.connection_type === 'meta_cloud_api' || acc.whatsapp_business_account_id), [accounts])
+    const activeConnections = useMemo(() => accounts, [accounts])
 
     useEffect(() => {
         if (!session?.access_token) return
@@ -355,7 +355,7 @@ export default function WhatsAppConnect() {
                         </Link>
                     </div>
                     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                        {metaAccounts.map(account => (
+                        {activeConnections.map(account => (
                             <AccountCard
                                 key={account.id}
                                 account={account}
@@ -705,7 +705,7 @@ function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDi
                             {account.display_phone_number || account.phone_number_id || 'WhatsApp number'}
                         </p>
                         <p className="mt-1 flex items-center gap-1.5 truncate text-[13px] font-medium text-gray-500">
-                            WABA: {maskId(account.whatsapp_business_account_id) || 'Pending'}
+                            {account.connection_type === 'qr_session' ? 'QR Session Connection' : `WABA: ${maskId(account.whatsapp_business_account_id) || 'Pending'}`}
                         </p>
                     </div>
                 </div>
@@ -717,8 +717,8 @@ function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDi
 
             <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <StatusTile label="MESSAGING" value={messagingStatus} />
-                <StatusTile label="TEMPLATES" value={templateStatus} />
-                <StatusTile label="INTEGRATION" value="Cloud API" />
+                <StatusTile label="TEMPLATES" value={account.connection_type === 'qr_session' ? 'Not Required' : templateStatus} />
+                <StatusTile label="INTEGRATION" value={account.connection_type === 'qr_session' ? 'QR Session' : 'Cloud API'} />
             </div>
 
             <div className={`mt-6 flex items-start gap-3 rounded-[12px] p-4 text-[14px] font-medium border ${noticeClass}`}>
@@ -747,7 +747,7 @@ function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDi
                         {loading ? <Loader2 className="h-4 w-4 animate-spin text-gray-500" /> : <ShieldCheck className="h-4 w-4 text-gray-500" />}
                         Verify Access
                     </button>
-                    {!reconnectRequired && (
+                    {!reconnectRequired && account.connection_type !== 'qr_session' && (
                         <Link
                             to="/templates"
                             className="inline-flex items-center justify-center gap-2 rounded-full bg-black px-6 py-2.5 text-sm font-semibold text-white transition-all hover:bg-gray-800"
@@ -770,6 +770,11 @@ function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDi
 }
 
 function getAccountSummary(account, diagnostics, reconnectRequired) {
+    if (account.connection_type === 'qr_session') {
+        return diagnostics?.send_ready ?? account.send_ready
+            ? 'QR testing session is connected and ready for messaging.'
+            : 'QR testing session is disconnected. Scan the QR code below to reconnect.'
+    }
     if (diagnostics?.send_ready) return 'Cloud API send access verified. Ready for production.'
     if (reconnectRequired) {
         return 'Meta token expire ho gaya hai. Reconnect Meta click karke same number ko fresh permission ke saath link karein; uske baad sending, templates and profile access restore ho jayega.'
