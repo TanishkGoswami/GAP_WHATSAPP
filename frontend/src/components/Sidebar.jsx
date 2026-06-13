@@ -150,6 +150,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
                                 setIsHovered(true)
                                 setIsOrgMenuOpen(prev => !prev)
                             }}
+                            data-tour="account-switcher"
                             className={clsx(
                                 'flex h-9 min-w-0 items-center rounded-lg text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100',
                                 isCollapsed ? 'w-8 justify-center' : 'w-full gap-2 px-2'
@@ -212,7 +213,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
                         ) : null}
                     </div>
 
-                    <nav className="flex-1 overflow-y-auto px-2 py-3">
+                    <nav data-tour="sidebar-nav" className="flex-1 overflow-y-auto px-2 py-3">
                         <div className="space-y-1">
                             {filteredNavigation.slice(0, 3).map(item => {
                                 if (item.subItems) {
@@ -432,6 +433,7 @@ function NavItem({ item, active, collapsed, onNavigate, attention }) {
         <Link
             to={item.href}
             onClick={onNavigate}
+            data-tour={`nav-${item.href.replace('/', '').replaceAll('/', '-') || 'dashboard'}`}
             title={collapsed ? item.name : undefined}
             className={clsx(
                 'group flex h-9 items-center rounded-md text-[14px] font-medium transition-colors',
@@ -475,6 +477,7 @@ function ExpandableNavItem({ item, active, collapsed, onNavigate }) {
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
+                data-tour={`nav-${item.href.replace('/', '').replaceAll('/', '-') || 'dashboard'}`}
                 className={clsx(
                     'group flex h-9 w-full items-center rounded-md text-[14px] font-medium transition-colors text-left focus:outline-none',
                     collapsed ? 'justify-center px-0' : 'gap-2 px-2',

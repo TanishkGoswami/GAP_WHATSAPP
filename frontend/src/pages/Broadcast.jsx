@@ -4,6 +4,7 @@ import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { formatINRFromPaise } from '../config/whatsappPricing'
+import TourButton from '../onboarding/TourButton'
 
 const STEPS = [
     { id: 1, name: 'Details', icon: LayoutGrid },
@@ -543,6 +544,8 @@ export default function Broadcast() {
                     <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Broadcasts</h1>
                     <p className="text-sm text-gray-500 mt-2 max-w-lg leading-relaxed">Design, schedule, and track bulk message campaigns for your audience.</p>
                 </div>
+                <div data-tour="broadcast-tabs" className="flex flex-wrap items-center gap-2">
+                <TourButton />
                 <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-sm backdrop-blur-sm">
                     <button 
                         onClick={() => setActiveTab('new')}
@@ -556,6 +559,7 @@ export default function Broadcast() {
                     >
                         History
                     </button>
+                </div>
                 </div>
             </div>
 
@@ -724,7 +728,7 @@ export default function Broadcast() {
             ) : (
                 <div className="space-y-10">
                     {/* Progress Steps */}
-                    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+                    <div data-tour="broadcast-stepper" className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                         <div className="relative">
                             <div className="absolute left-8 right-8 top-5 h-0.5 bg-gray-200"></div>
                             <div className="absolute left-8 top-5 h-0.5 bg-[#0070d1] transition-all duration-500 ease-in-out" style={{ width: `calc(${((currentStep - 1) / (STEPS.length - 1)) * 100}% - ${currentStep === 1 ? '0px' : '4rem'})` }}></div>
@@ -846,7 +850,7 @@ export default function Broadcast() {
                         )}
 
                         {currentStep === 2 && (
-                            <div className="p-6 lg:p-8">
+                            <div data-tour="broadcast-recipients" className="p-6 lg:p-8">
                                 <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                                     <div>
                                         <h2 className="text-xl font-semibold text-gray-950">Select Audience</h2>
@@ -1006,7 +1010,7 @@ export default function Broadcast() {
                         )}
 
                         {currentStep === 3 && (
-                            <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-6 md:grid-cols-2 lg:p-8">
+                            <div data-tour="broadcast-template" className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-6 md:grid-cols-2 lg:p-8">
                                 <div>
                                     <h2 className="text-lg font-medium text-gray-900 mb-4">Select Template</h2>
                                     {isLoading.templates ? (
@@ -1196,7 +1200,7 @@ export default function Broadcast() {
                         )}
 
                         {currentStep === 4 && (
-                            <div className="mx-auto max-w-lg space-y-6 p-6 text-center lg:p-8">
+                            <div data-tour="broadcast-cost" className="mx-auto max-w-lg space-y-6 p-6 text-center lg:p-8">
                                 <div className="mx-auto h-16 w-16 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
                                     <Send className="h-8 w-8 ml-1" />
                                 </div>
@@ -1297,7 +1301,8 @@ export default function Broadcast() {
                                     )}
                                 </div>
 
-                                <button 
+                                <button
+                                    data-tour="broadcast-send"
                                     disabled={isSending || isEstimating || (billingEstimate && !billingEstimate.can_launch)}
                                     onClick={handleLaunch}
                                     className="w-full py-3 flex items-center justify-center gap-2 bg-green-600 text-white rounded-xl font-bold text-lg hover:bg-green-700 shadow-lg shadow-green-200 transition-all transform hover:scale-[1.02] disabled:opacity-70 disabled:hover:scale-100"

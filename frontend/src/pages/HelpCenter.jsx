@@ -22,6 +22,7 @@ import {
     Play,
     Star,
 } from 'lucide-react'
+import TourButton from '../onboarding/TourButton'
 
 // ─── Data ────────────────────────────────────────────────────────────────────
 
@@ -347,7 +348,8 @@ export default function HelpCenter() {
     return (
         <div className="space-y-8">
             {/* ── Header ── */}
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2 text-sm font-semibold text-green-700">
                     <HelpCircle className="h-4 w-4" />
                     Support Hub
@@ -356,6 +358,8 @@ export default function HelpCenter() {
                 <p className="text-sm text-gray-500">
                     GAP FlowPilot ke baare mein sawal? Yahan answers milenge. Har feature ka detailed guide available hai.
                 </p>
+                </div>
+                <TourButton />
             </div>
 
             {/* ── Hero Search ── */}
@@ -377,7 +381,7 @@ export default function HelpCenter() {
                         {faqs.length}+ common questions ke answers neeche available hain.
                     </p>
 
-                    <div className="relative mt-6 max-w-xl">
+                    <div data-tour="help-search" className="relative mt-6 max-w-xl">
                         <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                         <input
                             id="help-search"
@@ -409,7 +413,7 @@ export default function HelpCenter() {
             </div>
 
             {/* ── Category Filters ── */}
-            <section>
+            <section data-tour="help-categories">
                 <div className="mb-4 flex items-center gap-3">
                     <h2 className="text-base font-bold text-gray-950">Categories</h2>
                     {activeCategory !== 'all' && (
@@ -435,7 +439,7 @@ export default function HelpCenter() {
             </section>
 
             {/* ── FAQ List ── */}
-            <section>
+            <section data-tour="help-faqs">
                 <div className="mb-4 flex items-center justify-between gap-3">
                     <h2 className="text-base font-bold text-gray-950">
                         {search.trim()
@@ -485,7 +489,7 @@ export default function HelpCenter() {
             </section>
 
             {/* ── Contact Support ── */}
-            <section className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <section data-tour="help-support" className="grid grid-cols-1 gap-5 sm:grid-cols-3">
                 <div className="col-span-1 sm:col-span-3">
                     <h2 className="text-base font-bold text-gray-950">Aur madad chahiye?</h2>
                     <p className="mt-1 text-sm text-gray-500">Humari team aapki help ke liye always ready hai.</p>
