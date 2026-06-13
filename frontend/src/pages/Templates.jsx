@@ -3,6 +3,7 @@ import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCi
 import Modal from '../components/Modal'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
+import TourButton from '../onboarding/TourButton'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -377,6 +378,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                         <div className="relative flex-1">
                             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
                             <input
+                                data-tour="templates-library-search"
                                 type="text"
                                 placeholder="Search template library"
                                 value={searchQuery}
@@ -675,17 +677,21 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                     <h1 className="text-2xl font-bold text-gray-900">Message Templates</h1>
                     <p className="text-sm text-gray-500 mt-1">Manage your WhatsApp message templates</p>
                 </div>
-                <button
-                    onClick={() => setIsCreateOpen(true)}
-                    className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
-                >
-                    <Plus className="h-4 w-4" />
-                    New Template
-                </button>
+                <div className="flex flex-wrap gap-2">
+                    <TourButton />
+                    <button
+                        onClick={() => setIsCreateOpen(true)}
+                        data-tour="templates-create"
+                        className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
+                    >
+                        <Plus className="h-4 w-4" />
+                        New Template
+                    </button>
+                </div>
             </div>
 
             {/* Filters */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-3">
+            <div data-tour="templates-filters" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-3">
                 <div className="flex flex-wrap items-center gap-3">
                     {/* Category Dropdown */}
                     <div className="relative">
@@ -776,7 +782,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
             )}
 
             {loading && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <div data-tour="templates-list" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {[0, 1, 2].map(i => (
                         <div key={i} className="h-[340px] animate-pulse rounded-xl border border-gray-200 bg-white p-5">
                             <div className="h-10 w-10 rounded-lg bg-gray-100" />

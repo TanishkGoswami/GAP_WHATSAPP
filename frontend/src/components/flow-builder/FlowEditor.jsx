@@ -17,6 +17,7 @@ import { Save, ArrowLeft, Play, Zap, Handshake, Square } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
+import TourButton from '../../onboarding/TourButton';
 
 // Import all node components
 import StartBotFlowNode from './StartBotFlowNode';
@@ -315,6 +316,7 @@ function FlowEditorContent({ flow, waAccounts = [], onClose }) {
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
+                    <TourButton compact />
                     <AccountTargetControl
                         accounts={waAccounts}
                         scope={accountScope}
@@ -351,10 +353,12 @@ function FlowEditorContent({ flow, waAccounts = [], onClose }) {
 
             <div className="flex-1 flex overflow-hidden">
                 {/* Sidebar */}
-                <EnhancedFlowSidebar onDragStart={onDragStart} />
+                <div data-tour="flow-editor-sidebar" className="h-full shrink-0">
+                    <EnhancedFlowSidebar onDragStart={onDragStart} />
+                </div>
 
                 {/* Canvas */}
-                <div className="flex-1 relative" ref={reactFlowWrapper}>
+                <div data-tour="flow-editor-canvas" className="flex-1 relative" ref={reactFlowWrapper}>
                     <ReactFlow
                         nodes={nodes.map(node => ({
                             ...node,

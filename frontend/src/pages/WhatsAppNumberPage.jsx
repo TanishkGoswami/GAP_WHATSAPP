@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import TwilioNumberPurchase from '../components/TwilioNumberPurchase'
+import TourButton from '../onboarding/TourButton'
 
 const API_BASE = `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api`
 
@@ -136,6 +137,9 @@ export default function WhatsAppNumberPage() {
             </div>
 
             <section className="text-center">
+                <div className="mb-4 flex justify-center">
+                    <TourButton />
+                </div>
                 <h1 className="text-3xl font-extrabold tracking-tight text-gray-950 sm:text-4xl">Set up your WhatsApp number</h1>
                 <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-gray-600">
                     Get a fresh virtual number instantly for WhatsApp Cloud API, or request our team\'s assistance for a guided onboarding experience.
@@ -148,7 +152,7 @@ export default function WhatsAppNumberPage() {
             </section>
 
             {/* Tab Selector */}
-            <div className="flex justify-center mt-8">
+            <div data-tour="number-tabs" className="flex justify-center mt-8">
                 <div className="inline-flex rounded-xl bg-gray-200/60 p-1.5 shadow-inner">
                     <button
                         onClick={() => setActiveTab('instant')}
@@ -200,7 +204,7 @@ export default function WhatsAppNumberPage() {
 
                 {activeTab === 'assisted' && (
                     <div className="animate-in fade-in slide-in-from-bottom-2 duration-300 space-y-8">
-                        <div className="rounded-2xl border border-gray-200 bg-white p-6 sm:p-8 shadow-sm">
+                        <div data-tour="number-form" className="rounded-2xl border border-gray-200 bg-white p-6 sm:p-8 shadow-sm">
                             <div className="mb-6">
                                 <h2 className="text-xl font-bold text-gray-950">Request assisted setup</h2>
                                 <p className="mt-2 text-sm leading-6 text-gray-500">Provide accurate details to help our team arrange a dedicated number and fast-track your Meta approval flow.</p>
@@ -262,7 +266,7 @@ export default function WhatsAppNumberPage() {
                         </div>
 
                         {/* Recent Requests Section inside Assisted Tab */}
-                        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+                        <div data-tour="number-requests" className="rounded-2xl border border-gray-200 bg-white shadow-sm">
                             <div className="border-b border-gray-100 p-6">
                                 <h2 className="text-lg font-bold text-gray-950">Your active requests</h2>
                                 <p className="mt-1 text-sm text-gray-500">Track the status of your assisted number requests.</p>

@@ -5,6 +5,7 @@ import FlowEditor from '../components/flow-builder/FlowEditor';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../context/DialogContext';
 import { FLOW_TEMPLATE_CATEGORIES, FLOW_TEMPLATES, buildFlowFromTemplate } from '../components/flow-builder/flowTemplates';
+import TourButton from '../onboarding/TourButton';
 
 export default function FlowBuilder() {
     const { session } = useAuth();
@@ -316,8 +317,10 @@ export default function FlowBuilder() {
                     </p>
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center sm:gap-3">
+                    <TourButton />
                     <button
                         onClick={() => setShowTemplatesModal(true)}
+                        data-tour="flows-templates"
                         className="fp-button-secondary"
                     >
                         <LayoutTemplate className="h-4 w-4" />
@@ -325,6 +328,7 @@ export default function FlowBuilder() {
                     </button>
                     <button
                         onClick={() => setShowCreateModal(true)}
+                        data-tour="flows-create"
                         className="fp-button-primary"
                     >
                         <Plus className="h-4 w-4" />
@@ -482,7 +486,7 @@ export default function FlowBuilder() {
             </div>
 
             {/* Flows List */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div data-tour="flows-list" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {flows.map(flow => {
                     const theme = getFlowCardTheme(flow.name);
                     const IconComp = theme.icon;

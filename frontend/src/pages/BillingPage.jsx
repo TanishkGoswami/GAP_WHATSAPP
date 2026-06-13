@@ -3,6 +3,7 @@ import { AlertCircle, Check, ChevronDown, CreditCard, Loader2, Megaphone, Receip
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../supabaseClient'
+import TourButton from '../onboarding/TourButton'
 import {
     BILLING_INTERVALS,
     FALLBACK_PLANS,
@@ -232,13 +233,14 @@ export default function BillingPage() {
     return (
         <div className="min-h-screen bg-gray-50 p-4 sm:p-6">
             <div className="mx-auto max-w-7xl space-y-6">
-                <header>
+                <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                         <h1 className="text-2xl font-semibold text-gray-950">Billing & Usage</h1>
                         <p className="mt-1 text-sm text-gray-500">
                             Platform subscription alag hai. Marketing, utility aur authentication message spend wallet se deduct hoga.
                         </p>
                     </div>
+                    <TourButton />
                 </header>
 
                 {error && (
@@ -249,7 +251,7 @@ export default function BillingPage() {
                 )}
 
                 <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-xl border border-gray-200 bg-white p-5">
+                    <div data-tour="billing-wallet" className="rounded-xl border border-gray-200 bg-white p-5">
                         <div className="flex items-center justify-between">
                             <p className="text-sm font-medium text-gray-500">Current Plan</p>
                             <ShieldCheck className="h-5 w-5 text-green-600" />
@@ -286,7 +288,7 @@ export default function BillingPage() {
                     </div>
                 </section>
 
-                <section className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-6 md:p-8 text-white shadow-xl shadow-indigo-950/20">
+                <section data-tour="billing-recharge" className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-6 md:p-8 text-white shadow-xl shadow-indigo-950/20">
                     {/* Glowing decorative shapes */}
                     <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-indigo-500/15 blur-3xl" />
                     <div className="pointer-events-none absolute -left-20 -bottom-20 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
@@ -442,7 +444,7 @@ export default function BillingPage() {
                     </div>
                 </section>
 
-                <section className="rounded-xl border border-gray-200 bg-white">
+                <section data-tour="billing-activity" className="rounded-xl border border-gray-200 bg-white">
                     <button
                         type="button"
                         onClick={() => setIsMessageBillingOpen(prev => !prev)}
@@ -511,7 +513,7 @@ export default function BillingPage() {
                     )}
                 </section>
 
-                <section className="rounded-xl border border-gray-200 bg-white p-5">
+                <section data-tour="billing-plans" className="rounded-xl border border-gray-200 bg-white p-5">
                     <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                             <h2 className="text-base font-semibold text-gray-950">Subscription Plans</h2>
@@ -564,7 +566,7 @@ export default function BillingPage() {
                                             {price !== 0 && <span className={`text-sm font-medium ${plan.id === 'growth' ? 'text-emerald-100' : 'text-gray-500'}`}>/month</span>}
                                         </p>
                                         <p className={`mt-1 text-xs ${plan.id === 'growth' ? 'text-gray-300' : 'text-gray-500'}`}>
-                                            {price === 0 ? 'Forever' : interval === 12 ? `${formatINRFromPaise(price)} billed yearly` : 'per month'}
+                                            {price === 0 ? 'Forever' : interval === 12 ? `${formatINRFromPaise(price)} billed yearly` : 'Billed monthly'}
                                         </p>
                                     </div>
                                     <button

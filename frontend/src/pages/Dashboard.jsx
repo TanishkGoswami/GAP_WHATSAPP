@@ -27,6 +27,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { formatINRFromPaise } from '../config/whatsappPricing'
+import TourButton from '../onboarding/TourButton'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
@@ -166,16 +167,18 @@ export default function Dashboard() {
 
                 {!isLoading && !hasConnectedAccount ? <FirstRunOnboarding /> : null}
 
-                <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <section data-tour="dashboard-metrics" className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <MetricCard icon={MessageSquareText} label="Messages" value={fmt(model.totalMessages)} detail={`${rangeLabel} synced`} loading={isLoading} />
                     <MetricCard icon={Users} label="Customer messages" value={fmt(model.metrics.inbound)} detail="Inbound activity" loading={isLoading} />
                     <MetricCard icon={Bot} label="AI + team replies" value={fmt(n(model.metrics.aiAgent) + n(model.metrics.humanAgent))} detail={`${fmt(model.metrics.aiAgent)} AI / ${fmt(model.metrics.humanAgent)} human`} loading={isLoading} />
                     <MetricCard icon={AlertTriangle} label="Failed delivery" value={`${model.failedRate.toFixed(1)}%`} detail={`${fmt(model.failed)} messages`} warning={model.failedRate > 5} loading={isLoading} />
                 </section>
 
-                <BillingOverviewStrip overview={billingOverview} />
+                <div data-tour="dashboard-wallet">
+                    <BillingOverviewStrip overview={billingOverview} />
+                </div>
 
-                <section className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.55fr)]">
+                <section data-tour="dashboard-overview" className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.55fr)]">
                     <Panel
                         title="Message performance"
                         subtitle="Delivery, reads, and failures from real WhatsApp message rows."
@@ -193,6 +196,7 @@ export default function Dashboard() {
                         </div>
                     </Panel>
 
+                    <div data-tour="dashboard-health">
                     <Panel title="System health" subtitle="Current account, inbox, and automation state." action={<Gauge className="h-4 w-4 text-gray-400" />}>
                         <div className="space-y-2.5">
                             <HealthRow icon={Smartphone} label="WhatsApp accounts" value={`${fmt(model.accounts.active)} active / ${fmt(model.accounts.total)} total`} active={n(model.accounts.active) > 0} />
@@ -202,6 +206,7 @@ export default function Dashboard() {
                             <HealthRow icon={AlertTriangle} label="Unread messages" value={fmt(model.conversations.unread)} active={n(model.conversations.unread) === 0} />
                         </div>
                     </Panel>
+                    </div>
                 </section>
 
                 <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
@@ -356,7 +361,8 @@ function Header({ range, setRange, isFetching, refetch, freshness }) {
                 <p className="mt-1 text-sm leading-5 text-gray-600">Real WhatsApp performance, customer readiness, and automation health.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex rounded-full border border-gray-200 bg-white p-1">
+                <TourButton />
+                <div data-tour="dashboard-range" className="inline-flex rounded-full border border-gray-200 bg-white p-1">
                     {ranges.map(item => (
                         <button
                             key={item.value}
