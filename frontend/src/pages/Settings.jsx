@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { useNotificationSound } from '../hooks/useNotificationSound'
@@ -29,8 +30,10 @@ const readStoredText = (key, fallback) => {
 }
 
 export default function Settings() {
-    const { session, userRole, loginType } = useAuth()
+    const { session, userRole, loginType, apiCall, user, memberProfile } = useAuth()
     const { alertDialog, confirmDialog } = useDialog()
+    const [billingOverview, setBillingOverview] = useState(null)
+    const [isLoadingBilling, setIsLoadingBilling] = useState(false)
     const {
         isEnabled: notificationSoundEnabled,
         setIsEnabled: setNotificationSoundEnabled,
@@ -233,6 +236,107 @@ export default function Settings() {
         }
     }
 
+    const fetchBillingOverview = async () => {
+        if (!session?.access_token) return
+        setIsLoadingBilling(true)
+        try {
+            const res = await apiCall(`${BACKEND_BASE}/api/billing/overview`)
+            const data = await res.json().catch(() => ({}))
+            if (res.ok) {
+                setBillingOverview(data)
+            } else {
+                console.warn("Failed to load billing overview in settings:", data?.error || res.statusText)
+            }
+        } catch (e) {
+            console.error('Failed to load billing overview', e)
+        } finally {
+            setIsLoadingBilling(false)
+        }
+    }
+
+    const formatPlanDate = (dateString) => {
+        if (!dateString) return 'N/A'
+        try {
+            const date = new Date(dateString)
+            if (Number.isNaN(date.getTime())) return 'N/A'
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        } catch {
+            return 'N/A'
+        }
+    }
+
+    const getDaysRemaining = (endDateString) => {
+        if (!endDateString) return null
+        try {
+            const end = new Date(endDateString)
+            const now = new Date()
+            const diffTime = end.getTime() - now.getTime()
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+            return diffDays > 0 ? diffDays : 0
+        } catch {
+            return null
+        }
+    }
+
+    const getFallbackCycleDates = (createdAt, billingCycle = 'monthly') => {
+        const created = createdAt ? new Date(createdAt) : new Date()
+        const now = new Date()
+        
+        let start = new Date(now.getFullYear(), now.getMonth(), created.getDate())
+        if (start > now) {
+            start = new Date(now.getFullYear(), now.getMonth() - 1, created.getDate())
+        }
+        
+        let end = new Date(start)
+        if (billingCycle === 'yearly') {
+            end.setFullYear(start.getFullYear() + 1)
+        } else {
+            end.setMonth(start.getMonth() + 1)
+        }
+        
+        return {
+            start: start.toISOString(),
+            end: end.toISOString()
+        }
+    }
+
+    const getUserInitials = () => {
+        const name = memberProfile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || ''
+        if (!name) return 'U'
+        return name
+            .split(' ')
+            .map(n => n[0])
+            .slice(0, 2)
+            .join('')
+            .toUpperCase()
+    }
+
+    const getJoinedDate = () => {
+        const dateStr = memberProfile?.created_at || user?.created_at
+        if (!dateStr) return 'N/A'
+        return formatPlanDate(dateStr)
+    }
+
+    const getUpgradeRecommendation = (currentPlanId) => {
+        const pId = String(currentPlanId || '').toLowerCase()
+        if (pId.includes('pro') || pId.includes('ultimate') || pId.includes('max') || pId.includes('ecosystem')) {
+            return null // Already on highest tiers
+        }
+        if (pId.includes('growth')) {
+            return {
+                name: 'Pro',
+                price: '₹3,499/mo',
+                features: ['50,000 contacts', '10 agents', 'API & Webhooks']
+            }
+        }
+        // If starter or no active plan
+        return {
+            name: 'Growth',
+            price: '₹1,999/mo',
+            features: ['10,000 contacts', 'Unlimited flows', 'Broadcast campaigns']
+        }
+    }
+
     const fetchAccounts = async () => {
         if (!session?.access_token) return
         setIsLoadingAccounts(true)
@@ -412,6 +516,7 @@ export default function Settings() {
     useEffect(() => {
         if (activeTab === 'general') {
             fetchAccounts()
+            fetchBillingOverview()
         }
     }, [activeTab, session?.access_token])
 
@@ -565,33 +670,152 @@ export default function Settings() {
 
             {/* Content */}
             <div className="min-h-[600px] min-w-0 flex-1 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-                {activeTab === 'general' && (
-                    <div data-tour="settings-profile" className="bg-gray-50/60">
-                        <div className="flex flex-col gap-4 border-b border-gray-200 bg-white px-4 py-5 sm:px-8 sm:py-6 lg:flex-row lg:items-start lg:justify-between">
-                            <div>
-                                <h2 className="text-xl font-semibold text-gray-900">General</h2>
-                                <p className="mt-1 text-sm text-gray-500">Manage WhatsApp Business profiles across all connected numbers.</p>
+                {activeTab === 'general' && (() => {
+                    const fallbackCycle = getFallbackCycleDates(
+                        billingOverview?.organization?.created_at || user?.created_at,
+                        billingOverview?.organization?.billing_cycle || 'monthly'
+                    )
+                    const startDate = billingOverview?.organization?.plan_start_date || fallbackCycle.start
+                    const endDate = billingOverview?.organization?.plan_end_date || fallbackCycle.end
+                    const daysLeft = getDaysRemaining(endDate)
+
+                    return (
+                        <div className="bg-gray-50/60">
+                            <div className="flex flex-col gap-4 border-b border-gray-200 bg-white px-4 py-5 sm:px-8 sm:py-6 lg:flex-row lg:items-start lg:justify-between">
+                                <div>
+                                    <h2 className="text-xl font-semibold text-gray-900">General</h2>
+                                    <p className="mt-1 text-sm text-gray-500">Manage WhatsApp Business profiles across all connected numbers.</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={fetchAccounts}
+                                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                                >
+                                    <RefreshCw className="h-4 w-4" />
+                                    Refresh
+                                </button>
                             </div>
-                            <button
-                                type="button"
-                                onClick={fetchAccounts}
-                                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-                            >
-                                <RefreshCw className="h-4 w-4" />
-                                Refresh
-                            </button>
+                            
+                            {/* Profile & Subscription Overview Card */}
+                            <div className="border-b border-gray-200 bg-white px-4 py-6 sm:px-8">
+                                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                                    {/* User Profile Details */}
+                                    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-gray-50/50 p-6 shadow-sm transition-all duration-300 hover:shadow-md">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                            <div className="flex items-center gap-4">
+                                                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 text-xl font-bold text-white shadow-md">
+                                                    {getUserInitials()}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center flex-wrap gap-2">
+                                                        <h3 className="truncate text-lg font-bold text-gray-900">
+                                                            {memberProfile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || 'User'}
+                                                        </h3>
+                                                        <span className="inline-flex shrink-0 items-center rounded-full bg-neutral-900 px-2.5 py-0.5 text-[10px] font-bold text-white uppercase tracking-wider">
+                                                            {userRole || 'Owner'}
+                                                        </span>
+                                                    </div>
+                                                    <p className="truncate text-sm text-gray-500 mt-0.5">
+                                                        {memberProfile?.email || user?.email || 'N/A'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-6 border-t border-gray-100 pt-5 space-y-3">
+                                            <div className="flex items-center justify-between text-xs">
+                                                <span className="font-semibold text-gray-400 uppercase tracking-wider">User ID</span>
+                                                <span className="font-mono font-semibold text-gray-600">
+                                                    {user?.id ? `${user.id.substring(0, 8)}...${user.id.slice(-4)}` : 'N/A'}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-xs">
+                                                <span className="font-semibold text-gray-400 uppercase tracking-wider">Account Status</span>
+                                                <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full ring-1 ring-inset ring-emerald-600/10">
+                                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                    Active
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-xs">
+                                                <span className="font-semibold text-gray-400 uppercase tracking-wider">Joined Date</span>
+                                                <span className="font-semibold text-gray-600">{getJoinedDate()}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Subscription & Plan Details */}
+                                    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-indigo-50/10 p-6 shadow-sm transition-all duration-300 hover:shadow-md min-h-[220px] flex flex-col justify-between">
+                                        {/* 3D Asset watermark */}
+                                        <div className="absolute -right-6 -bottom-6 h-36 w-36 opacity-90 pointer-events-none select-none transform rotate-12 transition-transform duration-500 hover:scale-105">
+                                            <img src="/images/money.png" alt="3D Currency Coins" className="h-full w-full object-contain" />
+                                        </div>
+
+                                        <div className="relative z-10">
+                                            <div className="flex items-center gap-2">
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-700/10">
+                                                    <Sparkles className="h-3 w-3" />
+                                                    Active Plan
+                                                </span>
+                                                {endDate && (
+                                                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${
+                                                        daysLeft < 5
+                                                            ? 'bg-rose-50 text-rose-700 ring-rose-600/10 animate-pulse'
+                                                            : 'bg-gray-50 text-gray-600 ring-gray-500/10'
+                                                    }`}>
+                                                        {daysLeft} days left
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <h4 className="mt-3 text-2xl font-bold text-gray-900 tracking-tight">
+                                                {billingOverview?.current_plan?.name || billingOverview?.organization?.plan_id || 'Starter'}
+                                            </h4>
+                                            <p className="mt-1 text-xs text-gray-500 font-medium">
+                                                Cycle: {formatPlanDate(startDate)} – {formatPlanDate(endDate)}
+                                            </p>
+                                        </div>
+
+                                    {/* Upgrade recommendations */}
+                                    {getUpgradeRecommendation(billingOverview?.current_plan?.id || billingOverview?.organization?.plan_id) ? (
+                                        <div className="relative z-10 mt-6 rounded-xl bg-white/75 backdrop-blur-md border border-white/40 p-4 shadow-sm flex items-center justify-between gap-4">
+                                            <div className="min-w-0">
+                                                <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider">Available Upgrade</p>
+                                                <h5 className="text-sm font-bold text-gray-900 mt-0.5">
+                                                    Upgrade to {getUpgradeRecommendation(billingOverview?.current_plan?.id || billingOverview?.organization?.plan_id).name}
+                                                </h5>
+                                                <p className="text-[11px] text-gray-500 mt-0.5 truncate">
+                                                    Unlock: {getUpgradeRecommendation(billingOverview?.current_plan?.id || billingOverview?.organization?.plan_id).features.join(' • ')}
+                                                </p>
+                                            </div>
+                                            <Link
+                                                to="/billing"
+                                                className="inline-flex shrink-0 items-center justify-center h-9 w-9 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors shadow-sm"
+                                            >
+                                                <ArrowRight className="h-4 w-4" />
+                                            </Link>
+                                        </div>
+                                    ) : (
+                                        <div className="relative z-10 mt-6 rounded-xl bg-white/75 backdrop-blur-md border border-white/40 p-4 shadow-sm flex items-center gap-3">
+                                            <Shield className="h-5 w-5 text-indigo-600 shrink-0" />
+                                            <div>
+                                                <h5 className="text-xs font-bold text-gray-900">Ultimate Plan Active</h5>
+                                                <p className="text-[11px] text-gray-500 mt-0.5">You are on the highest tier. Enjoy unlimited access!</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         </div>
 
                         {profileError && (
-                            <div className="mx-4 mt-5 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 sm:mx-8 sm:mt-6">
-                                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                            <div className="mx-4 mt-5 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50/50 px-4 py-3 text-xs leading-relaxed text-amber-800 sm:mx-8 sm:mt-6">
+                                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                                 <span>{profileError}</span>
                             </div>
                         )}
 
                         {profileSuccess && (
-                            <div className="mx-4 mt-5 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 sm:mx-8 sm:mt-6">
-                                <Check className="h-4 w-4" />
+                            <div className="mx-4 mt-5 flex items-center gap-2.5 rounded-xl border border-green-200 bg-green-50/50 px-4 py-3 text-xs font-medium text-green-800 sm:mx-8 sm:mt-6">
+                                <Check className="h-4 w-4 shrink-0 text-green-600" />
                                 <span>{profileSuccess}</span>
                             </div>
                         )}
@@ -607,32 +831,47 @@ export default function Settings() {
                         ) : (
                             <div className="grid grid-cols-1 gap-0 xl:grid-cols-[320px_1fr]">
                                 <aside className="border-b border-gray-200 bg-white p-6 xl:border-b-0 xl:border-r">
-                                    <div className="mb-4 text-xs font-semibold uppercase tracking-wide text-gray-500">Connected accounts</div>
-                                    <div className="space-y-2">
+                                    <div className="mb-4 text-[10px] font-bold uppercase tracking-wider text-gray-400">Connected accounts</div>
+                                    <div className="space-y-3">
                                     {accounts.map(account => (
                                         <div
                                             key={account.id}
                                             onClick={() => setSelectedAccountId(account.id)}
-                                            className={`w-full cursor-pointer rounded-xl border p-4 text-left transition-colors ${selectedAccountId === account.id ? 'border-green-500 bg-green-50 shadow-sm' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                                            className={`w-full cursor-pointer rounded-2xl border p-4 text-left transition-all duration-300 hover:shadow-sm ${
+                                                selectedAccountId === account.id 
+                                                    ? 'border-indigo-600 bg-gradient-to-br from-white to-indigo-50/20 ring-1 ring-indigo-600' 
+                                                    : 'border-gray-200 bg-white hover:border-gray-300'
+                                            }`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-700">
-                                                    <PhoneCall className="h-5 w-5" />
+                                                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                                                    selectedAccountId === account.id ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500'
+                                                }`}>
+                                                    <Globe className="h-5 w-5" />
                                                 </div>
                                                 <div className="min-w-0">
                                                     <div className="truncate text-sm font-semibold text-gray-900">{account.name || 'WhatsApp Business'}</div>
                                                     <div className="truncate text-xs text-gray-500">{account.display_phone_number || account.phone_number_id}</div>
                                                 </div>
                                             </div>
-                                            <div className="mt-3 flex items-center justify-between text-xs">
+                                            <div className="mt-3.5 flex items-center justify-between text-xs">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="rounded-full bg-white px-2 py-1 text-gray-600 ring-1 ring-gray-200">{account.status || 'connected'}</span>
-                                                    <span className="text-gray-400">ID {String(account.phone_number_id || '').slice(-5)}</span>
+                                                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                                                        (account.status || 'connected') === 'connected' 
+                                                            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-600/10' 
+                                                            : 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-600/10'
+                                                    }`}>
+                                                        <span className={`h-1 w-1 rounded-full ${
+                                                            (account.status || 'connected') === 'connected' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                                                        }`} />
+                                                        {account.status || 'connected'}
+                                                    </span>
+                                                    <span className="text-[11px] text-gray-400 font-medium">ID {String(account.phone_number_id || '').slice(-5)}</span>
                                                 </div>
                                                 <button
                                                     type="button"
                                                     onClick={(e) => handleDisconnectAccount(e, account.id)}
-                                                    className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                                    className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 transition-all duration-200 border border-transparent hover:border-rose-100"
                                                     title="Disconnect Account"
                                                 >
                                                     <Trash2 className="h-4 w-4" />
@@ -643,7 +882,7 @@ export default function Settings() {
                                     </div>
                                 </aside>
 
-                                <form onSubmit={saveBusinessProfile} className="min-w-0 bg-gray-50/60">
+                                <form onSubmit={saveBusinessProfile} className="min-w-0 bg-gray-50/40">
                                     <div className="border-b border-gray-200 bg-white px-8 py-5">
                                         <div className="flex items-center justify-between gap-4">
                                             <div>
@@ -660,7 +899,7 @@ export default function Settings() {
                                                     type="button"
                                                     onClick={() => loadBusinessProfile(selectedAccountId)}
                                                     disabled={isLoadingProfile}
-                                                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                                    className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                                                 >
                                                     {isLoadingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                                                     Sync from Meta
@@ -670,14 +909,14 @@ export default function Settings() {
                                     </div>
 
                                     <div className="space-y-6 p-8">
-                                        <section className="rounded-xl border border-gray-200 bg-white p-6">
+                                        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                                             <div className="mb-5">
-                                                <h4 className="text-sm font-semibold text-gray-900">Profile identity</h4>
+                                                <h4 className="text-sm font-bold text-gray-900">Profile identity</h4>
                                                 <p className="mt-1 text-xs text-gray-500">Photo and internal label for this connected number.</p>
                                             </div>
 
                                             <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[210px_1fr]">
-                                                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                                                <div className="rounded-2xl border border-gray-200 bg-gray-50/50 p-4">
                                                     <div className="mx-auto flex h-32 w-32 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white shadow-sm">
                                                     {(profileImagePreview || businessProfile.profile_picture_url) ? (
                                                         <img
@@ -689,7 +928,7 @@ export default function Settings() {
                                                         <Image className="h-9 w-9 text-gray-300" />
                                                     )}
                                                     </div>
-                                                    <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                                    <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-gray-205 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
                                                     <Upload className="h-4 w-4" />
                                                     Upload photo
                                                     <input
@@ -703,106 +942,113 @@ export default function Settings() {
                                                         }}
                                                     />
                                                     </label>
-                                                    <p className="mt-2 text-center text-[11px] leading-4 text-gray-400">Use a clear square JPG or PNG. Meta may review business branding.</p>
-                                                    <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-4 text-amber-800">
-                                                        <div className="flex gap-2">
-                                                            <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                                                            <p>WhatsApp Cloud API supports profile photo here, but does not expose a cover/banner image field.</p>
-                                                        </div>
+                                                    <p className="mt-2.5 text-center text-[10px] leading-relaxed text-gray-400">Use a clear square JPG or PNG. Meta may review business branding.</p>
+                                                    <div className="mt-4 rounded-xl border border-amber-200/80 bg-amber-50/50 p-3.5 text-[11px] leading-relaxed text-amber-800 flex items-start gap-2">
+                                                        <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-600" />
+                                                        <p>WhatsApp Cloud API supports profile photo here, but does not expose a cover/banner image field.</p>
                                                     </div>
                                                 </div>
 
                                                 <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                                                     <label className="block">
-                                                    <span className="text-xs font-medium text-gray-700">Account label in this app</span>
-                                                    <input
-                                                        value={businessProfile.local_name}
-                                                        onChange={(e) => setBusinessProfile(p => ({ ...p, local_name: e.target.value }))}
-                                                        className="mt-1 h-10 w-full rounded-lg border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
-                                                        placeholder="Support number"
-                                                    />
+                                                    <span className="text-xs font-semibold text-gray-700">Account label in this app</span>
+                                                    <div className="relative mt-1.5">
+                                                        <User className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                                        <input
+                                                            value={businessProfile.local_name}
+                                                            onChange={(e) => setBusinessProfile(p => ({ ...p, local_name: e.target.value }))}
+                                                            className="h-10 w-full rounded-lg border-gray-200 bg-white pl-10 pr-3 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                            placeholder="Support number"
+                                                        />
+                                                    </div>
                                                     </label>
                                                     <label className="block">
-                                                    <span className="text-xs font-medium text-gray-700">Business category</span>
-                                                    <select
-                                                        value={businessProfile.vertical}
-                                                        onChange={(e) => setBusinessProfile(p => ({ ...p, vertical: e.target.value }))}
-                                                        className="mt-1 h-10 w-full rounded-lg border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
-                                                    >
-                                                        <option value="">Select category</option>
-                                                        {['AUTO', 'BEAUTY', 'APPAREL', 'EDU', 'ENTERTAIN', 'EVENT_PLAN', 'FINANCE', 'GROCERY', 'GOVT', 'HOTEL', 'HEALTH', 'NONPROFIT', 'PROF_SERVICES', 'RETAIL', 'TRAVEL', 'RESTAURANT', 'OTHER'].map(value => (
-                                                            <option key={value} value={value}>{value.replace(/_/g, ' ')}</option>
-                                                        ))}
-                                                    </select>
+                                                    <span className="text-xs font-semibold text-gray-700">Business category</span>
+                                                    <div className="relative mt-1.5">
+                                                        <SlidersHorizontal className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                                        <select
+                                                            value={businessProfile.vertical}
+                                                            onChange={(e) => setBusinessProfile(p => ({ ...p, vertical: e.target.value }))}
+                                                            className="h-10 w-full rounded-lg border-gray-200 bg-white pl-10 pr-10 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                        >
+                                                            <option value="">Select category</option>
+                                                            {['AUTO', 'BEAUTY', 'APPAREL', 'EDU', 'ENTERTAIN', 'EVENT_PLAN', 'FINANCE', 'GROCERY', 'GOVT', 'HOTEL', 'HEALTH', 'NONPROFIT', 'PROF_SERVICES', 'RETAIL', 'TRAVEL', 'RESTAURANT', 'OTHER'].map(value => (
+                                                                <option key={value} value={value}>{value.replace(/_/g, ' ')}</option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
                                                     </label>
                                                     <label className="block lg:col-span-2">
-                                                    <span className="text-xs font-medium text-gray-700">About / bio</span>
+                                                    <span className="text-xs font-semibold text-gray-700">About / bio</span>
                                                     <span className="ml-2 text-[11px] text-gray-400">Usually the first line people notice in WhatsApp profile.</span>
-                                                    <input
-                                                        value={businessProfile.about}
-                                                        onChange={(e) => setBusinessProfile(p => ({ ...p, about: e.target.value }))}
-                                                        maxLength={139}
-                                                        className="mt-1 h-10 w-full rounded-lg border-gray-300 text-sm focus:border-green-500 focus:ring-green-500"
-                                                        placeholder="Short WhatsApp bio"
-                                                    />
-                                                        <div className="mt-1 text-right text-[11px] text-gray-400">{businessProfile.about.length}/139</div>
+                                                    <div className="relative mt-1.5">
+                                                        <FileText className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                                                        <input
+                                                            value={businessProfile.about}
+                                                            onChange={(e) => setBusinessProfile(p => ({ ...p, about: e.target.value }))}
+                                                            maxLength={139}
+                                                            className="h-10 w-full rounded-lg border-gray-200 bg-white pl-10 pr-3 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                                            placeholder="Short WhatsApp bio"
+                                                        />
+                                                    </div>
+                                                        <div className="mt-1 text-right text-[10px] text-gray-400">{businessProfile.about.length}/139</div>
                                                     </label>
                                                 </div>
                                             </div>
                                         </section>
 
-                                        <section className="rounded-xl border border-gray-200 bg-white p-6">
+                                        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                                             <div className="mb-5">
-                                                <h4 className="text-sm font-semibold text-gray-900">Business details</h4>
+                                                <h4 className="text-sm font-bold text-gray-900">Business details</h4>
                                                 <p className="mt-1 text-xs text-gray-500">Customer-facing description and ways to contact the business.</p>
                                             </div>
 
                                             <div className="grid grid-cols-1 gap-5 2xl:grid-cols-2">
                                                 <label className="block 2xl:col-span-2">
-                                                    <span className="text-xs font-medium text-gray-700">Business description</span>
+                                                    <span className="text-xs font-semibold text-gray-700">Business description</span>
                                                     <span className="ml-2 text-[11px] text-gray-400">Can take time to appear in customer WhatsApp apps because WhatsApp clients cache profiles.</span>
                                                     <textarea
                                                         value={businessProfile.description}
                                                         onChange={(e) => setBusinessProfile(p => ({ ...p, description: e.target.value }))}
-                                                        rows={5}
-                                                        className="mt-1 w-full resize-y rounded-lg border-gray-300 text-sm leading-5 focus:border-green-500 focus:ring-green-500"
+                                                        rows={4}
+                                                        className="mt-1.5 w-full resize-y rounded-lg border-gray-200 text-sm leading-5 focus:border-indigo-500 focus:ring-indigo-500"
                                                         placeholder="Tell customers what this account is for"
                                                     />
                                                 </label>
                                                 <label className="block">
-                                                    <span className="mb-1.5 block text-xs font-medium text-gray-700">Email</span>
+                                                    <span className="mb-1.5 block text-xs font-semibold text-gray-700">Email</span>
                                                     <div className="relative">
                                                         <Mail className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
                                                         <input
                                                             value={businessProfile.email}
                                                             onChange={(e) => setBusinessProfile(p => ({ ...p, email: e.target.value }))}
-                                                            className="h-11 w-full rounded-lg border-gray-300 bg-white pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-green-500 focus:ring-green-500"
+                                                            className="h-11 w-full rounded-lg border-gray-200 bg-white pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500"
                                                             placeholder="support@example.com"
                                                         />
                                                     </div>
                                                 </label>
                                                 <label className="block">
-                                                    <span className="mb-1.5 block text-xs font-medium text-gray-700">Websites</span>
+                                                    <span className="mb-1.5 block text-xs font-semibold text-gray-700">Websites</span>
                                                     <div className="relative">
                                                         <LinkIcon className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
                                                         <textarea
                                                             value={businessProfile.websites}
                                                             onChange={(e) => setBusinessProfile(p => ({ ...p, websites: e.target.value }))}
                                                             rows={2}
-                                                            className="min-h-[44px] w-full resize-y rounded-lg border-gray-300 bg-white py-2.5 pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-green-500 focus:ring-green-500"
+                                                            className="min-h-[44px] w-full resize-y rounded-lg border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500"
                                                             placeholder={'https://example.com\nhttps://shop.example.com'}
                                                         />
                                                     </div>
                                                 </label>
                                                 <label className="block">
-                                                    <span className="mb-1.5 block text-xs font-medium text-gray-700">Address</span>
+                                                    <span className="mb-1.5 block text-xs font-semibold text-gray-700">Address</span>
                                                     <div className="relative">
                                                         <Building2 className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-gray-400" />
                                                         <textarea
                                                             value={businessProfile.address}
                                                             onChange={(e) => setBusinessProfile(p => ({ ...p, address: e.target.value }))}
                                                             rows={2}
-                                                            className="min-h-[44px] w-full resize-y rounded-lg border-gray-300 bg-white py-2.5 pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-green-500 focus:ring-green-500"
+                                                            className="min-h-[44px] w-full resize-y rounded-lg border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:ring-indigo-500"
                                                             placeholder="Business address"
                                                         />
                                                     </div>
@@ -810,20 +1056,23 @@ export default function Settings() {
                                             </div>
                                         </section>
 
-                                        <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900">
-                                            <div className="font-medium">Meta and WhatsApp app visibility</div>
-                                            <p className="mt-1 text-blue-800/80">After saving, this page reads the profile back from Meta. If Meta shows the new value here but WhatsApp still shows an old one, the customer WhatsApp app is using cached profile data. The short About/bio is usually more visible than the longer business description.</p>
+                                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 text-xs leading-relaxed text-indigo-900 flex gap-2.5">
+                                            <Info className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
+                                            <div>
+                                                <div className="font-semibold text-indigo-950">Meta and WhatsApp app visibility</div>
+                                                <p className="mt-1 text-indigo-950/80">After saving, this page reads the profile back from Meta. If Meta shows the new value here but WhatsApp still shows an old one, the customer WhatsApp app is using cached profile data. The short About/bio is usually more visible than the longer business description.</p>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    <div className="sticky bottom-0 flex items-center justify-between border-t border-gray-200 bg-white/95 px-8 py-4 backdrop-blur">
-                                        <div className="text-xs text-gray-500">
+                                    <div className="sticky bottom-0 flex items-center justify-between border-t border-gray-200 bg-white/95 px-8 py-4 backdrop-blur-md z-20">
+                                        <div className="text-xs text-gray-400 font-medium">
                                             Changes apply to the selected WhatsApp account only.
                                         </div>
                                         <button
                                             type="submit"
                                             disabled={isSavingProfile || isLoadingProfile}
-                                            className="inline-flex items-center gap-2 rounded-lg bg-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-60"
+                                            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60 transition-colors"
                                         >
                                             {isSavingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                             Save changes
@@ -832,8 +1081,9 @@ export default function Settings() {
                                 </form>
                             </div>
                         )}
-                    </div>
-                )}
+                        </div>
+                    );
+                })()}
                 {activeTab === 'notifications' && (
                     <div data-tour="settings-notifications" className="bg-gray-50/60">
                         <div className="border-b border-gray-200 bg-white px-4 py-5 sm:px-8 sm:py-6">
