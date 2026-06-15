@@ -260,9 +260,9 @@ export default function WhatsAppConnect() {
 
     return (
         <div className="mx-auto max-w-7xl space-y-6 pb-20">
-            <section className="overflow-hidden rounded-lg border border-[#b9dcfb] bg-white">
+            <section className="rounded-lg border border-[#b9dcfb] bg-white">
                 <div className="grid gap-0 lg:grid-cols-[minmax(0,1.25fr)_360px]">
-                    <div className="border-b border-[#d9ecfd] bg-[#eef7ff] p-5 sm:p-6 lg:border-b-0 lg:border-r">
+                    <div className="border-b border-[#d9ecfd] bg-[#eef7ff] p-5 sm:p-6 lg:border-b-0 lg:border-r rounded-t-lg lg:rounded-l-lg lg:rounded-tr-none">
                         <div className="inline-flex items-center gap-2 rounded-full border border-[#b9dcfb] bg-white px-3 py-1 text-xs font-semibold text-[#0064b7]">
                             <Sparkles className="h-3.5 w-3.5" />
                             Start here
