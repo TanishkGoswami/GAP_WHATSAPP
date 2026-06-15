@@ -25,12 +25,12 @@ export default function NodeConfigPanel({ node, onClose, onSave }) {
         <>
             {/* Backdrop */}
             <div
-                className="fixed inset-0 bg-black bg-opacity-30 z-40 transition-opacity"
+                className="absolute inset-0 bg-black bg-opacity-30 z-40 transition-opacity"
                 onClick={onClose}
             />
 
             {/* Panel */}
-            <div className="fixed right-0 top-0 bottom-0 w-96 bg-white shadow-2xl z-50 flex flex-col animate-slide-in-right">
+            <div className="absolute right-6 top-6 bottom-6 w-[400px] bg-white shadow-2xl z-50 flex flex-col rounded-2xl overflow-hidden animate-slide-in-right">
                 {/* Header */}
                 <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 flex items-center justify-between">
                     <div>
@@ -141,8 +141,8 @@ function StartBotFlowConfig({ config, updateConfig }) {
                     <button
                         onClick={() => updateConfig('matchType', 'exact')}
                         className={`flex-1 px-4 py-2 rounded-lg border ${config.matchType === 'exact'
-                                ? 'bg-blue-500 text-white border-blue-500'
-                                : 'bg-white text-gray-700 border-gray-300'
+                            ? 'bg-blue-500 text-white border-blue-500'
+                            : 'bg-white text-gray-700 border-gray-300'
                             }`}
                     >
                         Exact Match
@@ -150,8 +150,8 @@ function StartBotFlowConfig({ config, updateConfig }) {
                     <button
                         onClick={() => updateConfig('matchType', 'string')}
                         className={`flex-1 px-4 py-2 rounded-lg border ${config.matchType === 'string'
-                                ? 'bg-blue-500 text-white border-blue-500'
-                                : 'bg-white text-gray-700 border-gray-300'
+                            ? 'bg-blue-500 text-white border-blue-500'
+                            : 'bg-white text-gray-700 border-gray-300'
                             }`}
                     >
                         String Match
@@ -290,8 +290,8 @@ function MediaConfig({ config, updateConfig, nodeType }) {
                     <button
                         onClick={() => updateConfig('uploadMethod', 'custom')}
                         className={`flex-1 px-4 py-2 rounded-lg border text-sm ${config.uploadMethod === 'custom'
-                                ? 'bg-purple-500 text-white border-purple-500'
-                                : 'bg-white text-gray-700 border-gray-300'
+                            ? 'bg-purple-500 text-white border-purple-500'
+                            : 'bg-white text-gray-700 border-gray-300'
                             }`}
                     >
                         Custom Field
@@ -299,8 +299,8 @@ function MediaConfig({ config, updateConfig, nodeType }) {
                     <button
                         onClick={() => updateConfig('uploadMethod', 'upload')}
                         className={`flex-1 px-4 py-2 rounded-lg border text-sm ${config.uploadMethod === 'upload'
-                                ? 'bg-purple-500 text-white border-purple-500'
-                                : 'bg-white text-gray-700 border-gray-300'
+                            ? 'bg-purple-500 text-white border-purple-500'
+                            : 'bg-white text-gray-700 border-gray-300'
                             }`}
                     >
                         Upload New
