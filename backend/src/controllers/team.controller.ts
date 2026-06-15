@@ -345,8 +345,12 @@ export async function updateMyProfile(req: any, res: Response) {
 
         if (!name) return res.status(400).json({ error: 'Name is required' });
         if (name.length > 80) return res.status(400).json({ error: 'Name must be 80 characters or less' });
-        if (avatarColor && !/^#[0-9a-fA-F]{6}$/.test(avatarColor)) {
-            return res.status(400).json({ error: 'Invalid avatar color' });
+        if (avatarColor) {
+            const isHex = /^#[0-9a-fA-F]{6}$/.test(avatarColor);
+            const isAvatarPath = avatarColor.startsWith('/images/avatars/') && avatarColor.endsWith('.png');
+            if (!isHex && !isAvatarPath) {
+                return res.status(400).json({ error: 'Invalid avatar color or image path' });
+            }
         }
 
         const updatePayload: any = {
