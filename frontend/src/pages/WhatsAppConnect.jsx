@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
     AlertCircle,
@@ -33,7 +33,7 @@ const META_EMBEDDED_SIGNUP_VERSION = import.meta.env.VITE_META_EMBEDDED_SIGNUP_V
 const META_EMBEDDED_SESSION_INFO_VERSION = import.meta.env.VITE_META_EMBEDDED_SESSION_INFO_VERSION || '3'
 
 export default function WhatsAppConnect() {
-    const { user, session, apiCall } = useAuth()
+    const { session, apiCall } = useAuth()
     const { alertDialog, confirmDialog } = useDialog()
     const [accounts, setAccounts] = useState([])
     const [loadingAccounts, setLoadingAccounts] = useState(true)
@@ -608,12 +608,12 @@ function mergeAccounts(currentAccounts, incomingAccounts) {
     return Array.from(byId.values()).sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
 }
 
-function GuideCard({ icon: Icon, title, items }) {
+function GuideCard({ icon, title, items }) {
     return (
         <div className="rounded-lg border border-gray-200 bg-white p-5">
             <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#eef7ff] text-[#0064b7]">
-                    <Icon className="h-5 w-5" />
+                    {createElement(icon, { className: 'h-5 w-5' })}
                 </span>
                 <h2 className="text-base font-semibold text-gray-950">{title}</h2>
             </div>
@@ -641,14 +641,14 @@ function InfoBox({ title, text }) {
     )
 }
 
-function MiniMetric({ icon: Icon, label, value, tone }) {
+function MiniMetric({ icon, label, value, tone }) {
     const toneClass = tone === 'green' ? 'text-emerald-600 bg-emerald-50' : 'text-blue-600 bg-blue-50'
     return (
         <div className="rounded-xl border border-gray-200 bg-white p-4">
             <div className="flex items-center justify-between">
                 <p className="text-xs font-medium text-gray-500">{label}</p>
                 <span className={`flex h-8 w-8 items-center justify-center rounded-lg ${toneClass}`}>
-                    <Icon className="h-4 w-4" />
+                    {createElement(icon, { className: 'h-4 w-4' })}
                 </span>
             </div>
             <p className="mt-3 text-xl font-semibold text-gray-950">{value}</p>

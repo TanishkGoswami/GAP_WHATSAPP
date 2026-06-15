@@ -1,0 +1,77 @@
+import express from 'express';
+import cors from 'cors';
+import dotenv from "dotenv";
+
+import billingRoutes from './routes/billing.routes.js';
+import broadcastRoutes from './routes/broadcast.routes.js';
+import contactsRoutes from './routes/contacts.routes.js';
+import conversationsRoutes from './routes/conversations.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
+import flowsRoutes from './routes/flows.routes.js';
+import messagesRoutes from './routes/messages.routes.js';
+import agentsRoutes from './routes/agents.routes.js';
+import settingsRoutes from './routes/settings.routes.js';
+import teamRoutes from './routes/team.routes.js';
+import twilioRoutes from './routes/twilio.routes.js';
+import waRoutes from './routes/wa.routes.js';
+import whatsappRoutes from './routes/whatsapp.routes.js';
+import webhookRoutes from './routes/webhook.routes.js';
+
+dotenv.config({ path: "./.env" });
+
+export const app = express();
+
+const extraCorsOrigins = String(process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean);
+
+export const corsOrigins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:3001",
+    "https://parted-deuce-penpal.ngrok-free.dev",
+    "https://w.getaipilot.in",
+    "https://wb.getaipilot.in",
+    ...extraCorsOrigins
+];
+
+export const corsAllowedHeaders = [
+    "Content-Type",
+    "Authorization",
+    "X-Auth-Portal",
+    "X-N8N-Secret",
+    "ngrok-skip-browser-warning"
+];
+
+app.use(cors({
+    origin: corsOrigins,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: corsAllowedHeaders
+}));
+
+app.use(
+    express.json({
+        verify: (req: any, _res, buf) => {
+            req.rawBody = buf;
+        },
+    })
+);
+
+app.use('/api/billing', billingRoutes);
+app.use('/api/broadcasts', broadcastRoutes);
+app.use('/api/contacts', contactsRoutes);
+app.use('/api/conversations', conversationsRoutes);
+app.use('/api/agents', agentsRoutes);
+app.use('/api', dashboardRoutes);
+app.use('/api/flows', flowsRoutes);
+app.use('/api', messagesRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/team', teamRoutes);
+app.use('/api/twilio', twilioRoutes);
+app.use('/api', waRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
+app.use(webhookRoutes); // Root level /webhook
+
+export default app;
