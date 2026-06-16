@@ -31,6 +31,7 @@ const navigation = [
     { name: 'Chats', href: '/live-chat', icon: MessageSquareText, badge: 'LIVE' },
     { name: 'Contacts', href: '/contacts', icon: Users },
     { name: 'AI Agents', href: '/bot-agents', icon: Briefcase },
+    { name: 'Team Members', href: '/settings?tab=team_members', icon: Users },
     { name: 'Flows', href: '/flow-builder', icon: GitFork },
     {
         name: 'Templates',
@@ -99,7 +100,16 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
         return () => { cancelled = true }
     }, [apiCall])
 
-    const isActive = (href) => location.pathname.startsWith(href)
+    const isActive = (href) => {
+        const [path, search] = href.split('?')
+        if (search) {
+            return location.pathname === path && location.search.includes(search)
+        }
+        if (location.search && href === '/settings') {
+            return false
+        }
+        return location.pathname.startsWith(path)
+    }
 
     const handleSignOut = async () => {
         onMobileClose?.()
@@ -227,7 +237,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
                             <>
                                 <div className="my-2 h-px bg-gray-100" />
                                 <div className="space-y-1">
-                                    {filteredNavigation.slice(3, 6).map(item => {
+                                    {filteredNavigation.slice(3, 7).map(item => {
                                         if (item.subItems) {
                                             return <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} onNavigate={closeMenus} />
                                         }
@@ -236,7 +246,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
                                 </div>
                                 <div className="my-2 h-px bg-gray-100" />
                                 <div className="space-y-1">
-                                    {filteredNavigation.slice(6).map(item => {
+                                    {filteredNavigation.slice(7).map(item => {
                                         if (item.subItems) {
                                             return <ExpandableNavItem key={item.name} item={item} active={isActive(item.href)} collapsed={isCollapsed} onNavigate={closeMenus} />
                                         }

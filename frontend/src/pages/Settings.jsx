@@ -1,5 +1,5 @@
 import { createElement, useState, useEffect, useRef } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield, Activity, Calendar } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
@@ -45,7 +45,11 @@ export default function Settings() {
         sounds: notificationSounds,
         playNotification,
     } = useNotificationSound()
-    const [activeTab, setActiveTab] = useState('general')
+    const [searchParams, setSearchParams] = useSearchParams()
+    const activeTab = searchParams.get('tab') || 'general'
+    const setActiveTab = (tab) => {
+        setSearchParams({ tab })
+    }
     const [documents, setDocuments] = useState([])
     const [knowledgeStats, setKnowledgeStats] = useState({ total_documents: 0, total_characters: 0 })
     const [isLoadingKnowledge, setIsLoadingKnowledge] = useState(false)
