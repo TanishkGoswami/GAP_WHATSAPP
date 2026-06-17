@@ -177,7 +177,7 @@ export default function Broadcast() {
             .then(data => { setWaAccounts(Array.isArray(data) ? data : []); setIsLoading(p => ({ ...p, accounts: false })) })
             .catch(() => setIsLoading(p => ({ ...p, accounts: false })));
 
-        apiCall(`${API_URL}/api/broadcast/tags`)
+        apiCall(`${API_URL}/api/broadcasts/tags`)
             .then(res => res.json())
             .then(data => { setTags(data?.tags || []); setIsLoading(p => ({ ...p, tags: false })) })
             .catch(() => setIsLoading(p => ({ ...p, tags: false })));
@@ -200,7 +200,7 @@ export default function Broadcast() {
 
     const fetchCampaignHistory = (silent = false) => {
         if (!silent) setIsLoadingHistory(true);
-        apiCall(`${API_URL}/api/broadcast/campaigns`)
+        apiCall(`${API_URL}/api/broadcasts/campaigns`)
             .then(res => res.json())
             .then(data => {
                 setCampaignsList(data.campaigns || []);
@@ -233,7 +233,7 @@ export default function Broadcast() {
             setIsEstimating(true);
             setEstimateError('');
             try {
-                const res = await apiCall(`${API_URL}/api/broadcast/estimate`, {
+                const res = await apiCall(`${API_URL}/api/broadcasts/estimate`, {
                     method: 'POST',
                     body: JSON.stringify({
                         audience_tag: campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag,
@@ -267,7 +267,7 @@ export default function Broadcast() {
         });
         if (!confirmed) return;
         try {
-            const res = await apiCall(`${API_URL}/api/broadcast/campaigns/${id}`, {
+            const res = await apiCall(`${API_URL}/api/broadcasts/campaigns/${id}`, {
                 method: 'DELETE'
             });
             if (res.ok) {
@@ -289,7 +289,7 @@ export default function Broadcast() {
         });
         if (!confirmed) return;
         try {
-            const res = await apiCall(`${API_URL}/api/broadcast/campaigns/${id}/cancel`, {
+            const res = await apiCall(`${API_URL}/api/broadcasts/campaigns/${id}/cancel`, {
                 method: 'POST'
             });
             if (res.ok) {
@@ -402,7 +402,7 @@ export default function Broadcast() {
         formData.append('file', file)
         setIsHeaderUploading(true)
         try {
-            const res = await apiCall(`${API_URL}/api/broadcast/header-media`, {
+            const res = await apiCall(`${API_URL}/api/broadcasts/header-media`, {
                 method: 'POST',
                 body: formData
             })
@@ -504,7 +504,7 @@ export default function Broadcast() {
         };
 
         try {
-            const res = await apiCall(`${API_URL}/api/broadcast/send`, {
+            const res = await apiCall(`${API_URL}/api/broadcasts/send`, {
                 method: 'POST',
                 body: JSON.stringify(payload)
             });

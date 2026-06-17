@@ -401,7 +401,9 @@ export async function getTemplates(req: any, res: Response) {
             .from('w_wa_accounts')
             .select('*')
             .eq('organization_id', orgId)
-            .not('whatsapp_business_account_id', 'is', null);
+            .neq('status', 'disconnected')
+            .not('whatsapp_business_account_id', 'is', null)
+            .order('created_at', { ascending: false });
 
         if (!accounts || accounts.length === 0) {
             return res.json([]);
@@ -473,7 +475,9 @@ export async function createTemplate(req: any, res: Response) {
             .from('w_wa_accounts')
             .select('*')
             .eq('organization_id', orgId)
-            .not('whatsapp_business_account_id', 'is', null);
+            .neq('status', 'disconnected')
+            .not('whatsapp_business_account_id', 'is', null)
+            .order('created_at', { ascending: false });
 
         if (!accounts || accounts.length === 0) {
             return res.status(400).json({ error: 'No connected Meta account found' });
@@ -622,7 +626,9 @@ export async function deleteTemplate(req: any, res: Response) {
             .from('w_wa_accounts')
             .select('*')
             .eq('organization_id', orgId)
-            .not('whatsapp_business_account_id', 'is', null);
+            .neq('status', 'disconnected')
+            .not('whatsapp_business_account_id', 'is', null)
+            .order('created_at', { ascending: false });
 
         if (!accounts || accounts.length === 0) {
             return res.status(400).json({ error: 'No connected Meta account found' });
