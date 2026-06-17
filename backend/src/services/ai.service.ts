@@ -3,13 +3,47 @@ import { supabase } from '../config/supabase.js';
 const KNOWLEDGE_MAX_CONTEXT_CHARS = 10000;
 const AGENT_SETTINGS_ITEM_TYPE = "__agent_settings";
 
-export async function getKnowledgeDocuments(organizationId: string) {
+export async function getOrganizationSettings(organizationId: string): Promise<any> {
   const { data, error } = await supabase
-    .from("knowledge_documents")
-    .select("*")
-    .eq("organization_id", organizationId);
+    .from("organizations")
+    .select("settings")
+    .eq("id", organizationId)
+    .single();
   if (error) throw error;
-  return data;
+  return data?.settings && typeof data.settings === "object"
+    ? data.settings
+    : {};
+}
+
+function formatBytes(bytes: number, decimals = 2) {
+  if (!+bytes) return "0 Bytes";
+  const k = 1024;
+  const dm = decimals < 0 ? 0 : decimals;
+  const sizes = ["Bytes", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+}
+
+export function normalizeKnowledgeDocument(doc: any) {
+  return {
+    id: doc?.id || crypto.randomUUID(),
+    name: doc?.name || "Untitled Document",
+    mime_type: String(doc?.mime_type || "application/octet-stream"),
+    size: Number(doc?.size || 0),
+    size_label: doc?.size_label || formatBytes(Number(doc?.size || 0)),
+    status: doc?.status || "INDEXED",
+    content: String(doc?.content || "").slice(0, KNOWLEDGE_MAX_CONTEXT_CHARS),
+    created_at: doc?.created_at || new Date().toISOString(),
+    updated_at: doc?.updated_at || doc?.created_at || new Date().toISOString(),
+  };
+}
+
+export async function getKnowledgeDocuments(organizationId: string) {
+  const settings = await getOrganizationSettings(organizationId);
+  const docs = Array.isArray(settings.knowledge_base_documents)
+    ? settings.knowledge_base_documents
+    : [];
+  return docs.map(normalizeKnowledgeDocument);
 }
 
 export async function getOrganizationKnowledgeContext(
