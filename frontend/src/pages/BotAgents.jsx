@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, Fragment } from 'react'
+import { Dialog as HeadlessDialog, Transition as HeadlessTransition } from '@headlessui/react'
 import {
     AlertCircle,
     ChevronDown,
@@ -74,6 +75,15 @@ export default function BotAgents() {
     const [isSaving, setIsSaving] = useState(false)
     const [query, setQuery] = useState('')
     const [uploadingKb, setUploadingKb] = useState(false)
+    const [confirmModal, setConfirmModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        confirmLabel: '',
+        cancelLabel: '',
+        tone: 'info',
+        onConfirm: () => {},
+    })
     const fileInputRef = useRef(null)
 
     const authHeaders = useMemo(() => ({
@@ -215,8 +225,26 @@ export default function BotAgents() {
         is_active: draft.isActive,
     })
 
-    const saveAgent = async () => {
+    const saveAgent = () => {
         if (!draft.name.trim()) return
+        const isEditing = Boolean(draft.id)
+        setConfirmModal({
+            isOpen: true,
+            title: isEditing ? 'Save changes?' : 'Create agent?',
+            message: isEditing 
+                ? `Are you sure you want to save the updated settings and re-train the agent "${draft.name}"?`
+                : `Are you sure you want to create and train the new agent "${draft.name}"?`,
+            confirmLabel: isEditing ? 'Save & Train' : 'Create & Train',
+            cancelLabel: 'Cancel',
+            tone: 'info',
+            onConfirm: () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }))
+                executeSaveAgent()
+            }
+        })
+    }
+
+    const executeSaveAgent = async () => {
         setIsSaving(true)
         try {
             const res = await apiCall(`${API_BASE}/agents${draft.id ? `/${draft.id}` : ''}`, {
@@ -242,15 +270,29 @@ export default function BotAgents() {
         if (res.ok) setAgents(prev => prev.map(item => item.id === agent.id ? { ...item, isActive: !item.isActive } : item))
     }
 
-    const deleteAgent = async (agent) => {
-        const confirmed = await confirmDialog(`Delete ${agent.name}? This cannot be undone.`, {
-            title: 'Delete agent',
+    const deleteAgent = (agent) => {
+        setConfirmModal({
+            isOpen: true,
+            title: 'Delete agent?',
+            message: `Are you sure you want to delete ${agent.name}? This action is permanent and cannot be undone.`,
+            confirmLabel: 'Delete',
+            cancelLabel: 'Cancel',
             tone: 'danger',
-            confirmLabel: 'Delete agent',
+            onConfirm: async () => {
+                setConfirmModal(prev => ({ ...prev, isOpen: false }))
+                try {
+                    const res = await apiCall(`${API_BASE}/agents/${agent.id}`, { method: 'DELETE' })
+                    if (res.ok) {
+                        setAgents(prev => prev.filter(item => item.id !== agent.id))
+                    } else {
+                        const data = await res.json().catch(() => ({}))
+                        alertDialog(data.error || 'Failed to delete agent', { title: 'Delete failed', tone: 'danger' })
+                    }
+                } catch (err) {
+                    alertDialog(err.message || 'Failed to delete agent', { title: 'Delete failed', tone: 'danger' })
+                }
+            }
         })
-        if (!confirmed) return
-        const res = await apiCall(`${API_BASE}/agents/${agent.id}`, { method: 'DELETE' })
-        if (res.ok) setAgents(prev => prev.filter(item => item.id !== agent.id))
     }
 
     const saveApiKey = async () => {
@@ -472,6 +514,17 @@ export default function BotAgents() {
             {showApiSettings ? (
                 <ApiKeyModal apiKey={apiKey} setApiKey={setApiKey} configured={apiKeyConfigured} isSaving={isSaving} onClose={() => setShowApiSettings(false)} onSave={saveApiKey} />
             ) : null}
+
+            <AppleVercelConfirmModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmLabel={confirmModal.confirmLabel}
+                cancelLabel={confirmModal.cancelLabel}
+                tone={confirmModal.tone}
+                onConfirm={confirmModal.onConfirm}
+            />
         </div>
     )
 }
@@ -787,5 +840,69 @@ function CustomSelect({ value, onChange, options }) {
                 </div>
             ) : null}
         </div>
+    )
+}
+
+function AppleVercelConfirmModal({ isOpen, onClose, title, message, confirmLabel, cancelLabel, tone = 'info', onConfirm }) {
+    return (
+        <HeadlessTransition show={isOpen} as={Fragment}>
+            <HeadlessDialog as="div" className="relative z-[100]" onClose={onClose}>
+                <HeadlessTransition.Child
+                    as={Fragment}
+                    enter="ease-out duration-200"
+                    enterFrom="opacity-0"
+                    enterTo="opacity-100"
+                    leave="ease-in duration-150"
+                    leaveFrom="opacity-100"
+                    leaveTo="opacity-0"
+                >
+                    <div className="fixed inset-0 bg-black/40 backdrop-blur-[6px]" />
+                </HeadlessTransition.Child>
+
+                <div className="fixed inset-0 overflow-y-auto">
+                    <div className="flex min-h-full items-center justify-center p-4 text-center">
+                        <HeadlessTransition.Child
+                            as={Fragment}
+                            enter="ease-out duration-200"
+                            enterFrom="opacity-0 scale-95"
+                            enterTo="opacity-100 scale-100"
+                            leave="ease-in duration-150"
+                            leaveFrom="opacity-100 scale-100"
+                            leaveTo="opacity-0 scale-95"
+                        >
+                            <HeadlessDialog.Panel className="w-full max-w-[360px] transform overflow-hidden rounded-2xl border border-neutral-100/90 bg-white p-6 text-center shadow-[0_24px_50px_-12px_rgba(0,0,0,0.15)] transition-all">
+                                <HeadlessDialog.Title as="h3" className="text-lg font-semibold text-neutral-900 tracking-tight leading-6">
+                                    {title}
+                                </HeadlessDialog.Title>
+                                <p className="mt-2 text-sm text-neutral-500 leading-relaxed font-normal">
+                                    {message}
+                                </p>
+
+                                <div className="mt-6 flex items-center gap-2.5">
+                                    <button
+                                        type="button"
+                                        onClick={onClose}
+                                        className="flex-1 px-4 py-2.5 text-sm font-semibold text-neutral-600 bg-white border border-neutral-200 rounded-xl hover:bg-neutral-50 hover:text-neutral-900 active:bg-neutral-100 transition-colors duration-150 outline-none"
+                                    >
+                                        {cancelLabel || 'Cancel'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={onConfirm}
+                                        className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white border border-transparent rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all duration-150 outline-none ${
+                                            tone === 'danger'
+                                                ? 'bg-red-600 hover:bg-red-500 active:bg-red-700'
+                                                : 'bg-black hover:bg-neutral-900 active:bg-neutral-800'
+                                        }`}
+                                    >
+                                        {confirmLabel || 'Confirm'}
+                                    </button>
+                                </div>
+                            </HeadlessDialog.Panel>
+                        </HeadlessTransition.Child>
+                    </div>
+                </div>
+            </HeadlessDialog>
+        </HeadlessTransition>
     )
 }
