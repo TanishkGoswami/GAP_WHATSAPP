@@ -8,6 +8,7 @@ import {
     BarChart3,
     Bot,
     CheckCircle2,
+    ChevronDown,
     Clock3,
     FileText,
     Gauge,
@@ -70,6 +71,7 @@ function freshness(updatedAt) {
 export default function Dashboard() {
     const { apiCall, session } = useAuth()
     const [range, setRange] = useState('today')
+    const [isAccountsOpen, setIsAccountsOpen] = useState(false)
 
     const {
         data: stats,
@@ -199,7 +201,80 @@ export default function Dashboard() {
                     <div data-tour="dashboard-health">
                         <Panel title="System health" subtitle="Current account, inbox, and automation state." action={<Gauge className="h-4 w-4 text-gray-400" />}>
                             <div className="space-y-2.5">
-                                <HealthRow icon={Smartphone} label="WhatsApp accounts" value={`${fmt(model.accounts.active)} active / ${fmt(model.accounts.total)} total`} active={n(model.accounts.active) > 0} />
+                                {/* Interactive WhatsApp Accounts Row (Apple x Vercel Styled accordion) */}
+                                <div className="flex flex-col rounded-lg bg-[#f5f7fa] overflow-hidden border border-transparent hover:border-gray-200 transition-all">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsAccountsOpen(prev => !prev)}
+                                        className="flex items-center justify-between gap-4 px-4 py-3 text-left focus:outline-none w-full"
+                                    >
+                                        <div className="flex min-w-0 items-center gap-3">
+                                            <span className={`rounded-lg p-2 ${n(model.accounts.active) > 0 ? 'bg-white text-[#0064b7]' : 'bg-amber-50 text-amber-600'}`}>
+                                                <Smartphone className="h-4 w-4" />
+                                            </span>
+                                            <span className="truncate text-sm font-medium text-gray-700">WhatsApp accounts</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                            <span className="text-sm font-semibold text-black">
+                                                {`${fmt(model.accounts.active)} active / ${fmt(model.accounts.total)} total`}
+                                            </span>
+                                            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isAccountsOpen ? 'rotate-180' : ''}`} />
+                                        </div>
+                                    </button>
+
+                                    {isAccountsOpen && (
+                                        <div className="border-t border-gray-100 bg-white/50 px-4 py-2.5 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                            {Array.isArray(model.accounts.connected) && model.accounts.connected.length > 0 ? (
+                                                model.accounts.connected.map(acc => {
+                                                    const isActive = acc.status !== 'disconnected' && acc.status !== 'failed';
+                                                    return (
+                                                        <div key={acc.id} className="flex items-center justify-between py-1.5 border-b border-gray-50/50 last:border-b-0">
+                                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-gray-200/40 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.02)] text-gray-500">
+                                                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-3 w-3">
+                                                                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                                                                    </svg>
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <p className="font-mono text-xs font-semibold tracking-tight text-gray-900 truncate">
+                                                                        {acc.display_phone_number || 'Unknown'}
+                                                                    </p>
+                                                                    <p className="text-[10px] text-gray-400 truncate mt-0.5">
+                                                                        {acc.name || 'WhatsApp Business'}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-1.5">
+                                                                {isActive ? (
+                                                                    <>
+                                                                        <span className="relative flex h-1 w-1">
+                                                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                                            <span className="relative inline-flex rounded-full h-1 w-1 bg-emerald-500"></span>
+                                                                        </span>
+                                                                        <span className="text-[9px] font-mono tracking-wider uppercase text-gray-500 font-semibold">
+                                                                            Active
+                                                                        </span>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <span className="relative inline-flex rounded-full h-1 w-1 bg-gray-300"></span>
+                                                                        <span className="text-[9px] font-mono tracking-wider uppercase text-gray-400 font-semibold">
+                                                                            Offline
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <p className="text-[11px] text-gray-400 py-1">No connected numbers found.</p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
                                 <HealthRow icon={MessageSquareText} label="Conversations" value={fmt(model.conversations.total)} active />
                                 <HealthRow icon={Bot} label="Bot active chats" value={fmt(model.conversations.botActive)} active />
                                 <HealthRow icon={FileText} label="AI summaries ready" value={fmt(model.conversations.summariesReady)} active />

@@ -2782,14 +2782,27 @@ export default function LiveChat() {
                                     <div className="relative" data-bot-menu>
                                         <button
                                             onClick={() => setShowBotMenu(!showBotMenu)}
-                                            className={`h-10 rounded-xl px-3 transition-colors flex items-center gap-1.5 ${effectiveBotEnabled
-                                                ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                                : 'text-gray-500 hover:bg-gray-100'
-                                                }`}
-                                            title={effectiveBotEnabled ? 'Bot automation is active' : 'Enable bot'}
+                                            className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold tracking-tight transition-all duration-150 outline-none ${
+                                                effectiveBotEnabled
+                                                    ? 'border-neutral-900 bg-neutral-900 text-white shadow-sm hover:bg-neutral-800'
+                                                    : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                                            }`}
+                                            title={effectiveBotEnabled ? 'AI agent automation is active' : 'Enable AI agent'}
                                         >
-                                            <Bot className="h-5 w-5" />
-                                            {effectiveBotEnabled && <span className="text-xs font-medium">{botEnabled ? 'On' : 'Auto'}</span>}
+                                            {effectiveBotEnabled ? (
+                                                <span className="relative flex h-1.5 w-1.5">
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                                                </span>
+                                            ) : (
+                                                <span className="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
+                                            )}
+                                            <span>AI Agent</span>
+                                            {effectiveBotEnabled && (
+                                                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded uppercase bg-white/20 text-white">
+                                                    {botEnabled ? 'On' : 'Auto'}
+                                                </span>
+                                            )}
                                         </button>
 
                                         {/* Bot Menu Dropdown */}
@@ -2818,42 +2831,42 @@ export default function LiveChat() {
                                                     </p>
                                                 </div>
 
-                                                {effectiveBotEnabled && availableBots.length > 0 && (
-                                                    <div className="p-2">
-                                                        <p className="text-xs font-medium text-gray-500 px-2 mb-1">Select Bot</p>
+                                                {availableBots.length > 0 && (
+                                                    <div className="p-2 border-t border-gray-100 max-h-60 overflow-y-auto">
+                                                        <p className="text-xs font-semibold text-gray-400 px-2 mb-1 uppercase tracking-wider">Select Agent</p>
                                                         {availableBots.map(bot => (
                                                             <button
                                                                 key={bot.id}
                                                                 onClick={() => toggleBotForConversation(true, bot.id)}
-                                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${selectedBotId === bot.id
-                                                                    ? 'bg-green-50 text-green-700'
+                                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${effectiveBotEnabled && selectedBotId === bot.id
+                                                                    ? 'bg-green-50 text-green-700 font-medium'
                                                                     : 'hover:bg-gray-50 text-gray-700'
                                                                     }`}
                                                             >
-                                                                <Bot className="h-4 w-4" />
+                                                                <Bot className="h-4 w-4 shrink-0" />
                                                                 <div className="flex-1 min-w-0">
                                                                     <div className="font-medium truncate">{bot.name}</div>
                                                                     <div className="text-xs text-gray-500 truncate">{bot.model}</div>
                                                                 </div>
-                                                                {selectedBotId === bot.id && (
-                                                                    <Check className="h-4 w-4 text-green-600" />
+                                                                {effectiveBotEnabled && selectedBotId === bot.id && (
+                                                                    <Check className="h-4 w-4 text-green-600 shrink-0" />
                                                                 )}
                                                             </button>
                                                         ))}
                                                         <button
                                                             onClick={() => toggleBotForConversation(true, null)}
-                                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${effectiveBotEnabled && !selectedBotId
-                                                                ? 'bg-green-50 text-green-700'
+                                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 mt-1 transition-colors ${effectiveBotEnabled && !selectedBotId
+                                                                ? 'bg-green-50 text-green-700 font-medium'
                                                                 : 'hover:bg-gray-50 text-gray-700'
                                                                 }`}
                                                         >
-                                                            <Bot className="h-4 w-4" />
-                                                            <div className="flex-1">
-                                                                <div className="font-medium">Auto (Workspace Rules)</div>
-                                                                <div className="text-xs text-gray-500">Keyword/default/unknown rules</div>
+                                                            <Bot className="h-4 w-4 shrink-0" />
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="font-medium truncate">Auto (Workspace Rules)</div>
+                                                                <div className="text-xs text-gray-500 truncate">Keyword/default/unknown rules</div>
                                                             </div>
                                                             {effectiveBotEnabled && !selectedBotId && (
-                                                                <Check className="h-4 w-4 text-green-600" />
+                                                                <Check className="h-4 w-4 text-green-600 shrink-0" />
                                                             )}
                                                         </button>
                                                     </div>

@@ -677,19 +677,63 @@ function Notice({ tone, title, text, onClose }) {
     )
 }
 
+const STATUS_CONFIG = {
+    connected: {
+        label: 'Connected',
+        badgeClass: 'bg-emerald-50 text-emerald-800 border border-emerald-100',
+        dotClass: 'bg-emerald-600',
+        bannerClass: 'border-emerald-100 bg-emerald-50 text-emerald-900',
+    },
+    pending: {
+        label: 'Pending',
+        badgeClass: 'bg-amber-50 text-amber-800 border border-amber-100',
+        dotClass: 'bg-amber-500',
+        bannerClass: 'border-amber-100 bg-amber-50 text-amber-900',
+    },
+    failed: {
+        label: 'Failed',
+        badgeClass: 'bg-red-50 text-red-800 border border-red-100',
+        dotClass: 'bg-red-600',
+        bannerClass: 'border-red-100 bg-red-50 text-red-900',
+    }
+};
+
+function getAccountStatus(account, diagnostics) {
+    const isMeta = account.connection_type !== 'qr_session';
+    const isReady = diagnostics?.send_ready ?? account.send_ready;
+    const issueCodes = diagnostics?.issue_codes || [];
+    const reconnectRequired = diagnostics?.reconnect_required || issueCodes.includes('token_expired') || issueCodes.includes('token_missing');
+
+    if (reconnectRequired || account.status === 'failed' || account.status === 'disconnected') {
+        return 'failed';
+    }
+
+    const isPending = 
+        account.status === 'pending' || 
+        account.status === 'connecting' ||
+        (!isMeta && !isReady) ||
+        (isMeta && !account.whatsapp_business_account_id);
+
+    if (isPending) {
+        return 'pending';
+    }
+
+    return 'connected';
+}
+
 function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDisconnect }) {
     const ready = diagnostics?.send_ready ?? account.send_ready
     const issueCodes = diagnostics?.issue_codes || []
     const reconnectRequired = diagnostics?.reconnect_required || issueCodes.includes('token_expired') || issueCodes.includes('token_missing')
     const summary = getAccountSummary(account, diagnostics, reconnectRequired)
-    const statusLabel = ready ? 'Active' : reconnectRequired ? 'Reconnect Required' : 'Action Needed'
-    const messagingStatus = ready ? 'Send Ready' : reconnectRequired ? 'Paused' : 'Limited'
-    const templateStatus = ready ? 'Unlocked' : reconnectRequired ? 'Reconnect' : 'Needs Check'
-    const noticeClass = ready
-        ? 'border-emerald-100 bg-emerald-50 text-emerald-900'
-        : reconnectRequired
-            ? 'border-red-100 bg-red-50 text-red-900'
-            : 'border-amber-100 bg-amber-50 text-amber-900'
+    
+    const currentStatus = getAccountStatus(account, diagnostics)
+    const config = STATUS_CONFIG[currentStatus]
+    
+    const statusLabel = config.label
+    const messagingStatus = currentStatus === 'connected' ? 'Send Ready' : currentStatus === 'failed' ? 'Paused' : 'Pending'
+    const templateStatus = currentStatus === 'connected' ? 'Unlocked' : currentStatus === 'failed' ? 'Reconnect' : 'Needs Check'
+    const noticeClass = config.bannerClass
 
     return (
         <div className="flex flex-col justify-between rounded-[20px] border border-gray-100 bg-white p-6 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.05)] ring-1 ring-black/5">
@@ -709,8 +753,8 @@ function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDi
                         </p>
                     </div>
                 </div>
-                <span className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${ready ? 'bg-emerald-50 text-emerald-800' : reconnectRequired ? 'bg-red-50 text-red-800' : 'bg-amber-50 text-amber-800'}`}>
-                    <span className={`h-1.5 w-1.5 rounded-full ${ready ? 'bg-emerald-600' : reconnectRequired ? 'bg-red-600' : 'bg-amber-500'}`} />
+                <span className={`inline-flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${config.badgeClass}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${config.dotClass}`} />
                     {statusLabel}
                 </span>
             </div>
