@@ -12,6 +12,7 @@ import makeWASocket, {
     Browsers,
     proto,
 } from "@whiskeysockets/baileys";
+import { upsertContact, sanitizeContactDisplayName, normalizeContactWaIdForStorage, pickBestBaileysContactName } from './contacts.service.js';
 // Add any missing helpers here or import them
 
 async function upsertBaileysWaAccount(orgId: string | null | undefined, phone: string | null | undefined) {

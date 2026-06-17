@@ -1,14 +1,50 @@
-
 import { Response } from 'express';
 import crypto from "crypto";
 import { supabase } from '../config/supabase.js';
 import { io } from '../socket.js';
 import { storeMessage, upsertConversation } from '../services/messages.service.js';
 import { processFlowEngine } from '../services/flows.service.js';
+import { upsertContact } from '../services/contacts.service.js';
 // (Add other imports as needed later)
 
 const VERIFY_TOKEN = process.env.WA_VERIFY_TOKEN;
 const APP_SECRET = process.env.META_APP_SECRET;
+const WEBHOOK_DEBUG = String(process.env.WEBHOOK_DEBUG || "true").toLowerCase() !== "false";
+
+function webhookLog(step: string, details: Record<string, any> = {}) {
+  if (!WEBHOOK_DEBUG) return;
+  console.log(
+    `[WEBHOOK][${new Date().toISOString()}][${step}]`,
+    JSON.stringify(details, null, 2),
+  );
+}
+
+function webhookError(step: string, error: any, details: Record<string, any> = {}) {
+  const safeError = {
+    message: error?.message || String(error || "Unknown error"),
+    code: error?.code || error?.details || null,
+    hint: error?.hint || null,
+  };
+  console.error(
+    `[WEBHOOK][${new Date().toISOString()}][${step}][ERROR]`,
+    JSON.stringify({ ...details, error: safeError }, null, 2),
+  );
+}
+
+function getMetaStatusErrorMessage(status: any) {
+  const errors = Array.isArray(status?.errors) ? status.errors : [];
+  const primary = errors[0];
+  if (!primary) return null;
+
+  return [
+    primary.title,
+    primary.message,
+    primary.error_data?.details,
+    primary.code ? `code ${primary.code}` : "",
+  ]
+    .filter(Boolean)
+    .join(" | ") || null;
+}
 
 export function verifyMetaSignature(req: any) {
     const sig = req.get("X-Hub-Signature-256");
@@ -30,22 +66,66 @@ export async function verifyWebhook(req: any, res: Response) {
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
+  webhookLog("verify.request", {
+    mode,
+    tokenMatches: token === VERIFY_TOKEN,
+    hasChallenge: !!challenge,
+    hasConfiguredVerifyToken: !!VERIFY_TOKEN,
+    ip: req.ip,
+  });
+
   if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    webhookLog("verify.ok", {
+      challengeLength: String(challenge || "").length,
+    });
     return res.status(200).send(challenge);
   }
+  webhookError("verify.failed", new Error("Verify token mismatch or invalid mode"), {
+    mode,
+    tokenMatches: token === VERIFY_TOKEN,
+    hasChallenge: !!challenge,
+  });
   return res.sendStatus(403);
 }
 
 export async function handleWebhook(req: any, res: Response) {
+  const requestId = crypto.randomUUID();
+  const startedAt = Date.now();
+  webhookLog("request.start", {
+    requestId,
+    method: req.method,
+    path: req.path,
+    contentType: req.get("content-type") || null,
+    hasSignature: !!req.get("X-Hub-Signature-256"),
+    hasAppSecret: !!APP_SECRET,
+    rawBodyBytes: req.rawBody?.length || 0,
+    ip: req.ip,
+  });
   // Signature verify (recommended)
   if (APP_SECRET) {
     const ok = verifyMetaSignature(req);
     if (!ok) {
       console.log("❌ Webhook Signature Verification Failed!");
+      webhookError("signature.failed", new Error("Webhook signature verification failed"), {
+        requestId,
+        hasSignature: !!req.get("X-Hub-Signature-256"),
+        rawBodyBytes: req.rawBody?.length || 0,
+      });
       return res.sendStatus(403);
     }
+    webhookLog("signature.ok", { requestId });
+  } else {
+    webhookLog("signature.skipped", {
+      requestId,
+      reason: "META_APP_SECRET is not configured",
+    });
   }
   res.sendStatus(200); // Ack immediately
+  webhookLog("request.ack", {
+    requestId,
+    status: 200,
+    ackMs: Date.now() - startedAt,
+  });
 
   console.log("==========================================");
   console.log("📥 WEBHOOK EVENT RECEIVED!");
@@ -59,13 +139,34 @@ export async function handleWebhook(req: any, res: Response) {
     const value = change?.value;
     const metadata = value?.metadata; // has phone_number_id
 
-    if (!value) return;
+    webhookLog("payload.parsed", {
+      requestId,
+      object: body?.object || null,
+      entryId: entry?.id || null,
+      changeField: change?.field || null,
+      hasValue: !!value,
+      phone_number_id: metadata?.phone_number_id || null,
+      display_phone_number: metadata?.display_phone_number || null,
+      messagesCount: Array.isArray(value?.messages) ? value.messages.length : 0,
+      statusesCount: Array.isArray(value?.statuses) ? value.statuses.length : 0,
+      contactsCount: Array.isArray(value?.contacts) ? value.contacts.length : 0,
+    });
+
+    if (!value) {
+      webhookLog("payload.no_value.stop", { requestId });
+      return;
+    }
 
     if (
       change?.field === "message_template_status_update" ||
       value?.event === "message_template_status_update" ||
       value?.message_template_name
     ) {
+      webhookLog("template.status.start", {
+        requestId,
+        changeField: change?.field || null,
+        event: value?.event || null,
+      });
       const wabaId = String(
         entry?.id ||
           value?.waba_id ||
@@ -94,7 +195,20 @@ export async function handleWebhook(req: any, res: Response) {
         value?.message_template_rejected_reason ||
         null;
 
-      if (!templateName && !templateId) return;
+      webhookLog("template.status.normalized", {
+        requestId,
+        wabaId: wabaId || null,
+        templateId,
+        templateName,
+        templateLanguage,
+        templateStatus,
+        rejectionReason,
+      });
+
+      if (!templateName && !templateId) {
+        webhookLog("template.status.no_identity.stop", { requestId });
+        return;
+      }
 
       let query = supabase
         .from("w_template_submissions")
@@ -105,9 +219,24 @@ export async function handleWebhook(req: any, res: Response) {
       else
         query = query.eq("name", templateName).eq("language", templateLanguage);
       if (wabaId) query = query.eq("waba_id", wabaId);
-      const { data: existing } = await query.maybeSingle();
+      const { data: existing, error: templateLookupError } = await query.maybeSingle();
+      if (templateLookupError) {
+        webhookError("template.status.lookup.failed", templateLookupError, {
+          requestId,
+          templateId,
+          templateName,
+          templateLanguage,
+          wabaId: wabaId || null,
+        });
+        return;
+      }
 
       if (existing) {
+        webhookLog("template.status.lookup.ok", {
+          requestId,
+          localTemplateId: existing.id,
+          organization_id: existing.organization_id,
+        });
         await upsertLocalTemplateSubmission({
           organization_id: existing.organization_id,
           wa_account_id: existing.wa_account_id,
@@ -132,7 +261,19 @@ export async function handleWebhook(req: any, res: Response) {
             rejected_reason: rejectionReason,
           },
         );
+        webhookLog("template.status.socket_emit.ok", {
+          requestId,
+          organization_id: existing.organization_id,
+          status: templateStatus,
+        });
       } else {
+        webhookLog("template.status.unknown", {
+          requestId,
+          templateId,
+          templateName,
+          templateLanguage,
+          wabaId: wabaId || null,
+        });
         console.warn(
           "[Templates] Status webhook received for unknown template:",
           value,
@@ -147,19 +288,57 @@ export async function handleWebhook(req: any, res: Response) {
     let wa_account_id = null;
 
     if (phone_number_id && supabase) {
-      const { data: acc } = await supabase
+      webhookLog("account.lookup.start", {
+        requestId,
+        phone_number_id,
+      });
+      const { data: acc, error: accountLookupError } = await supabase
         .from("w_wa_accounts")
         .select("id, organization_id")
         .eq("phone_number_id", phone_number_id)
         .maybeSingle();
 
+      if (accountLookupError) {
+        webhookError("account.lookup.failed", accountLookupError, {
+          requestId,
+          phone_number_id,
+        });
+      }
+
       if (acc) {
         organization_id = acc.organization_id;
         wa_account_id = acc.id;
+        webhookLog("account.lookup.ok", {
+          requestId,
+          phone_number_id,
+          organization_id,
+          wa_account_id,
+        });
+      } else if (!accountLookupError) {
+        webhookLog("account.lookup.empty", {
+          requestId,
+          phone_number_id,
+        });
       }
+    } else {
+      webhookLog("account.lookup.skipped", {
+        requestId,
+        hasPhoneNumberId: !!phone_number_id,
+        hasSupabase: !!supabase,
+      });
     }
 
     if (!organization_id) {
+      if (phone_number_id === "123456123") {
+        console.log("✅ Received Test Webhook from Meta Developer Portal. Webhook connection is successful!");
+        return;
+      }
+
+      webhookError("account.mapping.missing", new Error("Phone number ID is not mapped to an organization"), {
+        requestId,
+        phone_number_id: phone_number_id || null,
+        display_phone_number: metadata?.display_phone_number || null,
+      });
       console.error(
         `❌ Webhook Error: Phone ID ${phone_number_id} not mapped to any organization.`,
       );
@@ -179,6 +358,16 @@ export async function handleWebhook(req: any, res: Response) {
       let text = "";
       let interactivePayload: any = null; // button/list reply ka raw data
 
+      webhookLog("message.start", {
+        requestId,
+        wa_message_id,
+        from,
+        type,
+        organization_id,
+        wa_account_id,
+        hasProfileName: !!profileName,
+      });
+
       if (type === "reaction") {
         const targetWaId = msg.reaction?.message_id || null;
         const emoji =
@@ -187,12 +376,25 @@ export async function handleWebhook(req: any, res: Response) {
             : "";
 
         if (targetWaId) {
+          webhookLog("reaction.lookup.start", {
+            requestId,
+            targetWaId,
+            from,
+            hasEmoji: !!emoji,
+          });
           const { data: target, error: targetErr } = await supabase
             .from("w_messages")
             .select("id, conversation_id, reactions")
             .eq("organization_id", organization_id)
             .eq("wa_message_id", targetWaId)
             .maybeSingle();
+
+          if (targetErr) {
+            webhookError("reaction.lookup.failed", targetErr, {
+              requestId,
+              targetWaId,
+            });
+          }
 
           if (!targetErr && target) {
             const nextReactions = applyReactionUpdate(
@@ -207,6 +409,11 @@ export async function handleWebhook(req: any, res: Response) {
               .eq("organization_id", organization_id);
 
             if (updErr) {
+              webhookError("reaction.update.failed", updErr, {
+                requestId,
+                targetWaId,
+                message_id: target.id,
+              });
               console.error("Failed to update Cloud reaction", updErr);
             } else {
               io.to(`org:${organization_id}`).emit("message_updated", {
@@ -215,9 +422,22 @@ export async function handleWebhook(req: any, res: Response) {
                 wa_message_id: targetWaId,
                 reactions: nextReactions,
               });
+              webhookLog("reaction.update.ok", {
+                requestId,
+                targetWaId,
+                message_id: target.id,
+                conversation_id: target.conversation_id,
+                reactionsCount: nextReactions.length,
+              });
             }
+          } else if (!targetErr) {
+            webhookLog("reaction.lookup.empty", {
+              requestId,
+              targetWaId,
+            });
           }
         }
+        webhookLog("reaction.stop", { requestId, targetWaId });
         return;
       }
 
@@ -246,9 +466,22 @@ export async function handleWebhook(req: any, res: Response) {
         text = `[${type}]`;
       }
 
+      webhookLog("message.normalized", {
+        requestId,
+        wa_message_id,
+        type,
+        textPreview: text ? text.slice(0, 120) : "",
+        hasInteractivePayload: !!interactivePayload,
+      });
+
       // Ensure wa_account exists so conversations FK/unique constraints work
       if (!wa_account_id && phone_number_id && supabase) {
-        const { data: newAcc } = await supabase
+        webhookLog("account.fallback_upsert.start", {
+          requestId,
+          phone_number_id,
+          organization_id,
+        });
+        const { data: newAcc, error: fallbackUpsertError } = await supabase
           .from("w_wa_accounts")
           .upsert(
             {
@@ -265,18 +498,46 @@ export async function handleWebhook(req: any, res: Response) {
           )
           .select("id")
           .single();
+        if (fallbackUpsertError) {
+          webhookError("account.fallback_upsert.failed", fallbackUpsertError, {
+            requestId,
+            phone_number_id,
+            organization_id,
+          });
+        }
         wa_account_id = newAcc?.id || null;
+        webhookLog("account.fallback_upsert.done", {
+          requestId,
+          wa_account_id,
+        });
       }
 
       // A. Upsert Contact
+      webhookLog("contact.upsert.start", {
+        requestId,
+        organization_id,
+        wa_account_id,
+        from,
+        hasProfileName: !!profileName,
+      });
       const contact = await upsertContact(
         organization_id,
         wa_account_id,
         from,
         profileName,
       );
+      webhookLog("contact.upsert.ok", {
+        requestId,
+        contact_id: contact?.id || null,
+      });
 
       // B. Upsert Conversation
+      webhookLog("conversation.upsert.start", {
+        requestId,
+        organization_id,
+        wa_account_id,
+        contact_id: contact.id,
+      });
       const conv = await upsertConversation(
         organization_id,
         wa_account_id,
@@ -286,6 +547,10 @@ export async function handleWebhook(req: any, res: Response) {
           preview: text,
         },
       );
+      webhookLog("conversation.upsert.ok", {
+        requestId,
+        conversation_id: conv?.id || null,
+      });
 
       // Quoted/Reply context extract karo
       let quotedMessage: any = null;
@@ -293,6 +558,10 @@ export async function handleWebhook(req: any, res: Response) {
         msg.context?.forwarded || msg.context?.frequently_forwarded
       );
       if (msg.context?.id) {
+        webhookLog("quoted.lookup.start", {
+          requestId,
+          quotedWaMessageId: msg.context.id,
+        });
         // DB mein quoted message dhundo
         const { data: quotedMsg } = await supabase
           .from("w_messages")
@@ -309,6 +578,11 @@ export async function handleWebhook(req: any, res: Response) {
           direction: quotedMsg?.direction || null,
           found: !!quotedMsg,
         };
+        webhookLog("quoted.lookup.done", {
+          requestId,
+          quotedWaMessageId: msg.context.id,
+          found: !!quotedMsg,
+        });
       }
 
       // PRE-DEFINE CONTENT (Media will update this row later)
@@ -321,6 +595,13 @@ export async function handleWebhook(req: any, res: Response) {
       };
 
       // C. Insert Message
+      webhookLog("message.store.start", {
+        requestId,
+        wa_message_id,
+        conversation_id: conv.id,
+        contact_id: contact.id,
+        type,
+      });
       const storedInbound = await storeMessage({
         organization_id,
         contact_id: contact.id,
@@ -333,6 +614,12 @@ export async function handleWebhook(req: any, res: Response) {
         sender_type: "customer",
         automation_source: "webhook",
       } as any);
+      webhookLog("message.store.ok", {
+        requestId,
+        message_id: storedInbound?.id || null,
+        wa_message_id,
+        created_at: storedInbound?.created_at || null,
+      });
 
       // D. Emit Realtime
       // Emit to org room
@@ -362,9 +649,22 @@ export async function handleWebhook(req: any, res: Response) {
           ? { file_name: enrichedContent.file_name }
           : {}),
       });
+      webhookLog("socket.emit.new_message.ok", {
+        requestId,
+        room: `org:${organization_id}`,
+        conversation_id: conv.id,
+        message_id: storedInbound?.id || null,
+        wa_message_id,
+      });
 
       // If media, download from Meta and store in Supabase Storage
       if (["image", "video", "audio", "document"].includes(type)) {
+        webhookLog("media.async.start", {
+          requestId,
+          type,
+          wa_message_id,
+          storedMessageId: storedInbound?.id || null,
+        });
         // RUN THIS ASYNC TO NOT BLOCK THE THREAD
         (async () => {
           const mediaId =
@@ -379,52 +679,111 @@ export async function handleWebhook(req: any, res: Response) {
                     : null;
 
           if (mediaId && phone_number_id) {
-            const downloaded = await downloadMetaMedia({
-              phone_number_id,
-              mediaId,
-            });
-            if (downloaded) {
-              const uploaded = await uploadMediaToStorage({
-                organization_id,
-                conversation_id: conv.id,
-                fileName: downloaded.fileName,
-                mimeType: downloaded.mimeType,
-                buffer: downloaded.buffer,
+            try {
+              webhookLog("media.download.start", {
+                requestId,
+                mediaId,
+                phone_number_id,
+                type,
               });
+              const downloaded = await downloadMetaMedia({
+                phone_number_id,
+                mediaId,
+              });
+              if (downloaded) {
+                webhookLog("media.download.ok", {
+                  requestId,
+                  mediaId,
+                  mimeType: downloaded.mimeType,
+                  fileName: downloaded.fileName,
+                  size: downloaded.buffer?.length || null,
+                });
+                const uploaded = await uploadMediaToStorage({
+                  organization_id,
+                  conversation_id: conv.id,
+                  fileName: downloaded.fileName,
+                  mimeType: downloaded.mimeType,
+                  buffer: downloaded.buffer,
+                });
+                webhookLog("media.storage.upload.ok", {
+                  requestId,
+                  mediaId,
+                  hasPublicUrl: !!uploaded?.publicUrl,
+                });
 
-              const caption =
-                type === "image"
-                  ? msg.image?.caption || null
-                  : type === "video"
-                    ? msg.video?.caption || null
-                    : type === "document"
-                      ? msg.document?.caption || null
-                      : null;
+                const caption =
+                  type === "image"
+                    ? msg.image?.caption || null
+                    : type === "video"
+                      ? msg.video?.caption || null
+                      : type === "document"
+                        ? msg.document?.caption || null
+                        : null;
 
-              const finalMediaContent = {
-                text: caption,
-                media_url: uploaded.publicUrl,
-                mime_type: downloaded.mimeType,
-                file_name: downloaded.fileName,
-                quoted: quotedMessage,
-                forwarded: isForwarded,
-                frequently_forwarded: !!msg.context?.frequently_forwarded,
-                raw: msg,
-              };
+                const finalMediaContent = {
+                  text: caption,
+                  media_url: uploaded.publicUrl,
+                  mime_type: downloaded.mimeType,
+                  file_name: downloaded.fileName,
+                  quoted: quotedMessage,
+                  forwarded: isForwarded,
+                  frequently_forwarded: !!msg.context?.frequently_forwarded,
+                  raw: msg,
+                };
 
-              // UPDATE THE MESSAGE CONTENT IN DB AFTER UPLOAD
-              if (storedInbound?.id) {
-                await supabase
-                  .from("w_messages")
-                  .update({ content: finalMediaContent })
-                  .eq("id", storedInbound.id);
-                // EMIT UPDATE TO FRONTEND
-                io.emit("message_updated", {
-                  message_id: storedInbound.id,
-                  content: finalMediaContent,
+                // UPDATE THE MESSAGE CONTENT IN DB AFTER UPLOAD
+                if (storedInbound?.id) {
+                  const { error: mediaUpdateError } = await supabase
+                    .from("w_messages")
+                    .update({ content: finalMediaContent })
+                    .eq("id", storedInbound.id);
+                  if (mediaUpdateError) {
+                    webhookError("media.message_update.failed", mediaUpdateError, {
+                      requestId,
+                      message_id: storedInbound.id,
+                      mediaId,
+                    });
+                  } else {
+                    webhookLog("media.message_update.ok", {
+                      requestId,
+                      message_id: storedInbound.id,
+                      mediaId,
+                    });
+                  }
+                  // EMIT UPDATE TO FRONTEND
+                  io.emit("message_updated", {
+                    message_id: storedInbound.id,
+                    content: finalMediaContent,
+                  });
+                  webhookLog("socket.emit.message_updated.ok", {
+                    requestId,
+                    message_id: storedInbound.id,
+                    mediaId,
+                  });
+                }
+              } else {
+                webhookLog("media.download.empty", {
+                  requestId,
+                  mediaId,
+                  type,
                 });
               }
+            } catch (mediaErr: any) {
+              webhookError("media.async.failed", mediaErr, {
+                requestId,
+                mediaId,
+                type,
+                storedMessageId: storedInbound?.id || null,
+              });
             }
+          } else {
+            webhookLog("media.async.skipped", {
+              requestId,
+              reason: "Missing mediaId or phone_number_id",
+              hasMediaId: !!mediaId,
+              hasPhoneNumberId: !!phone_number_id,
+              type,
+            });
           }
         })();
       }
@@ -439,6 +798,13 @@ export async function handleWebhook(req: any, res: Response) {
           text;
 
         if (isFlowEligible) {
+          webhookLog("flow.process.start", {
+            requestId,
+            conversation_id: conv.id,
+            contact_id: contact.id,
+            type,
+            textPreview: text.slice(0, 120),
+          });
           const flowResult = await processFlowEngine(
             organization_id,
             contact.id,
@@ -447,6 +813,14 @@ export async function handleWebhook(req: any, res: Response) {
             storedInbound?.id || null,
             conv.wa_account_id || null,
           );
+          webhookLog("flow.process.done", {
+            requestId,
+            consumed: !!flowResult?.consumed,
+            hasOutput: !!flowResult?.output,
+            hasInteractive: !!flowResult?.interactive,
+            mediaCount: Array.isArray(flowResult?.media) ? flowResult.media.length : 0,
+            flow_id: flowResult?.flow_id || null,
+          });
           if (flowResult?.consumed) {
             flowConsumedMessage = true;
 
@@ -498,6 +872,11 @@ export async function handleWebhook(req: any, res: Response) {
                 connectedAccount: metadata?.display_phone_number,
                 type: "text",
                 is_bot_reply: true,
+              });
+              webhookLog("flow.reply.text.sent", {
+                requestId,
+                botWaMessageId,
+                storedMessageId: storedBotReply?.id || null,
               });
             }
 
@@ -554,6 +933,12 @@ export async function handleWebhook(req: any, res: Response) {
                 connectedAccount: metadata?.display_phone_number,
                 type: "interactive",
                 is_bot_reply: true,
+              });
+              webhookLog("flow.reply.buttons.sent", {
+                requestId,
+                botWaMessageId,
+                storedMessageId: storedBotReply?.id || null,
+                buttonsCount: Array.isArray(buttons) ? buttons.length : 0,
               });
             }
 
@@ -627,7 +1012,17 @@ export async function handleWebhook(req: any, res: Response) {
                     file_name: sentMedia.file_name,
                     is_bot_reply: true,
                   });
+                  webhookLog("flow.reply.media.sent", {
+                    requestId,
+                    mediaType: media.type,
+                    botWaMessageId: sentMedia.wa_message_id,
+                    storedMessageId: storedBotMedia?.id || null,
+                  });
                 } catch (mediaErr: any) {
+                  webhookError("flow.reply.media.failed", mediaErr, {
+                    requestId,
+                    mediaType: media?.type || null,
+                  });
                   console.error(
                     "[Flow] Failed to send media node:",
                     mediaErr?.message || mediaErr,
@@ -653,15 +1048,37 @@ export async function handleWebhook(req: any, res: Response) {
                 last_message_preview: lastPreview.substring(0, 100),
               })
               .eq("id", conv.id);
+            webhookLog("flow.conversation_preview.updated", {
+              requestId,
+              conversation_id: conv.id,
+              preview: lastPreview.substring(0, 100),
+            });
           }
+        } else {
+          webhookLog("flow.process.skipped", {
+            requestId,
+            type,
+            hasText: !!text,
+          });
         }
 
         // AI Agent fallback — sirf tab jab flow ne consume nahi kiya aur type text hai
         if (!flowConsumedMessage && type === "text" && text) {
+          webhookLog("bot_agent.process.start", {
+            requestId,
+            conversation_id: conv.id,
+            textPreview: text.slice(0, 120),
+          });
           const botResult = await getBotAgentReply({
             organization_id,
             conversation_id: conv.id,
             text,
+          });
+          webhookLog("bot_agent.process.done", {
+            requestId,
+            hasReply: !!botResult?.reply,
+            agentId: botResult?.agent?.id || null,
+            agentName: botResult?.agent?.name || null,
           });
           if (botResult?.reply) {
             console.log(`🤖 Bot "${botResult.agent?.name}" replying`);
@@ -705,6 +1122,12 @@ export async function handleWebhook(req: any, res: Response) {
               is_bot_reply: true,
               bot_agent_name: botResult.agent?.name,
             });
+            webhookLog("bot_agent.reply.sent", {
+              requestId,
+              botWaMessageId,
+              storedMessageId: storedBotReply?.id || null,
+              agentId: botResult.agent?.id || null,
+            });
 
             // Update conversation preview
             await supabase
@@ -714,9 +1137,25 @@ export async function handleWebhook(req: any, res: Response) {
                 last_message_preview: botResult.reply.substring(0, 100),
               })
               .eq("id", conv.id);
+            webhookLog("bot_agent.conversation_preview.updated", {
+              requestId,
+              conversation_id: conv.id,
+            });
           }
+        } else if (!flowConsumedMessage) {
+          webhookLog("bot_agent.process.skipped", {
+            requestId,
+            type,
+            hasText: !!text,
+            flowConsumedMessage,
+          });
         }
       } catch (botErr: any) {
+        webhookError("automation.failed", botErr, {
+          requestId,
+          conversation_id: conv?.id || null,
+          wa_message_id,
+        });
         console.error("Bot auto-reply error:", botErr.message || botErr);
       }
     }
@@ -726,14 +1165,48 @@ export async function handleWebhook(req: any, res: Response) {
       const status = value.statuses[0];
       const wa_message_id = status.id;
       const newStatus = status.status; // sent, delivered, read
+      const errorMessage = getMetaStatusErrorMessage(status);
+
+      webhookLog("status.start", {
+        requestId,
+        wa_message_id,
+        status: newStatus,
+        recipient_id: status.recipient_id || null,
+        timestamp: status.timestamp || null,
+        hasError: !!errorMessage,
+        errorMessage,
+      });
 
       // Update message status in DB
-      await supabase
+      const { error: statusUpdateError } = await supabase
         .from("w_messages")
         .update({ status: newStatus })
         .eq("wa_message_id", wa_message_id);
 
-      io.emit("message_status_update", { wa_message_id, status: newStatus });
+      if (statusUpdateError) {
+        webhookError("status.message_update.failed", statusUpdateError, {
+          requestId,
+          wa_message_id,
+          status: newStatus,
+        });
+      } else {
+        webhookLog("status.message_update.ok", {
+          requestId,
+          wa_message_id,
+          status: newStatus,
+        });
+      }
+
+      io.emit("message_status_update", {
+        wa_message_id,
+        status: newStatus,
+        error_message: errorMessage,
+      });
+      webhookLog("status.socket_emit.ok", {
+        requestId,
+        wa_message_id,
+        status: newStatus,
+      });
 
       // If "read", maybe mark conversation as read?
       // Usually "read" status on a message doesn't mean *we* read it, it means *user* read our message.
@@ -742,7 +1215,18 @@ export async function handleWebhook(req: any, res: Response) {
       // Log event (optional)
       // await supabase.from('w_message_events').insert(...)
     }
+    webhookLog("request.processed.done", {
+      requestId,
+      elapsedMs: Date.now() - startedAt,
+      hadMessages: Array.isArray(value?.messages) && value.messages.length > 0,
+      hadStatuses: Array.isArray(value?.statuses) && value.statuses.length > 0,
+    });
   } catch (e: any) {
+    webhookError("request.unhandled", e, {
+      requestId,
+      elapsedMs: Date.now() - startedAt,
+      stack: e?.stack || null,
+    });
     console.error("Webhook Error:", e.message);
   }
 }
