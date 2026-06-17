@@ -7,15 +7,15 @@ export async function getDashboardStats(req: any, res: Response) {
         const range = String(req.query.range || 'today').toLowerCase();
         const now = new Date();
         const start = new Date(now);
-        
+
         if (range === '7d' || range === '7days') start.setDate(now.getDate() - 6);
         else if (range === '30d' || range === '30days') start.setDate(now.getDate() - 29);
         else start.setHours(0, 0, 0, 0);
-        
+
         const startIso = start.toISOString();
 
         const optional = async <T>(fallback: T, fn: () => Promise<T>) => {
-            try { return await fn(); } 
+            try { return await fn(); }
             catch (error: any) {
                 console.warn('[dashboard-stats] optional block failed:', error?.message || error);
                 return fallback;
@@ -153,11 +153,11 @@ export async function getDashboardStats(req: any, res: Response) {
         const readRate = total > 0 ? (counts.read / total) * 100 : 0;
         const deliveryRate = total > 0 ? ((counts.delivered + counts.read) / total) * 100 : 0;
         const failureRate = total > 0 ? (counts.failed / total) * 100 : 0;
-        
+
         const humanHandoff = conversations.filter((c: any) => ['handoff_requested', 'human_active'].includes(c.handoff_status)).length;
         const summariesReady = conversations.filter((c: any) => c.summary_status === 'ready').length;
         const unread = conversations.reduce((sum: number, c: any) => sum + Number(c.unread_count || 0), 0);
-        
+
         const activeAccounts = accounts.filter((a: any) => a.status !== 'disconnected').length;
         const publishedFlows = flows.filter((f: any) => f.current_version_id || f.status === 'published').length;
         const totalCampaigns = campaigns.length;
