@@ -103,7 +103,7 @@ export default function LiveChat() {
     const { alertDialog, confirmDialog } = useDialog()
     const isAdmin = userRole === 'admin' || userRole === 'owner'
     const { playNotification } = useNotificationSound()
-    
+
     const authHeaders = useMemo(() => ({
         'Authorization': `Bearer ${session?.access_token}`,
         'X-Auth-Portal': loginType || 'owner'
@@ -137,6 +137,78 @@ export default function LiveChat() {
     const [newMessagesPending, setNewMessagesPending] = useState(0)
     const [showJumpToLatest, setShowJumpToLatest] = useState(false)
     const [activeVideoId, setActiveVideoId] = useState(null)
+
+    const [sidebarWidth, setSidebarWidth] = useState(() => {
+        try {
+            const cached = localStorage.getItem('gap_livechat_sidebar_width')
+            return cached ? parseInt(cached, 10) : 320
+        } catch {
+            return 320
+        }
+    })
+    const [isResizing, setIsResizing] = useState(false)
+    const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 1024)
+
+    useEffect(() => {
+        const handleResize = () => {
+            setIsDesktop(window.innerWidth >= 1024)
+        }
+        window.addEventListener('resize', handleResize)
+        return () => window.removeEventListener('resize', handleResize)
+    }, [])
+
+    const startResizing = (e) => {
+        e.preventDefault()
+        setIsResizing(true)
+    }
+
+    useEffect(() => {
+        if (!isResizing) return
+
+        const handleMouseMove = (e) => {
+            const container = document.getElementById('chat-list-container')
+            if (!container) return
+            const rect = container.getBoundingClientRect()
+            let newWidth = e.clientX - rect.left
+
+            const minWidth = 280
+            const maxWidth = Math.max(minWidth, window.innerWidth / 2) // Pull to half screen at least
+
+            if (newWidth < minWidth) newWidth = minWidth
+            if (newWidth > maxWidth) newWidth = maxWidth
+
+            setSidebarWidth(newWidth)
+            try {
+                localStorage.setItem('gap_livechat_sidebar_width', String(newWidth))
+            } catch (err) { }
+        }
+
+        const handleMouseUp = () => {
+            setIsResizing(false)
+        }
+
+        document.addEventListener('mousemove', handleMouseMove)
+        document.addEventListener('mouseup', handleMouseUp)
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove)
+            document.removeEventListener('mouseup', handleMouseUp)
+        }
+    }, [isResizing])
+
+    useEffect(() => {
+        if (isResizing) {
+            document.body.style.cursor = 'col-resize'
+            document.body.style.userSelect = 'none'
+        } else {
+            document.body.style.cursor = ''
+            document.body.style.userSelect = ''
+        }
+        return () => {
+            document.body.style.cursor = ''
+            document.body.style.userSelect = ''
+        }
+    }, [isResizing])
 
     const fileInputRef = useRef(null)
     const [selectedFile, setSelectedFile] = useState(null)
@@ -625,16 +697,16 @@ export default function LiveChat() {
     };
 
     const handleSaveAutoAssignRules = async () => {
-        await saveAutoAssignSettings({ 
-            enabled: draftAutoAssignSettings.enabled, 
-            batch_size: draftAutoAssignSettings.batch_size 
+        await saveAutoAssignSettings({
+            enabled: draftAutoAssignSettings.enabled,
+            batch_size: draftAutoAssignSettings.batch_size
         });
         setIsAutoAssignModalOpen(false);
     };
 
     const handleSaveAgentStatus = async () => {
-        await saveAutoAssignSettings({ 
-            paused_agents: draftPausedAgents 
+        await saveAutoAssignSettings({
+            paused_agents: draftPausedAgents
         });
         setIsAgentStatusModalOpen(false);
     };
@@ -735,15 +807,15 @@ export default function LiveChat() {
     // Toggle bot for current conversation
     const toggleBotForConversation = async (enabled, botId = null) => {
         if (!selectedChat || !session?.access_token) return;
-        
+
         try {
             const res = await fetch(`${API_BASE}/conversations/${selectedChat.id}/bot`, {
                 method: 'PATCH',
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${session.access_token}`
                 },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     bot_enabled: enabled,
                     assigned_bot_id: botId
                 })
@@ -779,7 +851,7 @@ export default function LiveChat() {
         try {
             const res = await fetch(`${API_BASE}/conversations/${conversationId}/assign`, {
                 method: 'PATCH',
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
                     ...authHeaders
                 },
@@ -787,7 +859,7 @@ export default function LiveChat() {
             });
             if (res.ok) {
                 const normalizedAgentId = agentId || null
-                setChats(prev => prev.map(c => 
+                setChats(prev => prev.map(c =>
                     c.id === conversationId ? { ...c, assigned_to: normalizedAgentId } : c
                 ));
                 if (selectedChat?.id === conversationId) {
@@ -883,7 +955,7 @@ export default function LiveChat() {
             fetchOrgAgents();
         }
 
-        
+
         // Fetch Meta Cloud API connected accounts from the database
         const fetchMetaAccounts = async () => {
             if (!session?.access_token) return;
@@ -954,7 +1026,7 @@ export default function LiveChat() {
             const payload = user?.id ? { user_id: user.id } : {}
             fetch(`${API_BASE}/conversations/${selectedChat.id}/read`, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${session.access_token}`
                 },
@@ -987,7 +1059,7 @@ export default function LiveChat() {
         const handleConnect = () => {
             // Socket transport is separate from WA connection state; keep logs minimal.
             console.log('[socket] connected', socket.id)
-            
+
             // Re-join org room on reconnect if profile is available
             if (memberProfile?.organization_id) {
                 console.log('[socket] joining org room:', memberProfile.organization_id)
@@ -1119,7 +1191,7 @@ export default function LiveChat() {
                         setTimeout(() => {
                             fetch(`${API_BASE}/conversations/${activeChat.id}/read`, {
                                 method: 'POST',
-                                headers: { 
+                                headers: {
                                     'Content-Type': 'application/json',
                                     'Authorization': `Bearer ${session.access_token}`
                                 },
@@ -1595,9 +1667,9 @@ export default function LiveChat() {
             const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session'
             const res = await fetch(`${API_BASE}/conversations/${selectedChat.id}/send`, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     ...authHeaders,
-                    'Content-Type': 'application/json' 
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ text: textToSend, session_id: sessionId, reply_to_message_id: replyToSend?.wa_message_id || null, client_message_id: clientMessageId })
             })
@@ -1819,7 +1891,7 @@ export default function LiveChat() {
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{interactive.body || msg.text}</p>
                     <div className="flex flex-wrap gap-2">
                         {interactive.buttons?.map((btn) => (
-                            <div 
+                            <div
                                 key={btn.id}
                                 className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm"
                             >
@@ -1843,7 +1915,7 @@ export default function LiveChat() {
                     <div className={`rounded-md border-l-4 px-2.5 py-1.5 text-xs ${msg.sender === 'agent'
                         ? 'border-green-500 bg-green-100/80 text-gray-700'
                         : 'border-indigo-500 bg-gray-50 text-gray-700'
-                    }`}>
+                        }`}>
                         <div className="mb-0.5 font-semibold text-indigo-600">
                             {quoted.direction === 'outbound' ? 'You' : (selectedChat?.name || 'Contact')}
                         </div>
@@ -2298,7 +2370,7 @@ export default function LiveChat() {
                 </div>
                 <h2 className="text-xl font-bold text-gray-900 mb-2">Connect your WhatsApp account for live chat</h2>
                 <p className="text-gray-500 mb-6 max-w-sm text-sm">You need an active WhatsApp connection to send and receive messages in real-time.</p>
-                <a 
+                <a
                     href="/whatsapp-connect"
                     className="px-6 py-2.5 bg-[#25D366] text-white rounded-xl font-bold text-sm hover:bg-[#20b956] transition-all shadow-md shadow-green-100"
                 >
@@ -2311,83 +2383,51 @@ export default function LiveChat() {
     // Render Chat Interface
     return (
         <AudioPlayerProvider>
-        <div className="flex h-full min-h-0 overflow-hidden bg-white">
-            {/* Left Cone: Chat List */}
-            <div className={`${selectedChat ? 'hidden lg:flex' : 'flex'} w-full flex-col overflow-hidden border-r border-gray-200 bg-white lg:w-80`}>
-                {/* Header / Account Switcher */}
-                <div className="p-3 border-b border-gray-200 bg-gray-50/50">
-                    <div className="flex items-center justify-between mb-2">
-                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Inbox</label>
-                        <select
-                            value={selectedAccount}
-                            onChange={(e) => {
-                                const next = e.target.value
-                                setSelectedAccount(next)
-                                localStorage.setItem('selected_wa_account_id', next)
-                                window.dispatchEvent(new CustomEvent('selected-wa-account-change', { detail: { accountId: next } }))
-                            }}
-                            className="max-w-[48vw] cursor-pointer truncate bg-transparent text-xs font-medium text-indigo-600 focus:outline-none sm:max-w-none"
-                        >
-                            <option value="All">All Accounts</option>
-                            {connectedAccounts.map(acc => (
-                                <option key={acc} value={acc}>{acc} (Active)</option>
-                            ))}
-                        </select>
-                    </div>
-                    <div data-tour="chat-search" className="relative">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                        <input
-                            type="text"
-                            placeholder="Search or start a new chat"
-                            value={chatSearch}
-                            onChange={(e) => setChatSearch(e.target.value)}
-                            className="w-full rounded-full border-0 bg-gray-100 py-2.5 pl-11 pr-4 text-sm text-gray-700 placeholder:text-gray-500 outline-none transition-colors focus:bg-white focus:ring-1 focus:ring-green-500/40"
-                        />
-                    </div>
-                    <div data-tour="chat-filters" className="relative mt-2 flex items-center gap-2 overflow-x-auto pb-1" data-chat-filter-menu>
-                        {[
-                            { id: 'all', label: 'All' },
-                            { id: 'read', label: 'Read' },
-                            { id: 'unread', label: 'Unread' },
-                        ].map(filter => {
-                            const active = chatFilter === filter.id
-                            return (
-                                <button
-                                    key={filter.id}
-                                    type="button"
-                                    onClick={() => {
-                                        setChatFilter(filter.id)
-                                        setIsChatFilterMenuOpen(false)
-                                    }}
-                                    className={`h-8 shrink-0 rounded-full border px-3 text-sm font-medium shadow-sm transition-colors ${active
-                                        ? 'border-green-500 bg-green-100 text-green-800'
-                                        : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                                    }`}
-                                >
-                                    {filter.label} {chatFilterCounts[filter.id] > 0 ? chatFilterCounts[filter.id] : ''}
-                                </button>
-                            )
-                        })}
-                        <button
-                            type="button"
-                            onClick={() => setIsChatFilterMenuOpen(v => !v)}
-                            className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors ${['favorites', 'archived', 'assigned', 'unassigned'].includes(chatFilter)
-                                ? 'border-green-500 bg-green-100 text-green-800'
-                                : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                            }`}
-                            title="More filters"
-                        >
-                            <ChevronDown className="h-4 w-4" />
-                        </button>
-
-                        {isChatFilterMenuOpen && (
-                            <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1.5 shadow-xl">
-                                {[
-                                    { id: 'favorites', label: 'Favourites' },
-                                    { id: 'archived', label: 'Archived' },
-                                    { id: 'assigned', label: 'Assigned' },
-                                    { id: 'unassigned', label: 'Unassigned' },
-                                ].map(filter => (
+            <div className="flex h-full min-h-0 overflow-hidden bg-white">
+                {/* Left Cone: Chat List */}
+                <div
+                    id="chat-list-container"
+                    className={`${selectedChat ? 'hidden lg:flex' : 'flex'} w-full flex-col overflow-hidden border-r border-gray-200 bg-white`}
+                    style={{ width: isDesktop ? `${sidebarWidth}px` : undefined }}
+                >
+                    {/* Header / Account Switcher */}
+                    <div className="p-3 border-b border-gray-200 bg-gray-50/50">
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Inbox</label>
+                            <select
+                                value={selectedAccount}
+                                onChange={(e) => {
+                                    const next = e.target.value
+                                    setSelectedAccount(next)
+                                    localStorage.setItem('selected_wa_account_id', next)
+                                    window.dispatchEvent(new CustomEvent('selected-wa-account-change', { detail: { accountId: next } }))
+                                }}
+                                className="max-w-[48vw] cursor-pointer truncate bg-transparent text-xs font-medium text-indigo-600 focus:outline-none sm:max-w-none"
+                            >
+                                <option value="All">All Accounts</option>
+                                {connectedAccounts.map(acc => (
+                                    <option key={acc} value={acc}>{acc} (Active)</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div data-tour="chat-search" className="relative">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                            <input
+                                type="text"
+                                placeholder="Search or start a new chat"
+                                value={chatSearch}
+                                onChange={(e) => setChatSearch(e.target.value)}
+                                className="w-full rounded-full border-0 bg-gray-100 py-2.5 pl-11 pr-4 text-sm text-gray-700 placeholder:text-gray-500 outline-none transition-colors focus:bg-white focus:ring-1 focus:ring-green-500/40"
+                            />
+                        </div>
+                        <div data-tour="chat-filters" className="relative mt-2 flex items-center gap-2 overflow-x-auto pb-1" data-chat-filter-menu>
+                            {[
+                                { id: 'all', label: 'All' },
+                                { id: 'read', label: 'Read' },
+                                { id: 'unread', label: 'Unread' },
+                            ].map(filter => {
+                                const active = chatFilter === filter.id
+                                return (
                                     <button
                                         key={filter.id}
                                         type="button"
@@ -2395,249 +2435,296 @@ export default function LiveChat() {
                                             setChatFilter(filter.id)
                                             setIsChatFilterMenuOpen(false)
                                         }}
-                                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${chatFilter === filter.id
-                                            ? 'bg-green-50 text-green-800'
-                                            : 'text-gray-700 hover:bg-gray-50'
-                                        }`}
+                                        className={`h-8 shrink-0 rounded-full border px-3 text-sm font-medium shadow-sm transition-colors ${active
+                                            ? 'border-green-500 bg-green-100 text-green-800'
+                                            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                            }`}
                                     >
-                                        <span>{filter.label}</span>
-                                        <span className="text-xs text-gray-500">{chatFilterCounts[filter.id]}</span>
+                                        {filter.label} {chatFilterCounts[filter.id] > 0 ? chatFilterCounts[filter.id] : ''}
                                     </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
-                    {chats.length === 0 ? (
-                        <div className="p-8 text-center text-gray-400 text-sm">
-                            No chats yet. Messages you receive will appear here.
-                        </div>
-                    ) : visibleChats.length === 0 ? (
-                        <div className="p-8 text-center text-gray-400 text-sm">
-                            No chats match this filter.
-                        </div>
-                    ) : (
-                        visibleChats.map(chat => (
-                            <div
-                                key={chat.id}
-                                onClick={() => setSelectedChat(chat)}
-                                className={`group relative flex cursor-pointer items-start gap-3 border-b border-gray-100 px-4 py-3.5 transition-all duration-200 ${selectedChat?.id === chat.id ? 'bg-emerald-50/45' : 'hover:bg-gray-50'}`}
+                                )
+                            })}
+                            <button
+                                type="button"
+                                onClick={() => setIsChatFilterMenuOpen(v => !v)}
+                                className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors ${['favorites', 'archived', 'assigned', 'unassigned'].includes(chatFilter)
+                                    ? 'border-green-500 bg-green-100 text-green-800'
+                                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                                    }`}
+                                title="More filters"
                             >
-                                {selectedChat?.id === chat.id ? (
-                                    <div className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-emerald-500" />
-                                ) : null}
-                                <div className="relative shrink-0">
-                                    {chat.profilePhotoUrl ? (
-                                        <img
-                                            src={chat.profilePhotoUrl}
-                                            alt={chat.name}
-                                            className="h-11 w-11 rounded-full object-cover shadow-sm ring-1 ring-gray-200"
-                                            loading="lazy"
-                                        />
-                                    ) : (
-                                        <div
-                                            className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600 shadow-sm"
-                                        >
-                                            <User className="h-6 w-6" />
-                                        </div>
-                                    )}
-                                    {/* Presence is not reliably available from WhatsApp APIs; hide fake online dot */}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex justify-between items-baseline gap-2 mb-0.5">
-                                        <h3 className={`truncate text-sm font-semibold ${selectedChat?.id === chat.id ? 'text-gray-950' : 'text-gray-900'}`}>
-                                            {chat.name}
-                                        </h3>
-                                        <div className="flex shrink-0 items-center gap-1">
-                                            {hasChatLabel(chat, 'pinned') && <Pin className="h-3 w-3 text-gray-400" />}
-                                            {hasChatLabel(chat, 'favorite') && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
-                                            {isChatMuted(chat) && <BellOff className="h-3 w-3 text-gray-400" />}
-                                            <span className="text-[10px] font-medium text-gray-400">{chat.time}</span>
-                                            <button
-                                                type="button"
-                                                data-chat-row-menu
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    setActiveChatMenuId(prev => idsEqual(prev, chat.id) ? null : chat.id)
-                                                }}
-                                                className={`ml-0.5 flex h-7 w-7 items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5 ${activeChatMenuId && idsEqual(activeChatMenuId, chat.id) ? 'bg-black/5 opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                                                title="Chat actions"
-                                            >
-                                                <ChevronDown className="h-4 w-4" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                    {formatPhoneForDisplay(chat.phone || chat.waId) ? (
-                                        <div className="text-[11px] text-gray-400 font-mono truncate -mt-0.5 mb-0.5">
-                                            {formatPhoneForDisplay(chat.phone || chat.waId)}
-                                        </div>
-                                    ) : null}
-                                    <p className={`mb-1 truncate text-xs ${selectedChat?.id === chat.id ? 'text-gray-600' : 'text-gray-500'}`}>{chat.lastMessage}</p>
-                                    <div className="flex items-center gap-1.5">
-                                        {(Array.isArray(chat.tags) ? chat.tags : []).filter(tag => {
-                                            const normalized = String(tag).toLowerCase()
-                                            return !['favorite', 'pinned'].includes(normalized) && !normalized.startsWith(MUTED_UNTIL_LABEL_PREFIX)
-                                        }).map(tag => (
-                                            <span key={tag} className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
-                                                {tag}
-                                            </span>
-                                        ))}
-                                        {chat.assigned_to && (
-                                            <div className="flex items-center gap-1 text-[10px] text-indigo-600 font-medium bg-indigo-50 px-1.5 py-0.5 rounded" title={`Assigned to ${getAgentName(chat.assigned_to)}`}>
-                                                <User className="h-3 w-3" />
-                                                {getAgentName(chat.assigned_to).split(' ')[0]}
-                                            </div>
-                                        )}
-                                        {chat.unread > 0 && (
-                                            <div className="ml-auto bg-green-500 text-white text-[10px] font-bold h-4 w-4 rounded-full flex items-center justify-center shadow-sm">
-                                                {chat.unread}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                                {activeChatMenuId && idsEqual(activeChatMenuId, chat.id) && (
-                                    <div
-                                        data-chat-row-menu
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="absolute right-3 top-12 z-40 w-56 overflow-hidden rounded-lg border border-gray-200 bg-white py-2 shadow-[0_8px_24px_rgba(11,20,26,0.18)]"
-                                    >
-                                        <button
-                                            type="button"
-                                            onClick={() => updateChatMeta(chat, { status: ['archived', 'closed'].includes(String(chat.status || '').toLowerCase()) ? 'open' : 'archived' })}
-                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
-                                        >
-                                            {['archived', 'closed'].includes(String(chat.status || '').toLowerCase()) ? <Inbox className="h-4 w-4 text-[#54656f]" /> : <Archive className="h-4 w-4 text-[#54656f]" />}
-                                            {['archived', 'closed'].includes(String(chat.status || '').toLowerCase()) ? 'Move to inbox' : 'Archive chat'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => toggleChatLabel(chat, 'pinned')}
-                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
-                                        >
-                                            {hasChatLabel(chat, 'pinned') ? <PinOff className="h-4 w-4 text-[#54656f]" /> : <Pin className="h-4 w-4 text-[#54656f]" />}
-                                            {hasChatLabel(chat, 'pinned') ? 'Unpin chat' : 'Pin chat'}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => markChatUnread(chat)}
-                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
-                                        >
-                                            <MailOpen className="h-4 w-4 text-[#54656f]" />
-                                            Mark as unread
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => toggleChatLabel(chat, 'favorite')}
-                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
-                                        >
-                                            {hasChatLabel(chat, 'favorite') ? <StarOff className="h-4 w-4 text-[#54656f]" /> : <Star className="h-4 w-4 text-[#54656f]" />}
-                                            {hasChatLabel(chat, 'favorite') ? 'Remove from favourites' : 'Add to favourites'}
-                                        </button>
-                                        {isChatMuted(chat) ? (
-                                            <button
-                                                type="button"
-                                                onClick={() => unmuteChat(chat)}
-                                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
-                                            >
-                                                <BellOff className="h-4 w-4 text-[#54656f]" />
-                                                Unmute notifications
-                                            </button>
-                                        ) : (
-                                            <div className="border-t border-gray-100 py-1">
-                                                <div className="flex items-center gap-3 px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-[#8696a0]">
-                                                    <BellOff className="h-3.5 w-3.5" />
-                                                    Mute notifications
-                                                </div>
-                                                {[
-                                                    { label: 'For 1 hour', hours: 1 },
-                                                    { label: 'For 8 hours', hours: 8 },
-                                                    { label: 'For 1 day', hours: 24 },
-                                                ].map(option => (
-                                                    <button
-                                                        key={option.hours}
-                                                        type="button"
-                                                        onClick={() => muteChatFor(chat, option.hours)}
-                                                        className="flex w-full items-center gap-3 px-11 py-2 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
-                                                    >
-                                                        {option.label}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                        <div className="border-t border-gray-100" />
-                                        <button
-                                            type="button"
-                                            onClick={() => clearChat(chat)}
-                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
-                                        >
-                                            <Eraser className="h-4 w-4 text-[#54656f]" />
-                                            Clear chat
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => deleteChat(chat)}
-                                            className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                            Delete chat
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        )))}
-                </div>
-            </div>
+                                <ChevronDown className="h-4 w-4" />
+                            </button>
 
-            {/* Middle Cone: Chat Area */}
-            <div className={`${!selectedChat ? 'hidden lg:flex' : 'flex'} relative min-w-0 flex-1 flex-col bg-[#efeae2]`}>
-                {!selectedChat ? (
-                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-4">
-                        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                            <Send className="h-8 w-8 text-gray-300 ml-1" />
-                        </div>
-                        <p className="text-sm font-medium">Select a chat to start messaging</p>
-                    </div>
-                ) : (
-                    <>
-                        {/* Chat Header */}
-                        <div data-tour="chat-header" className="z-10 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-[#f0f2f5] px-3 sm:px-4">
-                            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-                                <button onClick={() => setSelectedChat(null)} className="lg:hidden p-1 -ml-1 text-gray-600">
-                                    <ChevronLeft className="h-6 w-6" />
-                                </button>
-                                {selectedChat?.profilePhotoUrl ? (
-                                    <img
-                                        src={selectedChat.profilePhotoUrl}
-                                        alt={selectedChat?.name || 'Contact'}
-                                        className="h-9 w-9 rounded-full object-cover"
-                                    />
-                                ) : (
-                                    <div className="h-9 w-9 rounded-full bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center">
-                                        <User className="h-5 w-5" />
-                                    </div>
-                                )}
-                                <div className="min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <h3 className="truncate text-sm font-bold leading-tight text-gray-900">{selectedChat?.name}</h3>
+                            {isChatFilterMenuOpen && (
+                                <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1.5 shadow-xl">
+                                    {[
+                                        { id: 'favorites', label: 'Favourites' },
+                                        { id: 'archived', label: 'Archived' },
+                                        { id: 'assigned', label: 'Assigned' },
+                                        { id: 'unassigned', label: 'Unassigned' },
+                                    ].map(filter => (
                                         <button
+                                            key={filter.id}
                                             type="button"
                                             onClick={() => {
-                                                setFocusAliasOnOpen(true)
-                                                setIsContactDrawerOpen(true)
+                                                setChatFilter(filter.id)
+                                                setIsChatFilterMenuOpen(false)
                                             }}
-                                            className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
-                                            title="Set custom name"
+                                            className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${chatFilter === filter.id
+                                                ? 'bg-green-50 text-green-800'
+                                                : 'text-gray-700 hover:bg-gray-50'
+                                                }`}
                                         >
-                                            <Pencil className="h-4 w-4" />
+                                            <span>{filter.label}</span>
+                                            <span className="text-xs text-gray-500">{chatFilterCounts[filter.id]}</span>
                                         </button>
-                                    </div>
-                                    <p className="flex items-center gap-1 truncate text-xs text-gray-500">
-                                        {formatPhoneForDisplay(selectedChat?.phone || selectedChat?.waId || '')}
-                                    </p>
+                                    ))}
                                 </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        {chats.length === 0 ? (
+                            <div className="p-8 text-center text-gray-400 text-sm">
+                                No chats yet. Messages you receive will appear here.
                             </div>
+                        ) : visibleChats.length === 0 ? (
+                            <div className="p-8 text-center text-gray-400 text-sm">
+                                No chats match this filter.
+                            </div>
+                        ) : (
+                            visibleChats.map(chat => (
+                                <div
+                                    key={chat.id}
+                                    onClick={() => setSelectedChat(chat)}
+                                    className={`group relative flex cursor-pointer items-start gap-3 border-b border-gray-100 px-4 py-3.5 transition-all duration-200 ${selectedChat?.id === chat.id ? 'bg-emerald-50/45' : 'hover:bg-gray-50'}`}
+                                >
+                                    {selectedChat?.id === chat.id ? (
+                                        <div className="absolute inset-y-2 left-0 w-1 rounded-r-full bg-emerald-500" />
+                                    ) : null}
+                                    <div className="relative shrink-0">
+                                        {chat.profilePhotoUrl ? (
+                                            <img
+                                                src={chat.profilePhotoUrl}
+                                                alt={chat.name}
+                                                className="h-11 w-11 rounded-full object-cover shadow-sm ring-1 ring-gray-200"
+                                                loading="lazy"
+                                            />
+                                        ) : (
+                                            <div
+                                                className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600 shadow-sm"
+                                            >
+                                                <User className="h-6 w-6" />
+                                            </div>
+                                        )}
+                                        {/* Presence is not reliably available from WhatsApp APIs; hide fake online dot */}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex justify-between items-baseline gap-2 mb-0.5">
+                                            <h3 className={`truncate text-sm font-semibold ${selectedChat?.id === chat.id ? 'text-gray-950' : 'text-gray-900'}`}>
+                                                {chat.name}
+                                            </h3>
+                                            <div className="flex shrink-0 items-center gap-1">
+                                                {hasChatLabel(chat, 'pinned') && <Pin className="h-3 w-3 text-gray-400" />}
+                                                {hasChatLabel(chat, 'favorite') && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
+                                                {isChatMuted(chat) && <BellOff className="h-3 w-3 text-gray-400" />}
+                                                <span className="text-[10px] font-medium text-gray-400">{chat.time}</span>
+                                                <button
+                                                    type="button"
+                                                    data-chat-row-menu
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setActiveChatMenuId(prev => idsEqual(prev, chat.id) ? null : chat.id)
+                                                    }}
+                                                    className={`ml-0.5 flex h-7 w-7 items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5 ${activeChatMenuId && idsEqual(activeChatMenuId, chat.id) ? 'bg-black/5 opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                                                    title="Chat actions"
+                                                >
+                                                    <ChevronDown className="h-4 w-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                        {formatPhoneForDisplay(chat.phone || chat.waId) ? (
+                                            <div className="text-[11px] text-gray-400 font-mono truncate -mt-0.5 mb-0.5">
+                                                {formatPhoneForDisplay(chat.phone || chat.waId)}
+                                            </div>
+                                        ) : null}
+                                        <p className={`mb-1 truncate text-xs ${selectedChat?.id === chat.id ? 'text-gray-600' : 'text-gray-500'}`}>{chat.lastMessage}</p>
+                                        <div className="flex items-center gap-1.5">
+                                            {(Array.isArray(chat.tags) ? chat.tags : []).filter(tag => {
+                                                const normalized = String(tag).toLowerCase()
+                                                return !['favorite', 'pinned'].includes(normalized) && !normalized.startsWith(MUTED_UNTIL_LABEL_PREFIX)
+                                            }).map(tag => (
+                                                <span key={tag} className="inline-flex items-center px-1.5 py-0.5 rounded-[4px] text-[10px] font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                                                    {tag}
+                                                </span>
+                                            ))}
+                                            {chat.assigned_to && (
+                                                <div className="flex items-center gap-1 text-[10px] text-indigo-600 font-medium bg-indigo-50 px-1.5 py-0.5 rounded" title={`Assigned to ${getAgentName(chat.assigned_to)}`}>
+                                                    <User className="h-3 w-3" />
+                                                    {getAgentName(chat.assigned_to).split(' ')[0]}
+                                                </div>
+                                            )}
+                                            {chat.unread > 0 && (
+                                                <div className="ml-auto bg-green-500 text-white text-[10px] font-bold h-4 w-4 rounded-full flex items-center justify-center shadow-sm">
+                                                    {chat.unread}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {activeChatMenuId && idsEqual(activeChatMenuId, chat.id) && (
+                                        <div
+                                            data-chat-row-menu
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="absolute right-3 top-12 z-40 w-56 overflow-hidden rounded-lg border border-gray-200 bg-white py-2 shadow-[0_8px_24px_rgba(11,20,26,0.18)]"
+                                        >
+                                            <button
+                                                type="button"
+                                                onClick={() => updateChatMeta(chat, { status: ['archived', 'closed'].includes(String(chat.status || '').toLowerCase()) ? 'open' : 'archived' })}
+                                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                            >
+                                                {['archived', 'closed'].includes(String(chat.status || '').toLowerCase()) ? <Inbox className="h-4 w-4 text-[#54656f]" /> : <Archive className="h-4 w-4 text-[#54656f]" />}
+                                                {['archived', 'closed'].includes(String(chat.status || '').toLowerCase()) ? 'Move to inbox' : 'Archive chat'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleChatLabel(chat, 'pinned')}
+                                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                            >
+                                                {hasChatLabel(chat, 'pinned') ? <PinOff className="h-4 w-4 text-[#54656f]" /> : <Pin className="h-4 w-4 text-[#54656f]" />}
+                                                {hasChatLabel(chat, 'pinned') ? 'Unpin chat' : 'Pin chat'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => markChatUnread(chat)}
+                                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                            >
+                                                <MailOpen className="h-4 w-4 text-[#54656f]" />
+                                                Mark as unread
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleChatLabel(chat, 'favorite')}
+                                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                            >
+                                                {hasChatLabel(chat, 'favorite') ? <StarOff className="h-4 w-4 text-[#54656f]" /> : <Star className="h-4 w-4 text-[#54656f]" />}
+                                                {hasChatLabel(chat, 'favorite') ? 'Remove from favourites' : 'Add to favourites'}
+                                            </button>
+                                            {isChatMuted(chat) ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => unmuteChat(chat)}
+                                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                                >
+                                                    <BellOff className="h-4 w-4 text-[#54656f]" />
+                                                    Unmute notifications
+                                                </button>
+                                            ) : (
+                                                <div className="border-t border-gray-100 py-1">
+                                                    <div className="flex items-center gap-3 px-4 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-[#8696a0]">
+                                                        <BellOff className="h-3.5 w-3.5" />
+                                                        Mute notifications
+                                                    </div>
+                                                    {[
+                                                        { label: 'For 1 hour', hours: 1 },
+                                                        { label: 'For 8 hours', hours: 8 },
+                                                        { label: 'For 1 day', hours: 24 },
+                                                    ].map(option => (
+                                                        <button
+                                                            key={option.hours}
+                                                            type="button"
+                                                            onClick={() => muteChatFor(chat, option.hours)}
+                                                            className="flex w-full items-center gap-3 px-11 py-2 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                                        >
+                                                            {option.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <div className="border-t border-gray-100" />
+                                            <button
+                                                type="button"
+                                                onClick={() => clearChat(chat)}
+                                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[#111b21] hover:bg-[#f5f6f6]"
+                                            >
+                                                <Eraser className="h-4 w-4 text-[#54656f]" />
+                                                Clear chat
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => deleteChat(chat)}
+                                                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                                Delete chat
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            )))}
+                    </div>
+                </div>
+
+                {/* Resize Handle (only visible on desktop) */}
+                {isDesktop && (
+                    <div
+                        onMouseDown={startResizing}
+                        className={`group relative z-30 w-[4px] h-full -ml-[2px] cursor-col-resize select-none bg-transparent transition-colors hover:bg-emerald-500/50 ${isResizing ? 'bg-emerald-500/50' : ''
+                            }`}
+                    >
+                        <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize" />
+                    </div>
+                )}
+
+                {/* Middle Cone: Chat Area */}
+                <div className={`${!selectedChat ? 'hidden lg:flex' : 'flex'} relative min-w-0 flex-1 flex-col bg-[#efeae2]`}>
+                    {!selectedChat ? (
+                        <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-4">
+                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                                <Send className="h-8 w-8 text-gray-300 ml-1" />
+                            </div>
+                            <p className="text-sm font-medium">Select a chat to start messaging</p>
+                        </div>
+                    ) : (
+                        <>
+                            {/* Chat Header */}
+                            <div data-tour="chat-header" className="z-10 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-[#f0f2f5] px-3 sm:px-4">
+                                <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                                    <button onClick={() => setSelectedChat(null)} className="lg:hidden p-1 -ml-1 text-gray-600">
+                                        <ChevronLeft className="h-6 w-6" />
+                                    </button>
+                                    {selectedChat?.profilePhotoUrl ? (
+                                        <img
+                                            src={selectedChat.profilePhotoUrl}
+                                            alt={selectedChat?.name || 'Contact'}
+                                            className="h-9 w-9 rounded-full object-cover"
+                                        />
+                                    ) : (
+                                        <div className="h-9 w-9 rounded-full bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center">
+                                            <User className="h-5 w-5" />
+                                        </div>
+                                    )}
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="truncate text-sm font-bold leading-tight text-gray-900">{selectedChat?.name}</h3>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setFocusAliasOnOpen(true)
+                                                    setIsContactDrawerOpen(true)
+                                                }}
+                                                className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                                                title="Set custom name"
+                                            >
+                                                <Pencil className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                        <p className="flex items-center gap-1 truncate text-xs text-gray-500">
+                                            {formatPhoneForDisplay(selectedChat?.phone || selectedChat?.waId || '')}
+                                        </p>
+                                    </div>
+                                </div>
                                 <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
                                     <TourButton compact />
                                     {/* Assign Agent Dropdown */}
@@ -2693,737 +2780,731 @@ export default function LiveChat() {
 
                                     {/* Bot Toggle Button */}
                                     <div className="relative" data-bot-menu>
-                                    <button
-                                        onClick={() => setShowBotMenu(!showBotMenu)}
-                                        className={`h-10 rounded-xl px-3 transition-colors flex items-center gap-1.5 ${
-                                            effectiveBotEnabled
+                                        <button
+                                            onClick={() => setShowBotMenu(!showBotMenu)}
+                                            className={`h-10 rounded-xl px-3 transition-colors flex items-center gap-1.5 ${effectiveBotEnabled
                                                 ? 'bg-green-100 text-green-700 hover:bg-green-200'
                                                 : 'text-gray-500 hover:bg-gray-100'
-                                        }`}
-                                        title={effectiveBotEnabled ? 'Bot automation is active' : 'Enable bot'}
-                                    >
-                                        <Bot className="h-5 w-5" />
-                                        {effectiveBotEnabled && <span className="text-xs font-medium">{botEnabled ? 'On' : 'Auto'}</span>}
-                                    </button>
-                                    
-                                    {/* Bot Menu Dropdown */}
-                                    {showBotMenu && (
-                                        <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 z-50">
-                                            <div className="p-3 border-b border-gray-100">
-                                                <div className="flex items-center justify-between">
-                                                    <span className="text-sm font-medium text-gray-900">Bot Auto-Reply</span>
-                                                    <button
-                                                        onClick={() => toggleBotForConversation(!botEnabled, selectedBotId || workspaceAutoReplyBot?.id || null)}
-                                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                                                            effectiveBotEnabled ? 'bg-green-600' : 'bg-gray-200'
-                                                        }`}
-                                                    >
-                                                        <span
-                                                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                                                effectiveBotEnabled ? 'translate-x-6' : 'translate-x-1'
-                                                            }`}
-                                                        />
-                                                    </button>
-                                                </div>
-                                                <p className="text-xs text-gray-500 mt-1">
-                                                    {botEnabled
-                                                        ? 'AI Agent can reply only when no active flow matches.'
-                                                        : workspaceAutoReplyBot
-                                                            ? `AI Agent fallback is off for this chat. Flow Builder still works.`
-                                                            : 'AI Agent fallback is off for this chat. Flow Builder still works.'}
-                                                </p>
-                                            </div>
-                                            
-                                            {effectiveBotEnabled && availableBots.length > 0 && (
-                                                <div className="p-2">
-                                                    <p className="text-xs font-medium text-gray-500 px-2 mb-1">Select Bot</p>
-                                                    {availableBots.map(bot => (
+                                                }`}
+                                            title={effectiveBotEnabled ? 'Bot automation is active' : 'Enable bot'}
+                                        >
+                                            <Bot className="h-5 w-5" />
+                                            {effectiveBotEnabled && <span className="text-xs font-medium">{botEnabled ? 'On' : 'Auto'}</span>}
+                                        </button>
+
+                                        {/* Bot Menu Dropdown */}
+                                        {showBotMenu && (
+                                            <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 z-50">
+                                                <div className="p-3 border-b border-gray-100">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-sm font-medium text-gray-900">Bot Auto-Reply</span>
                                                         <button
-                                                            key={bot.id}
-                                                            onClick={() => toggleBotForConversation(true, bot.id)}
-                                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${
-                                                                selectedBotId === bot.id 
-                                                                    ? 'bg-green-50 text-green-700' 
+                                                            onClick={() => toggleBotForConversation(!botEnabled, selectedBotId || workspaceAutoReplyBot?.id || null)}
+                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${effectiveBotEnabled ? 'bg-green-600' : 'bg-gray-200'
+                                                                }`}
+                                                        >
+                                                            <span
+                                                                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${effectiveBotEnabled ? 'translate-x-6' : 'translate-x-1'
+                                                                    }`}
+                                                            />
+                                                        </button>
+                                                    </div>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        {botEnabled
+                                                            ? 'AI Agent can reply only when no active flow matches.'
+                                                            : workspaceAutoReplyBot
+                                                                ? `AI Agent fallback is off for this chat. Flow Builder still works.`
+                                                                : 'AI Agent fallback is off for this chat. Flow Builder still works.'}
+                                                    </p>
+                                                </div>
+
+                                                {effectiveBotEnabled && availableBots.length > 0 && (
+                                                    <div className="p-2">
+                                                        <p className="text-xs font-medium text-gray-500 px-2 mb-1">Select Bot</p>
+                                                        {availableBots.map(bot => (
+                                                            <button
+                                                                key={bot.id}
+                                                                onClick={() => toggleBotForConversation(true, bot.id)}
+                                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${selectedBotId === bot.id
+                                                                    ? 'bg-green-50 text-green-700'
                                                                     : 'hover:bg-gray-50 text-gray-700'
-                                                            }`}
+                                                                    }`}
+                                                            >
+                                                                <Bot className="h-4 w-4" />
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="font-medium truncate">{bot.name}</div>
+                                                                    <div className="text-xs text-gray-500 truncate">{bot.model}</div>
+                                                                </div>
+                                                                {selectedBotId === bot.id && (
+                                                                    <Check className="h-4 w-4 text-green-600" />
+                                                                )}
+                                                            </button>
+                                                        ))}
+                                                        <button
+                                                            onClick={() => toggleBotForConversation(true, null)}
+                                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${effectiveBotEnabled && !selectedBotId
+                                                                ? 'bg-green-50 text-green-700'
+                                                                : 'hover:bg-gray-50 text-gray-700'
+                                                                }`}
                                                         >
                                                             <Bot className="h-4 w-4" />
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="font-medium truncate">{bot.name}</div>
-                                                                <div className="text-xs text-gray-500 truncate">{bot.model}</div>
+                                                            <div className="flex-1">
+                                                                <div className="font-medium">Auto (Workspace Rules)</div>
+                                                                <div className="text-xs text-gray-500">Keyword/default/unknown rules</div>
                                                             </div>
-                                                            {selectedBotId === bot.id && (
+                                                            {effectiveBotEnabled && !selectedBotId && (
                                                                 <Check className="h-4 w-4 text-green-600" />
                                                             )}
                                                         </button>
-                                                    ))}
+                                                    </div>
+                                                )}
+
+                                                {availableBots.length === 0 && (
+                                                    <div className="p-3 text-center">
+                                                        <p className="text-xs text-gray-500">No bots configured yet</p>
+                                                        <a
+                                                            href="/bot-agents"
+                                                            className="text-xs text-green-600 hover:underline"
+                                                        >
+                                                            Create a bot →
+                                                        </a>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <button
+                                        onClick={() => {
+                                            setFocusAliasOnOpen(false)
+                                            setIsContactDrawerOpen(true)
+                                        }}
+                                        className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
+                                        title="Contact info"
+                                    >
+                                        <Info className="h-5 w-5" />
+                                    </button>
+                                    {isAdmin && (
+                                        <div className="relative" data-auto-assign-menu>
+                                            <button
+                                                onClick={() => setIsAutoAssignMenuOpen(!isAutoAssignMenuOpen)}
+                                                className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
+                                            >
+                                                <MoreVertical className="h-5 w-5" />
+                                            </button>
+                                            {isAutoAssignMenuOpen && (
+                                                <div className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl z-50">
                                                     <button
-                                                        onClick={() => toggleBotForConversation(true, null)}
-                                                        className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${
-                                                            effectiveBotEnabled && !selectedBotId
-                                                                ? 'bg-green-50 text-green-700' 
-                                                                : 'hover:bg-gray-50 text-gray-700'
-                                                        }`}
+                                                        onClick={() => {
+                                                            setDraftAutoAssignSettings({ enabled: autoAssignSettings.enabled, batch_size: autoAssignSettings.batch_size });
+                                                            setIsAutoAssignModalOpen(true);
+                                                            setIsAutoAssignMenuOpen(false);
+                                                        }}
+                                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                                                     >
-                                                        <Bot className="h-4 w-4" />
-                                                        <div className="flex-1">
-                                                            <div className="font-medium">Auto (Workspace Rules)</div>
-                                                            <div className="text-xs text-gray-500">Keyword/default/unknown rules</div>
-                                                        </div>
-                                                        {effectiveBotEnabled && !selectedBotId && (
-                                                            <Check className="h-4 w-4 text-green-600" />
-                                                        )}
+                                                        <Bot className="h-4 w-4 text-green-500" />
+                                                        Auto Assign Rules
                                                     </button>
-                                                </div>
-                                            )}
-                                            
-                                            {availableBots.length === 0 && (
-                                                <div className="p-3 text-center">
-                                                    <p className="text-xs text-gray-500">No bots configured yet</p>
-                                                    <a 
-                                                        href="/bot-agents" 
-                                                        className="text-xs text-green-600 hover:underline"
+                                                    <button
+                                                        onClick={() => {
+                                                            setDraftPausedAgents([...autoAssignSettings.paused_agents]);
+                                                            setIsAgentStatusModalOpen(true);
+                                                            setIsAutoAssignMenuOpen(false);
+                                                        }}
+                                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
                                                     >
-                                                        Create a bot →
-                                                    </a>
+                                                        <User className="h-4 w-4 text-blue-500" />
+                                                        Agent Status (Pause)
+                                                    </button>
                                                 </div>
                                             )}
                                         </div>
                                     )}
                                 </div>
-                                
-                                <button
-                                    onClick={() => {
-                                        setFocusAliasOnOpen(false)
-                                        setIsContactDrawerOpen(true)
-                                    }}
-                                    className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
-                                    title="Contact info"
-                                >
-                                    <Info className="h-5 w-5" />
-                                </button>
-                                {isAdmin && (
-                                    <div className="relative" data-auto-assign-menu>
-                                        <button 
-                                            onClick={() => setIsAutoAssignMenuOpen(!isAutoAssignMenuOpen)}
-                                            className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
-                                        >
-                                            <MoreVertical className="h-5 w-5" />
-                                        </button>
-                                        {isAutoAssignMenuOpen && (
-                                            <div className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl z-50">
-                                                <button
-                                                    onClick={() => { 
-                                                        setDraftAutoAssignSettings({ enabled: autoAssignSettings.enabled, batch_size: autoAssignSettings.batch_size });
-                                                        setIsAutoAssignModalOpen(true); 
-                                                        setIsAutoAssignMenuOpen(false); 
-                                                    }}
-                                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                                >
-                                                    <Bot className="h-4 w-4 text-green-500" />
-                                                    Auto Assign Rules
-                                                </button>
-                                                <button
-                                                    onClick={() => { 
-                                                        setDraftPausedAgents([...autoAssignSettings.paused_agents]);
-                                                        setIsAgentStatusModalOpen(true); 
-                                                        setIsAutoAssignMenuOpen(false); 
-                                                    }}
-                                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                                >
-                                                    <User className="h-4 w-4 text-blue-500" />
-                                                    Agent Status (Pause)
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
                             </div>
-                        </div>
 
-                        {/* Messages Display */}
-                        <div
-                            ref={messagesListRef}
-                            className="wa-chat-scroll flex-1 overflow-y-auto bg-[#efeae2] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat bg-[length:410px] px-5 py-3 sm:px-8 lg:px-14 xl:px-20 2xl:px-28"
-                            onScroll={() => {
-                                const el = messagesListRef.current
-                                if (!el) return
-                                if (activeMessageMenuId) closeMessageMenu()
-                                if (el.scrollTop < 80) loadOlder()
-                                const nearBottom = isNearBottom()
-                                setShowJumpToLatest(!nearBottom)
-                                if (nearBottom) setNewMessagesPending(0)
-                            }}
-                        >
-                            {isLoadingOlder && (
-                                <div className="text-center text-xs text-gray-500 mb-3">Loading older…</div>
+                            {/* Messages Display */}
+                            <div
+                                ref={messagesListRef}
+                                className="wa-chat-scroll flex-1 overflow-y-auto bg-[#efeae2] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat bg-[length:410px] px-5 py-3 sm:px-8 lg:px-14 xl:px-20 2xl:px-28"
+                                onScroll={() => {
+                                    const el = messagesListRef.current
+                                    if (!el) return
+                                    if (activeMessageMenuId) closeMessageMenu()
+                                    if (el.scrollTop < 80) loadOlder()
+                                    const nearBottom = isNearBottom()
+                                    setShowJumpToLatest(!nearBottom)
+                                    if (nearBottom) setNewMessagesPending(0)
+                                }}
+                            >
+                                {isLoadingOlder && (
+                                    <div className="text-center text-xs text-gray-500 mb-3">Loading older…</div>
+                                )}
+
+                                {renderedThread.map((row) => (
+                                    row.kind === 'separator' ? (
+                                        <div key={row.key} className="flex justify-center my-3">
+                                            <div className="px-3 py-1 rounded-full bg-white/70 text-gray-600 text-xs shadow-sm border border-gray-100">
+                                                {row.label}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div key={row.key} className={`flex ${row.msg.sender === 'user' ? 'justify-start' : 'justify-end'} ${row.grouped ? 'mt-0.5' : 'mt-2'} ${Array.isArray(row.msg.reactions) && row.msg.reactions.some(r => r?.emoji) ? 'mb-3' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                                            {row.msg.type === 'note' ? (
+                                                <div className="w-full flex justify-center my-2">
+                                                    <div className="bg-amber-50 border border-amber-100 text-amber-800 text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
+                                                        <AlertCircle className="h-3.5 w-3.5" />
+                                                        <span className="font-bold">{row.msg.agentName}:</span>
+                                                        {row.msg.text.replace('Internal Note: ', '')}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className={`group relative w-fit max-w-[86%] sm:max-w-[76%] lg:max-w-[64%] xl:max-w-[58%] ${row.msg.content?.template ? 'bg-transparent p-0 shadow-none border-0' : `wa-bubble px-2.5 py-1.5 text-[#111b21] ${row.msg.sender === 'user'
+                                                    ? 'wa-bubble-in'
+                                                    : 'wa-bubble-out'
+                                                    }`
+                                                    }`}>
+                                                    <div className={`absolute top-1 ${row.msg.sender === 'user' ? '-right-9' : '-left-9'} opacity-0 transition-opacity group-hover:opacity-100 ${activeMessageMenuId === row.msg.id ? 'opacity-100' : ''}`} data-message-menu>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => openMessageMenu(e, row.msg)}
+                                                            className={`flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-gray-600 shadow-sm ring-1 transition hover:text-gray-900 ${activeMessageMenuId === row.msg.id ? 'ring-gray-900' : 'ring-gray-200'}`}
+                                                            title="Message actions"
+                                                        >
+                                                            <ChevronDown className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                    {row.msg.sender === 'agent' && !row.msg.forwarded && (
+                                                        <div className="mb-0.5 text-[11px] font-semibold leading-4 text-[#6676ff]">{row.msg.agentName}</div>
+                                                    )}
+                                                    {renderMessageSourceBadge(row.msg)}
+                                                    {renderMessageBody(row.msg)}
+                                                    {renderReactionsPill(row.msg)}
+                                                    {!row.msg.content?.template && renderMessageMeta(row.msg)}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                ))}
+                                <div ref={messagesEndRef} />
+                            </div>
+
+                            {activeMenuMessage && messageMenuAnchor && (
+                                <div
+                                    data-message-menu
+                                    className="fixed z-[80] w-56 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+                                    style={{
+                                        top: `${messageMenuAnchor.top}px`,
+                                        left: `${messageMenuAnchor.left}px`,
+                                    }}
+                                >
+                                    <div className="flex items-center justify-between gap-1 border-b border-gray-100 px-3 py-2">
+                                        {QUICK_REACTIONS.map(item => (
+                                            <button
+                                                key={item.label}
+                                                type="button"
+                                                onClick={() => sendReaction(activeMenuMessage, item.emoji)}
+                                                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:scale-110 hover:bg-gray-100"
+                                                title={item.label}
+                                            >
+                                                <EmojiAsset emoji={item.emoji} label={item.label} className="h-5 w-5" />
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="hidden">
+                                        {QUICK_REACTIONS.map(({ emoji }) => (
+                                            <button
+                                                key={emoji}
+                                                type="button"
+                                                onClick={() => sendReaction(activeMenuMessage, emoji)}
+                                                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:scale-110 hover:bg-gray-100"
+                                                title={`React ${emoji}`}
+                                            >
+                                                {emoji}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => startReplyToMessage(activeMenuMessage)}
+                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
+                                    >
+                                        <Reply className="h-4 w-4" />
+                                        Reply
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => copyMessageText(activeMenuMessage)}
+                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
+                                    >
+                                        <Copy className="h-4 w-4" />
+                                        Copy
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => forwardMessage(activeMenuMessage)}
+                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
+                                    >
+                                        <Forward className="h-4 w-4" />
+                                        Forward
+                                    </button>
+                                    <div className="my-1 border-t border-gray-100" />
+                                    <button
+                                        type="button"
+                                        onClick={() => deleteMessageLocal(activeMenuMessage)}
+                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                        Delete
+                                    </button>
+                                </div>
                             )}
 
-                            {renderedThread.map((row) => (
-                                row.kind === 'separator' ? (
-                                    <div key={row.key} className="flex justify-center my-3">
-                                        <div className="px-3 py-1 rounded-full bg-white/70 text-gray-600 text-xs shadow-sm border border-gray-100">
-                                            {row.label}
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div key={row.key} className={`flex ${row.msg.sender === 'user' ? 'justify-start' : 'justify-end'} ${row.grouped ? 'mt-0.5' : 'mt-2'} ${Array.isArray(row.msg.reactions) && row.msg.reactions.some(r => r?.emoji) ? 'mb-3' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                                        {row.msg.type === 'note' ? (
-                                            <div className="w-full flex justify-center my-2">
-                                                <div className="bg-amber-50 border border-amber-100 text-amber-800 text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
-                                                    <AlertCircle className="h-3.5 w-3.5" />
-                                                    <span className="font-bold">{row.msg.agentName}:</span>
-                                                    {row.msg.text.replace('Internal Note: ', '')}
+                            {(showJumpToLatest || newMessagesPending > 0) && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        scrollToBottom('smooth')
+                                        setNewMessagesPending(0)
+                                    }}
+                                    className="absolute bottom-20 right-5 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#54656f] shadow-[0_2px_8px_rgba(11,20,26,0.18)] transition hover:bg-gray-50 hover:text-[#111b21] active:scale-95"
+                                    title={newMessagesPending > 0 ? `${newMessagesPending} new message${newMessagesPending > 1 ? 's' : ''}` : 'Jump to latest'}
+                                >
+                                    <ArrowDown className="h-5 w-5" />
+                                    {newMessagesPending > 0 && (
+                                        <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-sm">
+                                            {newMessagesPending > 99 ? '99+' : newMessagesPending}
+                                        </span>
+                                    )}
+                                </button>
+                            )}
+
+                            {forwardingMessage && (
+                                <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 px-4 py-6">
+                                    <div className="flex max-h-[86vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                                        <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
+                                            <button
+                                                type="button"
+                                                onClick={closeForwardModal}
+                                                className="flex h-9 w-9 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100"
+                                                title="Close"
+                                            >
+                                                <X className="h-5 w-5" />
+                                            </button>
+                                            <div className="min-w-0 flex-1">
+                                                <div className="text-base font-semibold text-gray-900">Forward to</div>
+                                                <div className="truncate text-xs text-gray-500">
+                                                    {forwardSelectedIds.length > 0 ? `${forwardSelectedIds.length} selected` : 'Select one or more chats'}
                                                 </div>
                                             </div>
-                                        ) : (
-                                            <div className={`group relative w-fit max-w-[86%] sm:max-w-[76%] lg:max-w-[64%] xl:max-w-[58%] ${row.msg.content?.template ? 'bg-transparent p-0 shadow-none border-0' : `wa-bubble px-2.5 py-1.5 text-[#111b21] ${row.msg.sender === 'user'
-                                                ? 'wa-bubble-in'
-                                                : 'wa-bubble-out'
-                                                }`
-                                                }`}>
-                                                <div className={`absolute top-1 ${row.msg.sender === 'user' ? '-right-9' : '-left-9'} opacity-0 transition-opacity group-hover:opacity-100 ${activeMessageMenuId === row.msg.id ? 'opacity-100' : ''}`} data-message-menu>
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => openMessageMenu(e, row.msg)}
-                                                        className={`flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-gray-600 shadow-sm ring-1 transition hover:text-gray-900 ${activeMessageMenuId === row.msg.id ? 'ring-gray-900' : 'ring-gray-200'}`}
-                                                        title="Message actions"
-                                                    >
-                                                        <ChevronDown className="h-4 w-4" />
-                                                    </button>
+                                            <button
+                                                type="button"
+                                                onClick={sendForwardedMessages}
+                                                disabled={forwardSelectedIds.length === 0 || isForwarding}
+                                                className="flex h-10 w-10 items-center justify-center rounded-full bg-green-600 text-white shadow-md transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none"
+                                                title="Forward"
+                                            >
+                                                {isForwarding ? <Clock className="h-5 w-5 animate-spin" /> : <WhatsAppSendIcon className="h-5 w-5" />}
+                                            </button>
+                                        </div>
+
+                                        <div className="border-b border-gray-100 px-4 py-3">
+                                            <div className="relative">
+                                                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+                                                <input
+                                                    type="text"
+                                                    value={forwardSearch}
+                                                    onChange={(e) => setForwardSearch(e.target.value)}
+                                                    placeholder="Search chats"
+                                                    className="w-full rounded-full border-0 bg-gray-100 py-2.5 pl-11 pr-4 text-sm text-gray-700 outline-none transition focus:bg-white focus:ring-1 focus:ring-green-500/40"
+                                                    autoFocus
+                                                />
+                                            </div>
+                                            <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
+                                                <div className="flex items-center gap-1 text-[11px] italic text-gray-500">
+                                                    <Forward className="h-3 w-3" />
+                                                    Forwarded
                                                 </div>
-                                                {row.msg.sender === 'agent' && !row.msg.forwarded && (
-                                                    <div className="mb-0.5 text-[11px] font-semibold leading-4 text-[#6676ff]">{row.msg.agentName}</div>
-                                                )}
-                                                {renderMessageSourceBadge(row.msg)}
-                                                {renderMessageBody(row.msg)}
-                                                {renderReactionsPill(row.msg)}
-                                                {!row.msg.content?.template && renderMessageMeta(row.msg)}
-                                            </div>
-                                        )}
-                                    </div>
-                                )
-                            ))}
-                            <div ref={messagesEndRef} />
-                        </div>
-
-                        {activeMenuMessage && messageMenuAnchor && (
-                            <div
-                                data-message-menu
-                                className="fixed z-[80] w-56 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
-                                style={{
-                                    top: `${messageMenuAnchor.top}px`,
-                                    left: `${messageMenuAnchor.left}px`,
-                                }}
-                            >
-                                <div className="flex items-center justify-between gap-1 border-b border-gray-100 px-3 py-2">
-                                    {QUICK_REACTIONS.map(item => (
-                                        <button
-                                            key={item.label}
-                                            type="button"
-                                            onClick={() => sendReaction(activeMenuMessage, item.emoji)}
-                                            className="flex h-8 w-8 items-center justify-center rounded-full transition hover:scale-110 hover:bg-gray-100"
-                                            title={item.label}
-                                        >
-                                            <EmojiAsset emoji={item.emoji} label={item.label} className="h-5 w-5" />
-                                        </button>
-                                    ))}
-                                </div>
-                                <div className="hidden">
-                                    {QUICK_REACTIONS.map(({ emoji }) => (
-                                        <button
-                                            key={emoji}
-                                            type="button"
-                                            onClick={() => sendReaction(activeMenuMessage, emoji)}
-                                            className="flex h-8 w-8 items-center justify-center rounded-full transition hover:scale-110 hover:bg-gray-100"
-                                            title={`React ${emoji}`}
-                                        >
-                                            {emoji}
-                                        </button>
-                                    ))}
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => startReplyToMessage(activeMenuMessage)}
-                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
-                                >
-                                    <Reply className="h-4 w-4" />
-                                    Reply
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => copyMessageText(activeMenuMessage)}
-                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
-                                >
-                                    <Copy className="h-4 w-4" />
-                                    Copy
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => forwardMessage(activeMenuMessage)}
-                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
-                                >
-                                    <Forward className="h-4 w-4" />
-                                    Forward
-                                </button>
-                                <div className="my-1 border-t border-gray-100" />
-                                <button
-                                    type="button"
-                                    onClick={() => deleteMessageLocal(activeMenuMessage)}
-                                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
-                                >
-                                    <Trash2 className="h-4 w-4" />
-                                    Delete
-                                </button>
-                            </div>
-                        )}
-
-                        {(showJumpToLatest || newMessagesPending > 0) && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    scrollToBottom('smooth')
-                                    setNewMessagesPending(0)
-                                }}
-                                className="absolute bottom-20 right-5 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#54656f] shadow-[0_2px_8px_rgba(11,20,26,0.18)] transition hover:bg-gray-50 hover:text-[#111b21] active:scale-95"
-                                title={newMessagesPending > 0 ? `${newMessagesPending} new message${newMessagesPending > 1 ? 's' : ''}` : 'Jump to latest'}
-                            >
-                                <ArrowDown className="h-5 w-5" />
-                                {newMessagesPending > 0 && (
-                                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-sm">
-                                        {newMessagesPending > 99 ? '99+' : newMessagesPending}
-                                    </span>
-                                )}
-                            </button>
-                        )}
-
-                        {forwardingMessage && (
-                            <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 px-4 py-6">
-                                <div className="flex max-h-[86vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-                                    <div className="flex items-center gap-3 border-b border-gray-100 px-4 py-3">
-                                        <button
-                                            type="button"
-                                            onClick={closeForwardModal}
-                                            className="flex h-9 w-9 items-center justify-center rounded-full text-gray-600 hover:bg-gray-100"
-                                            title="Close"
-                                        >
-                                            <X className="h-5 w-5" />
-                                        </button>
-                                        <div className="min-w-0 flex-1">
-                                            <div className="text-base font-semibold text-gray-900">Forward to</div>
-                                            <div className="truncate text-xs text-gray-500">
-                                                {forwardSelectedIds.length > 0 ? `${forwardSelectedIds.length} selected` : 'Select one or more chats'}
+                                                <div className="mt-1 line-clamp-2 text-sm text-gray-800">
+                                                    {getForwardableText(forwardingMessage)}
+                                                </div>
                                             </div>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={sendForwardedMessages}
-                                            disabled={forwardSelectedIds.length === 0 || isForwarding}
-                                            className="flex h-10 w-10 items-center justify-center rounded-full bg-green-600 text-white shadow-md transition hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-400 disabled:shadow-none"
-                                            title="Forward"
-                                        >
-                                            {isForwarding ? <Clock className="h-5 w-5 animate-spin" /> : <WhatsAppSendIcon className="h-5 w-5" />}
-                                        </button>
-                                    </div>
 
-                                    <div className="border-b border-gray-100 px-4 py-3">
-                                        <div className="relative">
-                                            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
-                                            <input
-                                                type="text"
-                                                value={forwardSearch}
-                                                onChange={(e) => setForwardSearch(e.target.value)}
-                                                placeholder="Search chats"
-                                                className="w-full rounded-full border-0 bg-gray-100 py-2.5 pl-11 pr-4 text-sm text-gray-700 outline-none transition focus:bg-white focus:ring-1 focus:ring-green-500/40"
-                                                autoFocus
-                                            />
-                                        </div>
-                                        <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2">
-                                            <div className="flex items-center gap-1 text-[11px] italic text-gray-500">
-                                                <Forward className="h-3 w-3" />
-                                                Forwarded
-                                            </div>
-                                            <div className="mt-1 line-clamp-2 text-sm text-gray-800">
-                                                {getForwardableText(forwardingMessage)}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="min-h-0 flex-1 overflow-y-auto py-1">
-                                        {forwardRecipientChats.length === 0 ? (
-                                            <div className="px-6 py-10 text-center text-sm text-gray-500">No chats found.</div>
-                                        ) : (
-                                            forwardRecipientChats.map(chat => {
-                                                const selected = forwardSelectedIds.some(id => idsEqual(id, chat.id))
-                                                return (
-                                                    <button
-                                                        key={chat.id}
-                                                        type="button"
-                                                        onClick={() => toggleForwardRecipient(chat.id)}
-                                                        className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${selected ? 'bg-green-50' : 'hover:bg-gray-50'}`}
-                                                    >
-                                                        <div className="relative shrink-0">
-                                                            {chat.profilePhotoUrl ? (
-                                                                <img
-                                                                    src={chat.profilePhotoUrl}
-                                                                    alt={chat.name}
-                                                                    className="h-11 w-11 rounded-full object-cover"
-                                                                    loading="lazy"
-                                                                />
-                                                            ) : (
-                                                                <div className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600">
-                                                                    <User className="h-6 w-6" />
-                                                                </div>
-                                                            )}
-                                                            <div className={`absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white ${selected ? 'bg-green-500 text-white' : 'bg-white text-transparent ring-1 ring-gray-300'}`}>
-                                                                <Check className="h-3.5 w-3.5" />
-                                                            </div>
-                                                        </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="truncate text-sm font-semibold text-gray-900">{chat.name}</div>
-                                                            <div className="truncate text-[11px] font-mono text-gray-400">{formatPhoneForDisplay(chat.phone || chat.waId)}</div>
-                                                            <div className="truncate text-xs text-gray-500">{chat.lastMessage}</div>
-                                                        </div>
-                                                    </button>
-                                                )
-                                            })
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Input Area */}
-                        <div data-tour="chat-composer" className={`px-4 py-2.5 lg:px-5 ${isInternalNote ? 'border-t border-amber-200 bg-amber-50' : 'bg-[#f0f2f5]'}`}>
-                            <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-[1180px] items-end gap-2">
-                                <div className="flex items-center gap-1 pb-0.5">
-                                    <div className="relative">
-                                        <button
-                                            type="button"
-                                            onClick={() => setIsEmojiOpen(v => !v)}
-                                            className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
-                                            title="Emoji"
-                                        >
-                                            <Smile className="h-6 w-6" />
-                                        </button>
-
-                                        {isEmojiOpen && (
-                                            <div className="absolute bottom-12 left-0 z-20 w-64 rounded-xl border border-gray-200 bg-white shadow-lg p-2">
-                                                <div className="text-[11px] font-bold text-gray-500 mb-2">Emoji</div>
-                                                <div className="grid grid-cols-8 gap-1">
-                                                    {EMOJI_PICKER_ITEMS.map(e => (
+                                        <div className="min-h-0 flex-1 overflow-y-auto py-1">
+                                            {forwardRecipientChats.length === 0 ? (
+                                                <div className="px-6 py-10 text-center text-sm text-gray-500">No chats found.</div>
+                                            ) : (
+                                                forwardRecipientChats.map(chat => {
+                                                    const selected = forwardSelectedIds.some(id => idsEqual(id, chat.id))
+                                                    return (
                                                         <button
-                                                            key={e}
+                                                            key={chat.id}
                                                             type="button"
-                                                            onClick={() => insertEmoji(e)}
-                                                            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100"
+                                                            onClick={() => toggleForwardRecipient(chat.id)}
+                                                            className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${selected ? 'bg-green-50' : 'hover:bg-gray-50'}`}
                                                         >
-                                                            <EmojiAsset emoji={e} className="h-5 w-5" />
+                                                            <div className="relative shrink-0">
+                                                                {chat.profilePhotoUrl ? (
+                                                                    <img
+                                                                        src={chat.profilePhotoUrl}
+                                                                        alt={chat.name}
+                                                                        className="h-11 w-11 rounded-full object-cover"
+                                                                        loading="lazy"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600">
+                                                                        <User className="h-6 w-6" />
+                                                                    </div>
+                                                                )}
+                                                                <div className={`absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white ${selected ? 'bg-green-500 text-white' : 'bg-white text-transparent ring-1 ring-gray-300'}`}>
+                                                                    <Check className="h-3.5 w-3.5" />
+                                                                </div>
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="truncate text-sm font-semibold text-gray-900">{chat.name}</div>
+                                                                <div className="truncate text-[11px] font-mono text-gray-400">{formatPhoneForDisplay(chat.phone || chat.waId)}</div>
+                                                                <div className="truncate text-xs text-gray-500">{chat.lastMessage}</div>
+                                                            </div>
                                                         </button>
-                                                    ))}
+                                                    )
+                                                })
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Input Area */}
+                            <div data-tour="chat-composer" className={`px-4 py-2.5 lg:px-5 ${isInternalNote ? 'border-t border-amber-200 bg-amber-50' : 'bg-[#f0f2f5]'}`}>
+                                <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-[1180px] items-end gap-2">
+                                    <div className="flex items-center gap-1 pb-0.5">
+                                        <div className="relative">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsEmojiOpen(v => !v)}
+                                                className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
+                                                title="Emoji"
+                                            >
+                                                <Smile className="h-6 w-6" />
+                                            </button>
+
+                                            {isEmojiOpen && (
+                                                <div className="absolute bottom-12 left-0 z-20 w-64 rounded-xl border border-gray-200 bg-white shadow-lg p-2">
+                                                    <div className="text-[11px] font-bold text-gray-500 mb-2">Emoji</div>
+                                                    <div className="grid grid-cols-8 gap-1">
+                                                        {EMOJI_PICKER_ITEMS.map(e => (
+                                                            <button
+                                                                key={e}
+                                                                type="button"
+                                                                onClick={() => insertEmoji(e)}
+                                                                className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100"
+                                                            >
+                                                                <EmojiAsset emoji={e} className="h-5 w-5" />
+                                                            </button>
+                                                        ))}
+                                                    </div>
                                                 </div>
+                                            )}
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
+                                            title="Attach file"
+                                        >
+                                            <Paperclip className="h-6 w-6" />
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-1 flex-col overflow-hidden rounded-lg bg-white shadow-[0_1px_1px_rgba(11,20,26,0.08)] transition-all focus-within:ring-1 focus-within:ring-black/10">
+                                        <input
+                                            ref={fileInputRef}
+                                            type="file"
+                                            className="hidden"
+                                            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                                            onChange={(e) => {
+                                                const f = e.target.files?.[0] || null
+                                                setSelectedFile(f)
+                                                if (f) {
+                                                    setPendingAudio(null)
+                                                    setIsAudioPanelOpen(false)
+                                                }
+                                            }}
+                                        />
+
+                                        {selectedFile && (
+                                            <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2">
+                                                <div className="text-xs text-gray-700 truncate">
+                                                    Attached: <span className="font-medium">{selectedFile.name}</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSelectedFile(null)}
+                                                    className="text-xs text-gray-500 hover:text-gray-700"
+                                                >
+                                                    Remove
+                                                </button>
                                             </div>
                                         )}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
-                                        title="Attach file"
-                                    >
-                                        <Paperclip className="h-6 w-6" />
-                                    </button>
-                                </div>
-                                <div className="flex flex-1 flex-col overflow-hidden rounded-lg bg-white shadow-[0_1px_1px_rgba(11,20,26,0.08)] transition-all focus-within:ring-1 focus-within:ring-black/10">
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        className="hidden"
-                                        accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
-                                        onChange={(e) => {
-                                            const f = e.target.files?.[0] || null
-                                            setSelectedFile(f)
-                                            if (f) {
-                                                setPendingAudio(null)
-                                                setIsAudioPanelOpen(false)
-                                            }
-                                        }}
-                                    />
 
-                                    {selectedFile && (
-                                        <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2">
-                                            <div className="text-xs text-gray-700 truncate">
-                                                Attached: <span className="font-medium">{selectedFile.name}</span>
+                                        {isAudioPanelOpen && !isInternalNote && (
+                                            <div className="border-b border-gray-100 bg-gray-50 px-3 py-2">
+                                                <AudioRecorderOrUploader value={pendingAudio} onChange={setPendingAudio} />
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => setSelectedFile(null)}
-                                                className="text-xs text-gray-500 hover:text-gray-700"
-                                            >
-                                                Remove
-                                            </button>
-                                        </div>
-                                    )}
+                                        )}
 
-                                    {isAudioPanelOpen && !isInternalNote && (
-                                        <div className="border-b border-gray-100 bg-gray-50 px-3 py-2">
-                                            <AudioRecorderOrUploader value={pendingAudio} onChange={setPendingAudio} />
-                                        </div>
-                                    )}
-
-                                    {isInternalNote && (
-                                        <div className="flex items-center gap-1 border-b border-amber-100 bg-amber-100/50 px-3 py-1 text-[10px] font-bold text-amber-700">
-                                            <AlertCircle className="h-3 w-3" />
-                                            Internal Note (Private)
-                                        </div>
-                                    )}
-                                    {replyingTo && !isInternalNote && (
-                                        <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-green-50 px-3 py-2">
-                                            <div className="min-w-0 border-l-4 border-green-500 pl-2">
-                                                <div className="text-xs font-semibold text-green-800">
-                                                    Replying to {replyingTo.sender === 'agent' ? 'You' : (selectedChat?.name || 'contact')}
+                                        {isInternalNote && (
+                                            <div className="flex items-center gap-1 border-b border-amber-100 bg-amber-100/50 px-3 py-1 text-[10px] font-bold text-amber-700">
+                                                <AlertCircle className="h-3 w-3" />
+                                                Internal Note (Private)
+                                            </div>
+                                        )}
+                                        {replyingTo && !isInternalNote && (
+                                            <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-green-50 px-3 py-2">
+                                                <div className="min-w-0 border-l-4 border-green-500 pl-2">
+                                                    <div className="text-xs font-semibold text-green-800">
+                                                        Replying to {replyingTo.sender === 'agent' ? 'You' : (selectedChat?.name || 'contact')}
+                                                    </div>
+                                                    <div className="truncate text-xs text-gray-600">{replyingTo.text || 'Original message'}</div>
                                                 </div>
-                                                <div className="truncate text-xs text-gray-600">{replyingTo.text || 'Original message'}</div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setReplyingTo(null)}
+                                                    className="rounded-full p-1 text-gray-500 hover:bg-white hover:text-gray-800"
+                                                >
+                                                    <X className="h-4 w-4" />
+                                                </button>
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => setReplyingTo(null)}
-                                                className="rounded-full p-1 text-gray-500 hover:bg-white hover:text-gray-800"
-                                            >
-                                                <X className="h-4 w-4" />
-                                            </button>
-                                        </div>
-                                    )}
-                                    <textarea
-                                        ref={messageInputRef}
-                                        value={messageText}
-                                        onChange={e => setMessageText(e.target.value)}
-                                        placeholder={isInternalNote ? "Type an internal note..." : "Type a message..."}
-                                        rows={1}
-                                        className="max-h-42 min-h-[42px] w-full resize-none border-0 bg-transparent px-4 py-[11px] text-[15px] leading-5 text-[#111b21] outline-none placeholder:text-[#8696a0] focus:border-transparent focus:outline-none focus:ring-0"
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter' && !e.shiftKey) {
-                                                e.preventDefault();
-                                                handleSendMessage(e);
-                                            }
-                                        }}
-                                    />
-                                </div>
-                                <div className="flex items-center gap-1 pb-0.5">
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setIsInternalNote(v => !v)
-                                            setIsAudioPanelOpen(false)
-                                            setPendingAudio(null)
-                                        }}
-                                        className={`flex h-10 w-10 items-center justify-center rounded-full transition-all ${isInternalNote ? 'bg-amber-200 text-amber-800' : 'text-[#54656f] hover:bg-black/5 hover:text-[#111b21]'}`}
-                                        title="Internal note"
-                                    >
-                                        <FileText className="h-5 w-5" />
-                                    </button>
-
-                                    {(messageText.trim() || selectedFile || pendingAudio?.file) ? (
-                                        <button type="submit" className="flex h-10 w-10 scale-100 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm transition-all duration-200 hover:bg-[#029977] active:scale-95">
-                                            <WhatsAppSendIcon className="h-5 w-5" />
-                                        </button>
-                                    ) : (
+                                        )}
+                                        <textarea
+                                            ref={messageInputRef}
+                                            value={messageText}
+                                            onChange={e => setMessageText(e.target.value)}
+                                            placeholder={isInternalNote ? "Type an internal note..." : "Type a message..."}
+                                            rows={1}
+                                            className="max-h-42 min-h-[42px] w-full resize-none border-0 bg-transparent px-4 py-[11px] text-[15px] leading-5 text-[#111b21] outline-none placeholder:text-[#8696a0] focus:border-transparent focus:outline-none focus:ring-0"
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && !e.shiftKey) {
+                                                    e.preventDefault();
+                                                    handleSendMessage(e);
+                                                }
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-1 pb-0.5">
                                         <button
                                             type="button"
                                             onClick={() => {
-                                                if (isInternalNote) return
-                                                setIsAudioPanelOpen(v => !v)
+                                                setIsInternalNote(v => !v)
+                                                setIsAudioPanelOpen(false)
+                                                setPendingAudio(null)
                                             }}
-                                            className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-all hover:bg-black/5 hover:text-[#111b21]"
-                                            title="Audio message"
+                                            className={`flex h-10 w-10 items-center justify-center rounded-full transition-all ${isInternalNote ? 'bg-amber-200 text-amber-800' : 'text-[#54656f] hover:bg-black/5 hover:text-[#111b21]'}`}
+                                            title="Internal note"
                                         >
-                                            <Mic className="h-5 w-5" />
+                                            <FileText className="h-5 w-5" />
                                         </button>
-                                    )}
+
+                                        {(messageText.trim() || selectedFile || pendingAudio?.file) ? (
+                                            <button type="submit" className="flex h-10 w-10 scale-100 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm transition-all duration-200 hover:bg-[#029977] active:scale-95">
+                                                <WhatsAppSendIcon className="h-5 w-5" />
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (isInternalNote) return
+                                                    setIsAudioPanelOpen(v => !v)
+                                                }}
+                                                className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-all hover:bg-black/5 hover:text-[#111b21]"
+                                                title="Audio message"
+                                            >
+                                                <Mic className="h-5 w-5" />
+                                            </button>
+                                        )}
+                                    </div>
+                                </form>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                <ContactProfileDrawer
+                    isOpen={isContactDrawerOpen}
+                    onClose={() => {
+                        setIsContactDrawerOpen(false)
+                        setFocusAliasOnOpen(false)
+                    }}
+                    focusAliasOnOpen={focusAliasOnOpen}
+                    botEnabled={botEnabled}
+                    onToggleBot={(enabled) => toggleBotForConversation(enabled, selectedBotId)}
+                    messages={filteredMessages}
+                    conversationId={selectedChat?.id || null}
+                    contact={selectedChat?.contact ? {
+                        ...selectedChat.contact,
+                        // UI fallbacks
+                        name: selectedChat.contact.name || selectedChat?.name || 'Unknown',
+                        phone: selectedChat.contact.phone || selectedChat?.phone || selectedChat?.waId || '',
+                        wa_id: selectedChat.contact.wa_id || selectedChat?.waId || '',
+                        profile_photo_url: selectedChat.contact.profile_photo_url || selectedChat?.profilePhotoUrl || '',
+                        tags: selectedChat.contact.tags || [],
+                        custom_fields: selectedChat.contact.custom_fields || {},
+                    } : {
+                        id: null,
+                        name: selectedChat?.name || 'Unknown',
+                        custom_name: null,
+                        phone: selectedChat?.phone || selectedChat?.waId || '',
+                        wa_id: selectedChat?.waId || '',
+                        profile_photo_url: selectedChat?.profilePhotoUrl || '',
+                        tags: selectedChat?.contact?.tags || [],
+                        created_at: selectedChat?.contact?.created_at || null,
+                        custom_fields: selectedChat?.contact?.custom_fields || {},
+                    }}
+                    onContactUpdated={(updated) => {
+                        if (!updated) return
+                        setChats(prev => prev.map(c => {
+                            const sameById = updated?.id && idsEqual(c?.contactId, updated.id)
+                            const sameByWa = updated?.wa_id && String(c?.waId || '') === String(updated.wa_id)
+                            if (!sameById && !sameByWa) return c
+                            const nextContact = { ...(c.contact || {}), ...updated }
+                            return { ...c, contact: nextContact, name: getDisplayName(nextContact), profilePhotoUrl: getProfilePhotoUrl(nextContact) }
+                        }))
+                        setSelectedChat(prev => {
+                            if (!prev) return prev
+                            const nextContact = { ...(prev.contact || {}), ...updated }
+                            return { ...prev, contact: nextContact, name: getDisplayName(nextContact), profilePhotoUrl: getProfilePhotoUrl(nextContact) }
+                        })
+                    }}
+                />
+                {/* Auto Assign Modal */}
+                {isAutoAssignModalOpen && (
+                    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden">
+                            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                                    <Bot className="h-5 w-5 text-green-500" /> Auto Assign Rules
+                                </h3>
+                                <button onClick={() => setIsAutoAssignModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+                                    <ChevronLeft className="h-5 w-5 rotate-180" />
+                                </button>
+                            </div>
+                            <div className="p-5 space-y-6">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="font-semibold text-gray-800 text-sm">Enable Auto Assignment</p>
+                                        <p className="text-xs text-gray-500 mt-1">Automatically distribute new chats equally to available agents.</p>
+                                    </div>
+                                    <label className="relative inline-flex items-center cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            className="sr-only peer"
+                                            checked={draftAutoAssignSettings.enabled}
+                                            onChange={(e) => setDraftAutoAssignSettings(prev => ({ ...prev, enabled: e.target.checked }))}
+                                        />
+                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
+                                    </label>
                                 </div>
-                            </form>
+
+                                {draftAutoAssignSettings.enabled && (
+                                    <div className="space-y-3 pt-4 border-t border-gray-100">
+                                        <div>
+                                            <p className="font-semibold text-gray-800 text-sm">Chats per Agent (Batch Size)</p>
+                                            <p className="text-xs text-gray-500 mt-1">Number of consecutive chats assigned to an agent before rotating to the next one.</p>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="100"
+                                                value={draftAutoAssignSettings.batch_size}
+                                                onChange={(e) => {
+                                                    const val = parseInt(e.target.value);
+                                                    if (val > 0) setDraftAutoAssignSettings(prev => ({ ...prev, batch_size: val }));
+                                                }}
+                                                className="w-20 px-3 py-2 border border-gray-200 rounded-lg text-center text-sm font-semibold focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500"
+                                            />
+                                            <span className="text-sm text-gray-500 font-medium">chats at a time</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50">
+                                <button
+                                    onClick={() => setIsAutoAssignModalOpen(false)}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSaveAutoAssignRules}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors shadow-sm"
+                                >
+                                    Save Changes
+                                </button>
+                            </div>
                         </div>
-                    </>
+                    </div>
+                )}
+
+                {/* Agent Status Modal */}
+                {isAgentStatusModalOpen && (
+                    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden flex flex-col max-h-[80vh]">
+                            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+                                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                                    <User className="h-5 w-5 text-blue-500" /> Agent Status Control
+                                </h3>
+                                <button onClick={() => setIsAgentStatusModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
+                                    <ChevronLeft className="h-5 w-5 rotate-180" />
+                                </button>
+                            </div>
+                            <div className="p-4 border-b border-gray-50 shrink-0">
+                                <p className="text-xs text-gray-500">Pause an agent to temporarily stop them from receiving new auto-assigned chats (e.g., if they are absent today).</p>
+                            </div>
+                            <div className="overflow-y-auto p-4 space-y-3 flex-1 custom-scrollbar">
+                                {orgAgents.length === 0 ? (
+                                    <p className="text-center text-sm text-gray-500 py-4">No agents found in this organization.</p>
+                                ) : (
+                                    orgAgents.map((agent) => {
+                                        const isPaused = draftPausedAgents.includes(agent.user_id);
+                                        return (
+                                            <div key={agent.user_id} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-white shadow-sm">
+                                                <div>
+                                                    <p className="font-semibold text-sm text-gray-800">{agent.name || 'Unnamed Agent'}</p>
+                                                    <p className="text-xs text-gray-500">{agent.email}</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => toggleDraftAgentPause(agent.user_id)}
+                                                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors border ${isPaused
+                                                        ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                                        : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                                                        }`}
+                                                >
+                                                    {isPaused ? 'Paused' : 'Active'}
+                                                </button>
+                                            </div>
+                                        );
+                                    })
+                                )}
+                            </div>
+                            <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50 shrink-0">
+                                <button
+                                    onClick={() => setIsAgentStatusModalOpen(false)}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleSaveAgentStatus}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                                >
+                                    Save Status
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
-
-            <ContactProfileDrawer
-                isOpen={isContactDrawerOpen}
-                onClose={() => {
-                    setIsContactDrawerOpen(false)
-                    setFocusAliasOnOpen(false)
-                }}
-                focusAliasOnOpen={focusAliasOnOpen}
-                botEnabled={botEnabled}
-                onToggleBot={(enabled) => toggleBotForConversation(enabled, selectedBotId)}
-                messages={filteredMessages}
-                conversationId={selectedChat?.id || null}
-                contact={selectedChat?.contact ? {
-                    ...selectedChat.contact,
-                    // UI fallbacks
-                    name: selectedChat.contact.name || selectedChat?.name || 'Unknown',
-                    phone: selectedChat.contact.phone || selectedChat?.phone || selectedChat?.waId || '',
-                    wa_id: selectedChat.contact.wa_id || selectedChat?.waId || '',
-                    profile_photo_url: selectedChat.contact.profile_photo_url || selectedChat?.profilePhotoUrl || '',
-                    tags: selectedChat.contact.tags || [],
-                    custom_fields: selectedChat.contact.custom_fields || {},
-                } : {
-                    id: null,
-                    name: selectedChat?.name || 'Unknown',
-                    custom_name: null,
-                    phone: selectedChat?.phone || selectedChat?.waId || '',
-                    wa_id: selectedChat?.waId || '',
-                    profile_photo_url: selectedChat?.profilePhotoUrl || '',
-                    tags: selectedChat?.contact?.tags || [],
-                    created_at: selectedChat?.contact?.created_at || null,
-                    custom_fields: selectedChat?.contact?.custom_fields || {},
-                }}
-                onContactUpdated={(updated) => {
-                    if (!updated) return
-                    setChats(prev => prev.map(c => {
-                        const sameById = updated?.id && idsEqual(c?.contactId, updated.id)
-                        const sameByWa = updated?.wa_id && String(c?.waId || '') === String(updated.wa_id)
-                        if (!sameById && !sameByWa) return c
-                        const nextContact = { ...(c.contact || {}), ...updated }
-                        return { ...c, contact: nextContact, name: getDisplayName(nextContact), profilePhotoUrl: getProfilePhotoUrl(nextContact) }
-                    }))
-                    setSelectedChat(prev => {
-                        if (!prev) return prev
-                        const nextContact = { ...(prev.contact || {}), ...updated }
-                        return { ...prev, contact: nextContact, name: getDisplayName(nextContact), profilePhotoUrl: getProfilePhotoUrl(nextContact) }
-                    })
-                }}
-            />
-            {/* Auto Assign Modal */}
-            {isAutoAssignModalOpen && (
-                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden">
-                        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                                <Bot className="h-5 w-5 text-green-500" /> Auto Assign Rules
-                            </h3>
-                            <button onClick={() => setIsAutoAssignModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
-                                <ChevronLeft className="h-5 w-5 rotate-180" />
-                            </button>
-                        </div>
-                        <div className="p-5 space-y-6">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="font-semibold text-gray-800 text-sm">Enable Auto Assignment</p>
-                                    <p className="text-xs text-gray-500 mt-1">Automatically distribute new chats equally to available agents.</p>
-                                </div>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        className="sr-only peer" 
-                                        checked={draftAutoAssignSettings.enabled}
-                                        onChange={(e) => setDraftAutoAssignSettings(prev => ({ ...prev, enabled: e.target.checked }))}
-                                    />
-                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500"></div>
-                                </label>
-                            </div>
-                            
-                            {draftAutoAssignSettings.enabled && (
-                                <div className="space-y-3 pt-4 border-t border-gray-100">
-                                    <div>
-                                        <p className="font-semibold text-gray-800 text-sm">Chats per Agent (Batch Size)</p>
-                                        <p className="text-xs text-gray-500 mt-1">Number of consecutive chats assigned to an agent before rotating to the next one.</p>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <input 
-                                            type="number" 
-                                            min="1" 
-                                            max="100"
-                                            value={draftAutoAssignSettings.batch_size}
-                                            onChange={(e) => {
-                                                const val = parseInt(e.target.value);
-                                                if (val > 0) setDraftAutoAssignSettings(prev => ({ ...prev, batch_size: val }));
-                                            }}
-                                            className="w-20 px-3 py-2 border border-gray-200 rounded-lg text-center text-sm font-semibold focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500"
-                                        />
-                                        <span className="text-sm text-gray-500 font-medium">chats at a time</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50">
-                            <button 
-                                onClick={() => setIsAutoAssignModalOpen(false)}
-                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                onClick={handleSaveAutoAssignRules}
-                                className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors shadow-sm"
-                            >
-                                Save Changes
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Agent Status Modal */}
-            {isAgentStatusModalOpen && (
-                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full overflow-hidden flex flex-col max-h-[80vh]">
-                        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
-                            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
-                                <User className="h-5 w-5 text-blue-500" /> Agent Status Control
-                            </h3>
-                            <button onClick={() => setIsAgentStatusModalOpen(false)} className="p-1 text-gray-400 hover:text-gray-600 rounded">
-                                <ChevronLeft className="h-5 w-5 rotate-180" />
-                            </button>
-                        </div>
-                        <div className="p-4 border-b border-gray-50 shrink-0">
-                            <p className="text-xs text-gray-500">Pause an agent to temporarily stop them from receiving new auto-assigned chats (e.g., if they are absent today).</p>
-                        </div>
-                        <div className="overflow-y-auto p-4 space-y-3 flex-1 custom-scrollbar">
-                            {orgAgents.length === 0 ? (
-                                <p className="text-center text-sm text-gray-500 py-4">No agents found in this organization.</p>
-                            ) : (
-                                orgAgents.map((agent) => {
-                                    const isPaused = draftPausedAgents.includes(agent.user_id);
-                                    return (
-                                        <div key={agent.user_id} className="flex items-center justify-between p-3 rounded-lg border border-gray-100 bg-white shadow-sm">
-                                            <div>
-                                                <p className="font-semibold text-sm text-gray-800">{agent.name || 'Unnamed Agent'}</p>
-                                                <p className="text-xs text-gray-500">{agent.email}</p>
-                                            </div>
-                                            <button
-                                                onClick={() => toggleDraftAgentPause(agent.user_id)}
-                                                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors border ${
-                                                    isPaused 
-                                                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' 
-                                                    : 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
-                                                }`}
-                                            >
-                                                {isPaused ? 'Paused' : 'Active'}
-                                            </button>
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
-                        <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50/50 shrink-0">
-                            <button 
-                                onClick={() => setIsAgentStatusModalOpen(false)}
-                                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-                            >
-                                Cancel
-                            </button>
-                            <button 
-                                onClick={handleSaveAgentStatus}
-                                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-                            >
-                                Save Status
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
         </AudioPlayerProvider>
     )
 }
