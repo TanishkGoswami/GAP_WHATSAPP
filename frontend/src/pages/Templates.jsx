@@ -7,6 +7,27 @@ import TourButton from '../onboarding/TourButton'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
+const formatDateToIST = (dateStr) => {
+    if (!dateStr) return 'recently';
+    try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr;
+        
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'Asia/Kolkata'
+        });
+        return formatter.format(date) + ' IST';
+    } catch (e) {
+        return dateStr;
+    }
+};
+
 
 
 const INDUSTRY_LIBRARY = [
@@ -780,8 +801,20 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
             {/* Grid */}
             {!loading && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {/* Add New Card Placeholder (First Card) */}
+                    <button
+                        onClick={() => setIsCreateOpen(true)}
+                        className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 p-8 text-center hover:border-green-500 hover:bg-green-50 transition-colors group min-h-[340px]"
+                    >
+                        <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 mb-3 group-hover:bg-green-100 group-hover:text-green-600 transition-colors">
+                            <Plus className="h-6 w-6" />
+                        </div>
+                        <h3 className="text-sm font-medium text-gray-900">Create New Template</h3>
+                        <p className="text-xs text-gray-500 mt-1">Marketing, Utility, or Auth</p>
+                    </button>
+
                     {filteredTemplates.length === 0 ? (
-                        <div className="col-span-full py-16 px-4 flex flex-col items-center justify-center text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
+                        <div className="col-span-1 sm:col-span-1 lg:col-span-2 xl:col-span-3 py-16 px-4 flex flex-col items-center justify-center text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
                             <FileText className="h-10 w-10 text-gray-400 mb-3" />
                             <h3 className="text-sm font-bold text-gray-900">No templates found</h3>
                             <p className="text-xs text-gray-500 mt-1 max-w-sm leading-relaxed">
@@ -845,23 +878,11 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                 {/* Footer — always at bottom */}
                                 <div className="pt-3 mt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
                                     <span className="font-medium">{template.category}</span>
-                                    <span>Updated {template.last_updated || 'recently'}</span>
+                                    <span>Updated {formatDateToIST(template.last_updated)}</span>
                                 </div>
                             </div>
                         ))
                     )}
-
-                    {/* Add New Card Placeholder */}
-                    <button
-                        onClick={() => setIsCreateOpen(true)}
-                        className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 p-8 text-center hover:border-green-500 hover:bg-green-50 transition-colors group min-h-[340px]"
-                    >
-                        <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 mb-3 group-hover:bg-green-100 group-hover:text-green-600 transition-colors">
-                            <Plus className="h-6 w-6" />
-                        </div>
-                        <h3 className="text-sm font-medium text-gray-900">Create New Template</h3>
-                        <p className="text-xs text-gray-500 mt-1">Marketing, Utility, or Auth</p>
-                    </button>
                 </div>
             )}
 
