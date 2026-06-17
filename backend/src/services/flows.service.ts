@@ -1,5 +1,6 @@
 import { supabase } from '../config/supabase.js';
 import { isUuid } from '../utils/format.js';
+import { getBotAgentReply } from './ai.service.js';
 
 export const SUPPORTED_FLOW_NODE_TYPES = new Set([
     'startBotFlow',
