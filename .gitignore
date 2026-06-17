@@ -61,3 +61,6 @@ Thumbs.db
 log.txt
 push_error.txt
 push_error_utf8.txt
+
+**/baileys_auth_info/
+**/app-state-sync-*

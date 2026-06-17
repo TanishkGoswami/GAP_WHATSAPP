@@ -13,6 +13,7 @@ import makeWASocket, {
     proto,
 } from "@whiskeysockets/baileys";
 import { upsertContact, sanitizeContactDisplayName, normalizeContactWaIdForStorage, pickBestBaileysContactName } from './contacts.service.js';
+import { getBotAgentReply } from './ai.service.js';
 // Add any missing helpers here or import them
 
 async function upsertBaileysWaAccount(orgId: string | null | undefined, phone: string | null | undefined) {
@@ -104,7 +105,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
         console.log(`using WA v${version.join(".")}, isLatest: ${isLatest}`);
 
         // Create a logger that's silent to avoid noise
-        const logger = pino({ level: 'silent' });
+        // Using the logger imported from whatsapp.service.js
 
         // Store messages for retry mechanism (fixes "Waiting for this message" issue)
         const msgRetryCounterCache = new Map<string, number>();
@@ -1053,3 +1054,39 @@ io.on("connection", (socket) => {
 
     socket.on("disconnect", () => console.log("❌ Frontend disconnected:", socket.id));
 });
+
+// --- Auto-Initialize existing sessions ---
+function autoInitializeSessions() {
+    const authDir = 'baileys_auth_info';
+    if (!fs.existsSync(authDir)) return;
+    
+    try {
+        const entries = fs.readdirSync(authDir, { withFileTypes: true });
+        for (const entry of entries) {
+            if (entry.isDirectory() && entry.name.startsWith('session_')) {
+                const sessionId = entry.name;
+                console.log(`[Auto-Init] Found existing session directory: ${sessionId}. Initializing...`);
+                let orgId = undefined;
+                const orgFile = `${authDir}/${sessionId}/org_id.txt`;
+                if (fs.existsSync(orgFile)) {
+                    try {
+                        orgId = fs.readFileSync(orgFile, 'utf8').trim();
+                    } catch (e) {
+                        console.error(`[Auto-Init] Failed to read org_id for ${sessionId}`, e);
+                    }
+                }
+                
+                // Initialize asynchronously to not block the main loop
+                const dummySocket = { emit: () => {}, data: {} };
+                setupBaileys(sessionId, dummySocket, orgId).catch(err => {
+                    console.error(`[Auto-Init] Failed to auto-initialize session ${sessionId}:`, err);
+                });
+            }
+        }
+    } catch (err) {
+        console.error('[Auto-Init] Failed to read auth directory:', err);
+    }
+}
+
+// Start auto-initialization immediately
+autoInitializeSessions();

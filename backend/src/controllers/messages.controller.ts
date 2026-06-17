@@ -309,7 +309,7 @@ export async function sendMessage(req: any, res: Response) {
                 organization_id,
                 wa_account_id,
                 contact:w_contacts(id, wa_id, name),
-                account:w_wa_accounts(id, phone_number_id, access_token_encrypted)
+                account:w_wa_accounts(id, phone_number_id, display_phone_number, access_token_encrypted)
             `)
             .eq('id', conversationId)
             .eq('organization_id', orgId)
@@ -326,27 +326,49 @@ export async function sendMessage(req: any, res: Response) {
 
         let sendResult: any = null;
         let wa_message_id: string | null = null;
+        let sentViaCloud = false;
+
+        // Try Cloud API first if we have a token
         if (conv.account.access_token_encrypted) {
-            const toMeta = normalizeWaIdToPhone(toPhone);
-            if (!toMeta) throw new Error('Meta send requires a numeric recipient phone number');
-            sendResult = await sendTextMessage(toMeta, text, accountPhoneOrId, reply_to_message_id || null);
-            wa_message_id = sendResult?.messages?.[0]?.id || null;
-        } else {
+            try {
+                const toMeta = normalizeWaIdToPhone(toPhone);
+                if (!toMeta) throw new Error('Meta send requires a numeric recipient phone number');
+                sendResult = await sendTextMessage(toMeta, text, accountPhoneOrId, reply_to_message_id || null);
+                wa_message_id = sendResult?.messages?.[0]?.id || null;
+                sentViaCloud = true;
+            } catch (cloudErr: any) {
+                console.warn(`[Cloud API] Failed to send message for account ${accountPhoneOrId}, attempting Baileys fallback:`, cloudErr.message);
+                // We will fall through to Baileys if Cloud API fails (e.g. expired token)
+            }
+        }
+
+        // Fallback or default to Baileys
+        if (!sentViaCloud) {
             const sock = session_id ? sessions.get(session_id) : null;
             let resolvedSock = sock;
             if (!resolvedSock) {
+                const accountDisplayPhone = String(conv.account.display_phone_number || '').replace(/\D+/g, '');
+                console.log(`[Baileys Match] Looking for phone: ${accountPhoneOrId} or ${accountDisplayPhone}`);
+                
                 for (const s of sessions.values()) {
                     const connectedJid = s?.user?.id || '';
                     const connectedPhone = connectedJid ? connectedJid.split(':')[0] : '';
-                    if (connectedPhone && connectedPhone === accountPhoneOrId) {
+                    console.log(`[Baileys Match] Checking session with phone: ${connectedPhone}`);
+                    if (connectedPhone && (connectedPhone === accountPhoneOrId || connectedPhone === accountDisplayPhone)) {
                         resolvedSock = s;
                         break;
                     }
                 }
+
+                // Aggressive fallback: if there's only one connected session or we failed to match, just use the first available one.
+                if (!resolvedSock && sessions.size > 0) {
+                    console.warn(`[Baileys Fallback] Could not match phone strictly. Falling back to the first available connected session.`);
+                    resolvedSock = Array.from(sessions.values()).find(s => s?.user?.id) || null;
+                }
             }
 
             if (!resolvedSock) {
-                throw new Error('No active Baileys session found for this account. Reconnect via QR.');
+                throw new Error(conv.account.access_token_encrypted ? 'Cloud API token expired and no active Baileys session found. Reconnect via QR.' : 'No active Baileys session found for this account. Reconnect via QR.');
             }
 
             if (!resolvedSock?.user?.id) {
