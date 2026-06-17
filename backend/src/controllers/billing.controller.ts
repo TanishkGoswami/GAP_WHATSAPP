@@ -254,6 +254,59 @@ export const getWallet = async (req: any, res: Response) => {
 };
 
 export const getNotifications = async (req: any, res: Response) => {
-  // Stub for now to prevent 404s on frontend
-  res.json({ notifications: [] });
+  const orgId = req.organization_id;
+  try {
+    if (!orgId) {
+      return res.status(400).json({ error: 'organization_id is required' });
+    }
+
+    const { data: transactions, error } = await supabase
+      .from('whatsapp_wallet_transactions')
+      .select('id, type, amount_paise, status, description, created_at')
+      .eq('organization_id', orgId)
+      .eq('type', 'recharge')
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    if (error) throw error;
+
+    const notifications = (transactions || []).map((t: any) => {
+      const amountRupees = (t.amount_paise / 100).toFixed(2);
+      let type = 'info';
+      let title = 'Payment Update';
+      let message = t.description || `Wallet transaction of ₹${amountRupees}`;
+
+      if (t.status === 'completed') {
+        type = 'success';
+        title = 'Payment Successful';
+        message = `Your wallet recharge of ₹${amountRupees} was completed successfully.`;
+      } else if (t.status === 'failed') {
+        type = 'error';
+        title = 'Payment Failed';
+        message = `Your wallet recharge of ₹${amountRupees} failed. Please try again.`;
+      } else if (t.status === 'pending') {
+        type = 'warning';
+        title = 'Payment Pending';
+        message = `Your wallet recharge of ₹${amountRupees} is currently pending.`;
+      } else if (t.status === 'cancelled') {
+        type = 'warning';
+        title = 'Payment Cancelled';
+        message = `Your wallet recharge of ₹${amountRupees} was cancelled.`;
+      }
+
+      return {
+        id: t.id,
+        type,
+        title,
+        message,
+        time: t.created_at,
+        link: '/billing'
+      };
+    });
+
+    res.json({ notifications });
+  } catch (err: any) {
+    console.error('[billing/notifications] Error:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch notifications' });
+  }
 };

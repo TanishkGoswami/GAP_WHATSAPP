@@ -7,6 +7,27 @@ import TourButton from '../onboarding/TourButton'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
+const formatDateToIST = (dateStr) => {
+    if (!dateStr) return 'recently';
+    try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr;
+        
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'Asia/Kolkata'
+        });
+        return formatter.format(date) + ' IST';
+    } catch (e) {
+        return dateStr;
+    }
+};
+
 
 
 const INDUSTRY_LIBRARY = [
@@ -781,14 +802,23 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
             {!loading && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {filteredTemplates.length === 0 ? (
-                        <div className="col-span-full py-16 px-4 flex flex-col items-center justify-center text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
-                            <FileText className="h-10 w-10 text-gray-400 mb-3" />
-                            <h3 className="text-sm font-bold text-gray-900">No templates found</h3>
-                            <p className="text-xs text-gray-500 mt-1 max-w-sm leading-relaxed">
+                        <div className="col-span-full py-16 px-6 flex flex-col items-center justify-center text-center bg-white border border-dashed border-neutral-250 rounded-3xl max-w-md mx-auto w-full shadow-[0_8px_30px_rgb(0,0,0,0.015)] my-6">
+                            <div className="h-12 w-12 rounded-full bg-neutral-50 flex items-center justify-center border border-neutral-100 mb-4 text-neutral-400 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)]">
+                                <FileText className="h-5 w-5 stroke-[1.5]" />
+                            </div>
+                            <h3 className="text-sm font-semibold text-neutral-950 tracking-tight">No templates found</h3>
+                            <p className="text-[13px] text-neutral-500 mt-2 max-w-[280px] leading-relaxed font-normal">
                                 {activeStatus === 'APPROVED' && "Templates approved by Meta for marketing, utility, or authentication will appear here."}
                                 {activeStatus === 'PENDING' && "Newly created message templates currently undergoing Meta verification will appear here."}
                                 {activeStatus === 'DRAFT' && "Locally saved drafts and templates rejected by Meta will appear here."}
                             </p>
+                            <button
+                                onClick={() => setIsCreateOpen(true)}
+                                className="mt-6 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
+                            >
+                                <Plus className="h-3.5 w-3.5" />
+                                Create template
+                            </button>
                         </div>
                     ) : (
                         filteredTemplates.map((template) => (
@@ -845,23 +875,11 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                 {/* Footer — always at bottom */}
                                 <div className="pt-3 mt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
                                     <span className="font-medium">{template.category}</span>
-                                    <span>Updated {template.last_updated || 'recently'}</span>
+                                    <span>Updated {formatDateToIST(template.last_updated)}</span>
                                 </div>
                             </div>
                         ))
                     )}
-
-                    {/* Add New Card Placeholder */}
-                    <button
-                        onClick={() => setIsCreateOpen(true)}
-                        className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-300 p-8 text-center hover:border-green-500 hover:bg-green-50 transition-colors group min-h-[340px]"
-                    >
-                        <div className="h-12 w-12 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 mb-3 group-hover:bg-green-100 group-hover:text-green-600 transition-colors">
-                            <Plus className="h-6 w-6" />
-                        </div>
-                        <h3 className="text-sm font-medium text-gray-900">Create New Template</h3>
-                        <p className="text-xs text-gray-500 mt-1">Marketing, Utility, or Auth</p>
-                    </button>
                 </div>
             )}
 

@@ -527,18 +527,19 @@ export default function Layout() {
 
                                 {/* Dropdown panel */}
                                 <div
-                                    className={`absolute right-0 mt-3 w-80 sm:w-96 origin-top-right rounded-2xl overflow-hidden border border-gray-200/90 bg-white/95 backdrop-blur-md shadow-2xl transition-all duration-200 ease-out transform z-50 ${isNotificationsOpen
+                                    style={{ borderRadius: '14px' }}
+                                    className={`absolute right-0 mt-3.5 w-80 sm:w-96 origin-top-right border border-neutral-200/80 bg-white/95 backdrop-blur-xl shadow-[0_24px_50px_rgba(0,0,0,0.12)] transition-all duration-200 ease-out transform z-50 overflow-hidden ${isNotificationsOpen
                                         ? 'opacity-100 scale-100 translate-y-0'
                                         : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
                                         }`}
                                 >
                                     {/* Header */}
-                                    <div className="flex items-center justify-between border-b border-gray-150/70 px-4 py-3">
+                                    <div className="flex items-center justify-between border-b border-neutral-100/90 px-4 py-3 bg-[#fafafa]/80">
                                         <div className="flex items-center gap-2">
-                                            <span className="text-sm font-bold text-gray-950">Inbox Alerts</span>
+                                            <span className="text-xs font-bold text-neutral-900 tracking-wider uppercase font-mono">Alert Inbox</span>
                                             {unreadCount > 0 && (
-                                                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-650 ring-1 ring-inset ring-red-600/10">
-                                                    {unreadCount} new
+                                                <span className="rounded-full bg-neutral-900 px-1.5 py-0.5 text-[9px] font-bold text-white font-mono leading-none">
+                                                    {unreadCount}
                                                 </span>
                                             )}
                                         </div>
@@ -546,7 +547,7 @@ export default function Layout() {
                                             <button
                                                 type="button"
                                                 onClick={handleMarkAllAsRead}
-                                                className="text-xs font-semibold text-[#128C7E] hover:text-[#075E54] hover:underline transition-colors"
+                                                className="text-[10px] font-bold text-neutral-500 hover:text-neutral-900 transition-colors uppercase tracking-wider font-mono"
                                             >
                                                 Mark all as read
                                             </button>
@@ -554,33 +555,36 @@ export default function Layout() {
                                     </div>
 
                                     {/* Body */}
-                                    <div className="max-h-[340px] overflow-y-auto divide-y divide-gray-100">
+                                    <div
+                                        className="max-h-[360px] overflow-y-auto py-1.5 scrollbar-thin scrollbar-thumb-neutral-200 scrollbar-track-transparent"
+                                        style={{ scrollbarWidth: 'thin' }}
+                                    >
                                         {isLoadingNotifications ? (
-                                            <div className="p-4 space-y-3">
+                                            <div className="p-3 space-y-2.5">
                                                 {[1, 2, 3].map(i => (
-                                                    <div key={i} className="flex gap-3 items-start animate-pulse">
-                                                        <div className="h-8 w-8 rounded-xl bg-slate-100 border border-slate-200 shrink-0" />
+                                                    <div key={i} className="flex gap-3 items-start p-2.5 rounded-xl border border-neutral-100/50 bg-neutral-50/20 animate-pulse animate-duration-1000">
+                                                        <div className="h-7 w-7 rounded-lg bg-neutral-200 shrink-0" />
                                                         <div className="flex-1 space-y-2 py-0.5">
-                                                            <div className="h-3 bg-slate-200 rounded w-1/3" />
-                                                            <div className="h-2.5 bg-slate-200 rounded w-5/6" />
-                                                            <div className="h-2 bg-slate-100/80 rounded w-1/4" />
+                                                            <div className="h-3 bg-neutral-200 rounded w-1/3" />
+                                                            <div className="h-2.5 bg-neutral-200 rounded w-5/6" />
                                                         </div>
                                                     </div>
                                                 ))}
                                             </div>
                                         ) : visibleNotifications.length === 0 ? (
                                             <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
-                                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-50 border border-gray-100 text-gray-400">
-                                                    <Check className="h-5 w-5" />
+                                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-50 border border-neutral-100 text-neutral-400">
+                                                    <Check className="h-4 w-4" />
                                                 </div>
-                                                <p className="mt-3 text-xs font-semibold text-gray-950">Inbox is clean</p>
-                                                <p className="mt-1 text-[11px] text-gray-500">No warnings or recent account updates to show.</p>
+                                                <p className="mt-3 text-xs font-bold text-neutral-900 uppercase tracking-wider font-mono">All Caught Up</p>
+                                                <p className="mt-1 text-[11px] text-neutral-500">No new wallet or system alerts at this moment.</p>
                                             </div>
                                         ) : (
                                             visibleNotifications.map(item => {
                                                 const isCritical = item.type === 'critical';
                                                 const isError = item.type === 'error';
                                                 const isSuccess = item.type === 'success';
+                                                const isWarning = item.type === 'warning';
 
                                                 return (
                                                     <div
@@ -590,43 +594,51 @@ export default function Layout() {
                                                             setIsNotificationsOpen(false);
                                                             if (item.link) navigate(item.link);
                                                         }}
-                                                        className={`group relative flex items-start gap-3 p-3.5 text-left transition-all cursor-pointer hover:bg-slate-50/70 ${!item.read ? 'bg-emerald-50/[0.04]' : ''}`}
+                                                        className={`group relative flex items-start gap-3 px-3 py-2.5 mx-2 my-1 rounded-xl border transition-all duration-155 cursor-pointer hover:bg-neutral-50/50 active:scale-[0.99] ${!item.read
+                                                                ? 'bg-[#0070d1]/[0.02] border-neutral-150'
+                                                                : 'bg-transparent border-transparent'
+                                                            }`}
+                                                        style={{ borderRadius: '10px' }}
                                                     >
-                                                        {/* Left indicator line */}
+                                                        {/* Pulsing blue unread dot indicator */}
                                                         {!item.read && (
-                                                            <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#128C7E]" />
+                                                            <span className="absolute left-1.5 top-4.5 h-1.5 w-1.5 rounded-full bg-[#0070d1] animate-pulse" />
                                                         )}
 
-                                                        {/* Icon container */}
-                                                        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border shadow-sm ${isCritical
-                                                            ? 'bg-rose-50 border-rose-100/50 text-rose-600 animate-pulse'
-                                                            : isError
-                                                                ? 'bg-red-50 border-red-100/50 text-red-650'
-                                                                : isSuccess
-                                                                    ? 'bg-emerald-50 border-emerald-100/50 text-emerald-600'
-                                                                    : 'bg-gray-50 border-gray-100 text-gray-600'
+                                                        {/* Status Icon Indicator */}
+                                                        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-xs shadow-[0_1px_2px_rgba(0,0,0,0.01)] ${isCritical
+                                                                ? 'bg-rose-50 border-rose-100 text-rose-600'
+                                                                : isError
+                                                                    ? 'bg-red-50 border-red-100 text-red-600'
+                                                                    : isSuccess
+                                                                        ? 'bg-emerald-50 border-emerald-100 text-emerald-600'
+                                                                        : isWarning
+                                                                            ? 'bg-amber-50 border-amber-100 text-amber-600'
+                                                                            : 'bg-neutral-50 border-neutral-200 text-neutral-600'
                                                             }`}
                                                         >
                                                             {isCritical ? (
-                                                                <AlertTriangle className="h-4.5 w-4.5" />
+                                                                <AlertTriangle className="h-3.5 w-3.5" />
                                                             ) : isError ? (
-                                                                <AlertCircle className="h-4.5 w-4.5" />
+                                                                <AlertCircle className="h-3.5 w-3.5" />
                                                             ) : isSuccess ? (
-                                                                <CheckCircle2 className="h-4.5 w-4.5" />
+                                                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                                            ) : isWarning ? (
+                                                                <AlertCircle className="h-3.5 w-3.5" />
                                                             ) : (
-                                                                <Bell className="h-4.5 w-4.5" />
+                                                                <Bell className="h-3.5 w-3.5" />
                                                             )}
                                                         </div>
 
-                                                        {/* Text details */}
+                                                        {/* Details */}
                                                         <div className="min-w-0 flex-1 pr-4">
-                                                            <p className={`text-xs font-bold leading-tight ${!item.read ? 'text-gray-950' : 'text-gray-600'}`}>
+                                                            <p className={`text-xs font-semibold tracking-tight leading-tight ${!item.read ? 'text-neutral-900' : 'text-neutral-600'}`}>
                                                                 {item.title}
                                                             </p>
-                                                            <p className="mt-1 text-[11px] leading-normal text-gray-500">
+                                                            <p className="mt-0.5 text-[11px] leading-normal text-neutral-500 font-medium">
                                                                 {item.message}
                                                             </p>
-                                                            <span className="mt-1.5 block text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                                                            <span className="mt-1 block text-[8px] font-bold text-neutral-400 uppercase tracking-wider font-mono">
                                                                 {formatRelativeTime(item.time)}
                                                             </span>
                                                         </div>
@@ -635,16 +647,17 @@ export default function Layout() {
                                                         <button
                                                             type="button"
                                                             onClick={(e) => handleDismissNotification(item.id, e)}
-                                                            className="absolute right-2.5 top-2.5 rounded-md p-1 text-gray-350 opacity-0 hover:bg-gray-150/70 hover:text-gray-700 group-hover:opacity-100 transition-all focus:opacity-100"
+                                                            className="absolute right-2 top-2 rounded p-0.5 text-neutral-400 opacity-0 hover:bg-neutral-100 hover:text-neutral-700 group-hover:opacity-100 transition-all focus:opacity-100"
                                                             aria-label="Dismiss notification"
                                                         >
-                                                            <X className="h-3.5 w-3.5" />
+                                                            <X className="h-3 w-3" />
                                                         </button>
                                                     </div>
                                                 );
                                             })
                                         )}
                                     </div>
+
                                 </div>
                             </div>
                             <div className="relative flex min-w-0 items-center gap-2 sm:gap-3">
