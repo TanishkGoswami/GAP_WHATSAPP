@@ -293,7 +293,7 @@ export async function updateBusinessProfile(req: any, res: Response) {
     }
 }
 
-function normalizeMetaTemplateStatus(status: any) {
+export function normalizeMetaTemplateStatus(status: any) {
     const value = String(status || 'PENDING').toUpperCase();
     if (value.includes('APPROVED') || value === 'ACTIVE' || value === 'ACTIVE - QUALITY PENDING') return 'APPROVED';
     if (value.includes('REJECT')) return 'REJECTED';
@@ -340,7 +340,7 @@ function mergeTemplateRows(metaRows: any[], localRows: any[]) {
     return [...byKey.values()].sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
 }
 
-async function upsertLocalTemplateSubmission(params: {
+export async function upsertLocalTemplateSubmission(params: {
     organization_id: string;
     wa_account_id?: string | null;
     waba_id?: string | null;

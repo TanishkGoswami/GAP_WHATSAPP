@@ -26,11 +26,13 @@ const extraCorsOrigins = String(process.env.CORS_ORIGINS || '')
     .map(origin => origin.trim())
     .filter(Boolean);
 
+const publicBaseUrl = process.env.PUBLIC_BASE_URL ? String(process.env.PUBLIC_BASE_URL).trim() : null;
+
 export const corsOrigins = [
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:3001",
-    "https://parted-deuce-penpal.ngrok-free.dev",
+    ...(publicBaseUrl ? [publicBaseUrl] : []),
     "https://w.getaipilot.in",
     "https://wb.getaipilot.in",
     ...extraCorsOrigins

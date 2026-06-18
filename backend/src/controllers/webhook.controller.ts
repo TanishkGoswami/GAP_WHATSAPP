@@ -3,10 +3,15 @@ import crypto from "crypto";
 import { supabase } from '../config/supabase.js';
 import { io } from '../socket.js';
 import { storeMessage, upsertConversation } from '../services/messages.service.js';
-import { sendTextMessage } from '../services/messages.sender.js';
+import { sendTextMessage, applyReactionUpdate, downloadMetaMedia, sendInteractiveButtons, sendFlowMediaMessageMeta } from '../services/messages.sender.js';
 import { processFlowEngine } from '../services/flows.service.js';
 import { upsertContact } from '../services/contacts.service.js';
 import { getBotAgentReply } from '../services/ai.service.js';
+import { normalizeMetaTemplateStatus, upsertLocalTemplateSubmission } from './whatsapp.controller.js';
+import { encryptToken } from '../utils/crypto.js';
+import { uploadMediaToStorage } from '../services/broadcast.service.js';
+
+const ACCESS_TOKEN = process.env.WA_ACCESS_TOKEN;
 // (Add other imports as needed later)
 
 const VERIFY_TOKEN = process.env.WA_VERIFY_TOKEN;

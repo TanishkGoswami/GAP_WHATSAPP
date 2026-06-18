@@ -45,7 +45,7 @@ export async function connectToWhatsApp(sessionId: string, orgId: string, io?: a
             keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         browser: Browsers.macOS('Desktop'),
-        generateHighQualityLinkPreviews: true,
+        generateHighQualityLinkPreview: true,
         getMessage: async (key) => {
             return { conversation: 'Hello' };
         }

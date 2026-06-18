@@ -131,6 +131,9 @@ export default function LiveChat() {
     const fetchMessagesInFlightRef = useRef(new Set())
     const lastActiveSyncRef = useRef(0)
     const lastChatListSyncRef = useRef(0)
+    const lastSelectedChatIdRef = useRef(null)
+    const lastMessageIdRef = useRef(null)
+    const isNearBottomRef = useRef(true)
 
     const [hasMoreMessages, setHasMoreMessages] = useState(true)
     const [isLoadingOlder, setIsLoadingOlder] = useState(false)
@@ -289,6 +292,48 @@ export default function LiveChat() {
         authHeadersRef.current = authHeaders
     }, [session, user, authHeaders])
 
+    // Auto scroll to bottom on new messages
+    useEffect(() => {
+        if (messages.length === 0) return;
+
+        const currentChatId = selectedChat?.id;
+        const isNewChat = lastSelectedChatIdRef.current !== currentChatId;
+
+        const lastMsg = messages[messages.length - 1];
+        const lastMsgId = lastMsg?.id || lastMsg?.wa_message_id;
+        const isNewMessageAdded = lastMessageIdRef.current !== lastMsgId;
+
+        // Update refs
+        lastSelectedChatIdRef.current = currentChatId;
+        lastMessageIdRef.current = lastMsgId;
+
+        if (isNewChat) {
+            isNearBottomRef.current = true;
+            setNewMessagesPending(0);
+            setTimeout(() => {
+                scrollToBottom('auto');
+            }, 50);
+            setTimeout(() => {
+                scrollToBottom('auto');
+            }, 150);
+            return;
+        }
+
+        if (isNewMessageAdded) {
+            const isOutbound = lastMsg?.sender === 'agent';
+            if (isOutbound || isNearBottomRef.current) {
+                setTimeout(() => {
+                    scrollToBottom('smooth');
+                }, 50);
+                setTimeout(() => {
+                    scrollToBottom('smooth');
+                }, 150);
+            } else {
+                setNewMessagesPending(n => n + 1);
+            }
+        }
+    }, [messages, selectedChat]);
+
     // Close floating menus when clicking outside
     useEffect(() => {
         const handleClickOutside = (e) => {
@@ -324,7 +369,15 @@ export default function LiveChat() {
     }
 
     const scrollToBottom = (behavior = 'auto') => {
-        messagesEndRef.current?.scrollIntoView({ behavior })
+        const el = messagesListRef.current
+        if (el) {
+            el.scrollTo({
+                top: el.scrollHeight,
+                behavior
+            })
+        } else {
+            messagesEndRef.current?.scrollIntoView({ behavior })
+        }
         setShowJumpToLatest(false)
     }
 
@@ -720,7 +773,7 @@ export default function LiveChat() {
             let url = `${API_BASE}/conversations`;
             if (user?.id) url += `?user_id=${user.id}`;
             if (selectedAccount !== 'All') {
-                url += `${url.includes('?') ? '&' : '?'}wa_account_id=${selectedAccount}`; // In real app, pass ID not name
+                url += `${url.includes('?') ? '&' : '?'}wa_account_id=${encodeURIComponent(selectedAccount)}`;
             }
 
             const res = await fetch(url, {
@@ -934,7 +987,6 @@ export default function LiveChat() {
                 if (!opts.silent) {
                     setNewMessagesPending(0)
                     setShowJumpToLatest(false)
-                    requestAnimationFrame(() => scrollToBottom('auto'))
                 }
             }
 
@@ -1010,9 +1062,11 @@ export default function LiveChat() {
             setSelectedBotId(null);
             setNewMessagesPending(0);
             setShowJumpToLatest(false);
+            setMessages([]);
             return;
         }
 
+        setMessages([]);
         setNewMessagesPending(0)
         setShowJumpToLatest(false)
         fetchMessages(selectedChat, { limit: 50 })
@@ -1200,12 +1254,7 @@ export default function LiveChat() {
                         }, 250)
                     }
 
-                    if (nearBottom) {
-                        requestAnimationFrame(() => scrollToBottom('smooth'))
-                        setNewMessagesPending(0)
-                    } else {
-                        setNewMessagesPending((n) => n + 1)
-                    }
+
                 } else if (msg?.conversation_id && idsEqual(msg.conversation_id, activeChat.id)) {
                     // Fallback: if the server emitted a message for the active conversation but our match logic missed,
                     // re-fetch to keep UI in sync.
@@ -1661,7 +1710,6 @@ export default function LiveChat() {
         const replyToSend = replyingTo
         setMessageText('')
         setReplyingTo(null)
-        requestAnimationFrame(() => scrollToBottom('smooth'))
 
         try {
             const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session'
@@ -2037,7 +2085,6 @@ export default function LiveChat() {
                 forwarded: true,
                 content: { text, forwarded: true },
             }])
-            requestAnimationFrame(() => scrollToBottom('smooth'))
         }
         try {
             const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session'
@@ -2782,11 +2829,10 @@ export default function LiveChat() {
                                     <div className="relative" data-bot-menu>
                                         <button
                                             onClick={() => setShowBotMenu(!showBotMenu)}
-                                            className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold tracking-tight transition-all duration-150 outline-none ${
-                                                effectiveBotEnabled
-                                                    ? 'border-neutral-900 bg-neutral-900 text-white shadow-sm hover:bg-neutral-800'
-                                                    : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-800'
-                                            }`}
+                                            className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold tracking-tight transition-all duration-150 outline-none ${effectiveBotEnabled
+                                                ? 'border-neutral-900 bg-neutral-900 text-white shadow-sm hover:bg-neutral-800'
+                                                : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                                                }`}
                                             title={effectiveBotEnabled ? 'AI agent automation is active' : 'Enable AI agent'}
                                         >
                                             {effectiveBotEnabled ? (
@@ -2946,6 +2992,7 @@ export default function LiveChat() {
                                     if (activeMessageMenuId) closeMessageMenu()
                                     if (el.scrollTop < 80) loadOlder()
                                     const nearBottom = isNearBottom()
+                                    isNearBottomRef.current = nearBottom
                                     setShowJumpToLatest(!nearBottom)
                                     if (nearBottom) setNewMessagesPending(0)
                                 }}
@@ -3085,9 +3132,7 @@ export default function LiveChat() {
                                 >
                                     <ArrowDown className="h-5 w-5" />
                                     {newMessagesPending > 0 && (
-                                        <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-[11px] font-bold leading-none text-white shadow-sm">
-                                            {newMessagesPending > 99 ? '99+' : newMessagesPending}
-                                        </span>
+                                        <span className="absolute right-0.5 top-0.5 flex h-3 w-3 rounded-full bg-[#25d366] ring-2 ring-[#00a884]" />
                                     )}
                                 </button>
                             )}

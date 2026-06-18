@@ -93,11 +93,13 @@ export async function sendFlowMediaMessageMeta(params: {
     let fromId = PHONE_NUMBER_ID;
 
     if (params.phone_number_id && supabase) {
-        const { data } = await supabase
+        const { data: accounts } = await supabase
             .from('w_wa_accounts')
             .select('access_token_encrypted')
             .eq('phone_number_id', params.phone_number_id)
-            .single();
+            .order('status', { ascending: true })
+            .limit(1);
+        const data = accounts?.[0];
         if (data?.access_token_encrypted) {
             token = decryptToken(data.access_token_encrypted);
             fromId = params.phone_number_id;
@@ -132,7 +134,13 @@ export async function sendTextMessage(to: string, body: string, phone_number_id:
     let fromId = PHONE_NUMBER_ID;
 
     if (phone_number_id && supabase) {
-        const { data } = await supabase.from('w_wa_accounts').select('access_token_encrypted').eq('phone_number_id', phone_number_id).single();
+        const { data: accounts } = await supabase
+            .from('w_wa_accounts')
+            .select('access_token_encrypted')
+            .eq('phone_number_id', phone_number_id)
+            .order('status', { ascending: true })
+            .limit(1);
+        const data = accounts?.[0];
         if (data?.access_token_encrypted) {
             token = decryptToken(data.access_token_encrypted);
             fromId = phone_number_id;
@@ -174,7 +182,13 @@ export async function sendReactionMessage(to: string, targetMessageId: string, e
     let fromId = PHONE_NUMBER_ID;
 
     if (phone_number_id && supabase) {
-        const { data } = await supabase.from('w_wa_accounts').select('access_token_encrypted').eq('phone_number_id', phone_number_id).single();
+        const { data: accounts } = await supabase
+            .from('w_wa_accounts')
+            .select('access_token_encrypted')
+            .eq('phone_number_id', phone_number_id)
+            .order('status', { ascending: true })
+            .limit(1);
+        const data = accounts?.[0];
         if (data?.access_token_encrypted) {
             token = decryptToken(data.access_token_encrypted);
             fromId = phone_number_id;
@@ -227,3 +241,107 @@ export function applyReactionUpdate(existing: any, emoji: string | null, actor: 
     }
     return reactions;
 }
+
+export async function downloadMetaMedia(params: {
+  phone_number_id: string;
+  mediaId: string;
+}): Promise<{ buffer: Buffer; mimeType: string; fileName: string } | null> {
+  if (!supabase) return null;
+
+  const { data: accounts } = await supabase
+    .from("w_wa_accounts")
+    .select("access_token_encrypted")
+    .eq("phone_number_id", params.phone_number_id)
+    .order("status", { ascending: true })
+    .limit(1);
+
+  const acc = accounts?.[0];
+
+  const rawToken = acc?.access_token_encrypted || ACCESS_TOKEN;
+  const token = rawToken ? decryptToken(rawToken) : rawToken;
+  if (!token) return null;
+
+  const metaUrl = `https://graph.facebook.com/v21.0/${params.mediaId}`;
+  const metaRes = await fetch(metaUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!metaRes.ok) return null;
+  const metaJson: any = await metaRes.json();
+  const downloadUrl = metaJson?.url;
+  const mimeType = metaJson?.mime_type || "application/octet-stream";
+  const fileName = metaJson?.filename || `media-${params.mediaId}`;
+  if (!downloadUrl) return null;
+
+  const binRes = await fetch(downloadUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!binRes.ok) return null;
+  const arrayBuf = await binRes.arrayBuffer();
+  return { buffer: Buffer.from(arrayBuf), mimeType, fileName };
+}
+
+export async function sendInteractiveButtons(
+  to: string,
+  body: string,
+  buttons: any[],
+  footer: string = "",
+  phone_number_id: string | null = null,
+) {
+  let token = ACCESS_TOKEN;
+  let fromId = PHONE_NUMBER_ID;
+
+  if (phone_number_id && supabase) {
+    const { data: accounts } = await supabase
+      .from("w_wa_accounts")
+      .select("access_token_encrypted")
+      .eq("phone_number_id", phone_number_id)
+      .order("status", { ascending: true })
+      .limit(1);
+    const data = accounts?.[0];
+    if (data?.access_token_encrypted) {
+      token = decryptToken(data.access_token_encrypted);
+      fromId = phone_number_id;
+    }
+  }
+
+  if (!fromId || !token) throw new Error("Missing WA creds for send");
+
+  const url = `https://graph.facebook.com/v21.0/${fromId}/messages`;
+
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "button",
+      body: { text: body },
+      footer: footer ? { text: footer } : undefined,
+      action: {
+        buttons: buttons.map((b) => ({
+          type: "reply",
+          reply: {
+            id: b.id,
+            title: b.text.substring(0, 20), // WhatsApp limit
+          },
+        })),
+      },
+    },
+  };
+
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await r.json();
+  if (!r.ok) {
+    throw new Error(`Interactive send failed: ${JSON.stringify(data)}`);
+  }
+  return data;
+}
+

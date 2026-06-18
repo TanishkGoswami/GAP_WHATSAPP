@@ -16,6 +16,7 @@
     "exclude": [
         "node_modules",
         "extract_agents.ts",
-        "temp_flow.ts"
+        "temp_flow.ts",
+        "extract_flow_engine.ts"
     ]
 }
