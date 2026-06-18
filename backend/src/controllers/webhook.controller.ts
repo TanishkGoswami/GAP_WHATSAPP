@@ -1179,10 +1179,41 @@ export async function handleWebhook(req: any, res: Response) {
         errorMessage,
       });
 
+      const { data: existingMessage, error: existingMessageError } = await supabase
+        .from("w_messages")
+        .select("id, content, metadata, automation_source")
+        .eq("wa_message_id", wa_message_id)
+        .maybeSingle();
+
+      if (existingMessageError) {
+        webhookError("status.message_lookup.failed", existingMessageError, {
+          requestId,
+          wa_message_id,
+        });
+      }
+
+      const nextContent =
+        existingMessage?.content && typeof existingMessage.content === "object"
+          ? { ...existingMessage.content }
+          : {};
+      nextContent.meta_status = status;
+      if (errorMessage) nextContent.meta_status_error = errorMessage;
+
+      const nextMetadata =
+        existingMessage?.metadata && typeof existingMessage.metadata === "object"
+          ? { ...existingMessage.metadata }
+          : {};
+      nextMetadata.last_meta_status = newStatus;
+      if (errorMessage) nextMetadata.last_meta_error = errorMessage;
+
       // Update message status in DB
       const { error: statusUpdateError } = await supabase
         .from("w_messages")
-        .update({ status: newStatus })
+        .update({
+          status: newStatus,
+          content: nextContent,
+          metadata: nextMetadata,
+        })
         .eq("wa_message_id", wa_message_id);
 
       if (statusUpdateError) {
@@ -1197,6 +1228,83 @@ export async function handleWebhook(req: any, res: Response) {
           wa_message_id,
           status: newStatus,
         });
+      }
+
+      const campaignId = nextMetadata.campaign_id || null;
+      if (campaignId && existingMessage?.automation_source === "broadcast") {
+        const { data: campaign, error: campaignLookupError } = await supabase
+          .from("w_campaigns")
+          .select("id, results")
+          .eq("id", campaignId)
+          .maybeSingle();
+
+        if (campaignLookupError) {
+          webhookError("status.campaign_lookup.failed", campaignLookupError, {
+            requestId,
+            campaignId,
+            wa_message_id,
+          });
+        } else if (campaign?.id && Array.isArray(campaign.results)) {
+          let matched = false;
+          const nextResults = campaign.results.map((result: any) => {
+            const sameMessage = result?.wa_message_id && result.wa_message_id === wa_message_id;
+            const samePhone =
+              !result?.wa_message_id &&
+              nextMetadata.recipient &&
+              String(result?.phone || "") === String(nextMetadata.recipient);
+            if (!sameMessage && !samePhone) return result;
+            matched = true;
+            return {
+              ...result,
+              wa_message_id,
+              delivery_status: newStatus,
+              status: newStatus === "failed" ? "failed" : result.status || "sent",
+              error: errorMessage || result.error || null,
+              meta_status_timestamp: status.timestamp || null,
+            };
+          });
+
+          if (matched) {
+            const sentCount = nextResults.filter((result: any) => result.status !== "failed").length;
+            const failedCount = nextResults.filter((result: any) => result.status === "failed").length;
+            const campaignUpdatePayload: any = {
+              results: nextResults,
+              sent_count: sentCount,
+              failed_count: failedCount,
+            };
+            if (failedCount === nextResults.length) {
+              campaignUpdatePayload.billing_status = "failed";
+            }
+            const { error: campaignUpdateError } = await supabase
+              .from("w_campaigns")
+              .update(campaignUpdatePayload)
+              .eq("id", campaign.id);
+
+            if (campaignUpdateError) {
+              webhookError("status.campaign_update.failed", campaignUpdateError, {
+                requestId,
+                campaignId,
+                wa_message_id,
+              });
+            } else {
+              webhookLog("status.campaign_update.ok", {
+                requestId,
+                campaignId,
+                wa_message_id,
+                status: newStatus,
+                sentCount,
+                failedCount,
+              });
+            }
+          } else {
+            webhookLog("status.campaign_result_match.empty", {
+              requestId,
+              campaignId,
+              wa_message_id,
+              recipient: nextMetadata.recipient || null,
+            });
+          }
+        }
       }
 
       io.emit("message_status_update", {
