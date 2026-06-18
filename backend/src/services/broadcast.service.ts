@@ -4,6 +4,7 @@ import { getActiveWhatsappRate, normalizeWhatsappBillingCategory } from './messa
 import { getMetaSendErrorMessage, inspectMetaTokenPermissions } from './meta.service.js';
 import { decryptToken } from '../utils/crypto.js';
 import { storeMessage, upsertConversation, recordWhatsappMessageUsage } from './messages.service.js';
+import { derivePhoneForStorage } from '../utils/format.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -157,6 +158,12 @@ function resolveTemplateButtonUrl(urlDef: string, value: string) {
     return urlDef.endsWith('/') ? `${urlDef}${value}` : `${urlDef}/${value}`;
 }
 
+function normalizeBroadcastRecipient(value: any) {
+    const normalized = derivePhoneForStorage(value);
+    if (!normalized) return null;
+    return normalized;
+}
+
 export async function processCampaign(campaign: any) {
     try {
         const originalVariableMapping = campaign?.variable_mapping || {};
@@ -259,10 +266,16 @@ export async function processCampaign(campaign: any) {
                     break;
                 }
             }
-            const recipient = contact.phone || contact.wa_id;
+            const rawRecipient = contact.phone || contact.wa_id;
+            const recipient = normalizeBroadcastRecipient(rawRecipient);
             if (!recipient) {
                 failed++;
-                results.push({ phone: null, name: contact.name || 'Unknown', status: 'failed', error: 'Missing phone number' });
+                results.push({
+                    phone: rawRecipient || null,
+                    name: contact.name || contact.custom_name || 'Unknown',
+                    status: 'failed',
+                    error: 'Invalid or missing phone number. Use international format, for example 919876543210.'
+                });
                 continue;
             }
 
@@ -357,6 +370,16 @@ export async function processCampaign(campaign: any) {
             };
 
             try {
+                console.log('[broadcast] Sending template', {
+                    campaign_id: campaign.id,
+                    contact: contact.name || contact.custom_name || 'Unknown',
+                    raw_recipient: rawRecipient,
+                    recipient,
+                    template: campaign.template_name,
+                    language: campaign.template_language,
+                    components_count: components.length,
+                });
+
                 const response = await fetch(`https://graph.facebook.com/v21.0/${phone_number_id}/messages`, {
                     method: 'POST',
                     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -367,10 +390,15 @@ export async function processCampaign(campaign: any) {
 
                 if (response.ok) {
                     sent++;
-                    results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'sent' });
-
                     const wa_message_id = data.messages?.[0]?.id;
                     const realWaId = data.contacts?.[0]?.wa_id || recipient;
+                    results.push({
+                        phone: recipient,
+                        raw_phone: rawRecipient,
+                        name: contact.name || contact.custom_name || 'Unknown',
+                        status: 'sent',
+                        wa_message_id: wa_message_id || null,
+                    });
 
                     let currentContactId = contact.id;
 
@@ -448,6 +476,12 @@ export async function processCampaign(campaign: any) {
                                 },
                                 sender_type: 'system',
                                 automation_source: 'broadcast',
+                                metadata: {
+                                    campaign_id: campaign.id,
+                                    template_name: campaign.template_name,
+                                    recipient,
+                                    raw_recipient: rawRecipient,
+                                },
                             });
 
                             await recordWhatsappMessageUsage({
@@ -465,12 +499,39 @@ export async function processCampaign(campaign: any) {
                         }
                     }
                 } else {
+                    const metaError = getMetaSendErrorMessage(data.error);
+                    console.warn('[broadcast] Meta template send failed', {
+                        campaign_id: campaign.id,
+                        raw_recipient: rawRecipient,
+                        recipient,
+                        template: campaign.template_name,
+                        language: campaign.template_language,
+                        status: response.status,
+                        error: metaError,
+                        meta_error: data.error || data,
+                    });
                     failed++;
-                    results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'failed', error: getMetaSendErrorMessage(data.error) });
+                    results.push({
+                        phone: recipient,
+                        raw_phone: rawRecipient,
+                        name: contact.name || contact.custom_name || 'Unknown',
+                        status: 'failed',
+                        error: metaError,
+                        meta_code: data.error?.code || null,
+                        meta_subcode: data.error?.error_subcode || null,
+                        fbtrace_id: data.error?.fbtrace_id || null,
+                    });
                 }
             } catch (e: any) {
+                console.error('[broadcast] Template send exception', {
+                    campaign_id: campaign.id,
+                    raw_recipient: rawRecipient,
+                    recipient,
+                    template: campaign.template_name,
+                    error: e?.message || String(e),
+                });
                 failed++;
-                results.push({ phone: recipient, name: contact.name || contact.custom_name || 'Unknown', status: 'failed', error: e.message || 'Network/Unknown Error' });
+                results.push({ phone: recipient, raw_phone: rawRecipient, name: contact.name || contact.custom_name || 'Unknown', status: 'failed', error: e.message || 'Network/Unknown Error' });
             }
 
             await new Promise(r => setTimeout(r, 300));
