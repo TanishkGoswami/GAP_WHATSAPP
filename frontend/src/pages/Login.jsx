@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Loader2, Mail, Lock, MessageSquare, ShieldCheck, Sparkles, ArrowRight, CheckCircle2, Users, Zap } from 'lucide-react'
+import { Loader2, Mail, Lock, MessageSquare, ShieldCheck, Sparkles, ArrowRight, CheckCircle2, Users, Zap, Eye, EyeOff } from 'lucide-react'
 
 export default function Login() {
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
+    const [showPassword, setShowPassword] = useState(false)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const { signIn } = useAuth()
@@ -140,14 +141,26 @@ export default function Login() {
                                         <input
                                             id="password"
                                             name="password"
-                                            type="password"
+                                            type={showPassword ? 'text' : 'password'}
                                             autoComplete="current-password"
                                             required
-                                            className="h-12 w-full rounded border border-gray-300 bg-white py-3 pl-12 pr-4 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-[#128C7E] focus:ring-2 focus:ring-[#25D366]/15"
+                                            className="h-12 w-full rounded border border-gray-300 bg-white py-3 pl-12 pr-12 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-[#128C7E] focus:ring-2 focus:ring-[#25D366]/15"
                                             placeholder="Enter password"
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
                                         />
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+                                            aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                        >
+                                            {showPassword ? (
+                                                <EyeOff className="h-5 w-5" />
+                                            ) : (
+                                                <Eye className="h-5 w-5" />
+                                            )}
+                                        </button>
                                     </span>
                                 </label>
 

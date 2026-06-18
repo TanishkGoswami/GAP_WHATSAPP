@@ -2,7 +2,10 @@ import * as fs from 'fs';
 import { supabase } from '../config/supabase.js';
 import { io } from '../socket.js';
 import { storeMessage, upsertConversation } from './messages.service.js';
-import { sessions, latestQrBySession, groupNameCache, profilePhotoCache, reconnectAttempts, MAX_RECONNECT_ATTEMPTS, initializingSessions, logger } from './whatsapp.service.js';
+import { sessions, latestQrBySession, groupNameCache, profilePhotoCache, reconnectAttempts, MAX_RECONNECT_ATTEMPTS, initializingSessions, logger, GROUP_NAME_TTL_MS } from './whatsapp.service.js';
+import { processFlowEngine } from './flows.service.js';
+import { applyReactionUpdate } from './messages.sender.js';
+import { uploadMediaToStorage } from './broadcast.service.js';
 import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
@@ -15,6 +18,18 @@ import makeWASocket, {
 import { upsertContact, sanitizeContactDisplayName, normalizeContactWaIdForStorage, pickBestBaileysContactName } from './contacts.service.js';
 import { getBotAgentReply } from './ai.service.js';
 // Add any missing helpers here or import them
+
+async function ensureDefaultOrganizationId(): Promise<string | null> {
+    return null;
+}
+
+async function streamToBuffer(stream: any): Promise<Buffer> {
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks);
+}
 
 async function upsertBaileysWaAccount(orgId: string | null | undefined, phone: string | null | undefined) {
     const cleanPhone = String(phone || '').replace(/\D+/g, '');
@@ -505,6 +520,7 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                         // Bot Auto-Reply for Baileys (only for inbound text messages)
                         if (!isOutbound && normalizedType === 'text' && captionText) {
                             try {
+                                console.log(`📥 [Baileys] Inbound text from ${contactWaId}: "${captionText}"`);
                                 let flowConsumedMessage = false;
                                 const flowResult = await processFlowEngine(orgId, contact.id, conv.id, captionText, stored?.id || null, conv.wa_account_id || null);
 

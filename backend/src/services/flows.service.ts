@@ -224,6 +224,52 @@ export function validateFlowDefinition(flow: any) {
     return { valid: errors.length === 0, errors };
 }
 
+export type FlowEngineResult = {
+  consumed: boolean;
+  output: string | null;
+  interactive?: any;
+  media?: Array<{
+    type: "image" | "video" | "audio" | "document";
+    url: string;
+    caption?: string;
+    fileName?: string;
+    mimeType?: string;
+  }>;
+  handoff?: boolean;
+  flow_id?: string | null;
+  flow_version_id?: string | null;
+  flow_session_id?: string | null;
+  flow_run_id?: string | null;
+  flow_node_id?: string | null;
+};
+
+export async function logFlowStep(params: {
+  organization_id: string;
+  run_id?: string | null;
+  node_id: string;
+  node_type: string;
+  input_data?: any;
+  output_data?: any;
+  status?: "success" | "failed" | "skipped" | "waiting";
+  error_message?: string | null;
+}) {
+  if (!params.run_id) return;
+  try {
+    await supabase.from("w_flow_run_steps").insert({
+      organization_id: params.organization_id,
+      run_id: params.run_id,
+      node_id: params.node_id,
+      node_type: params.node_type,
+      input_data: params.input_data || {},
+      output_data: params.output_data || {},
+      status: params.status || "success",
+      error_message: params.error_message || null,
+    });
+  } catch (err: any) {
+    console.warn("[Flow] Step log failed:", err?.message || err);
+  }
+}
+
 export async function processFlowEngine(
   organization_id: string,
   contact_id: string,
@@ -236,12 +282,12 @@ export async function processFlowEngine(
 
   // Flow Builder has priority and is independent from the per-chat AI-agent toggle.
 
-  // 1. Check for active session
+  // 1. Check for active session by contact_id
   const { data: session } = await supabase
     .from("w_flow_sessions")
-    .select("*")
+    .select("*, w_flows(status)")
     .eq("organization_id", organization_id)
-    .eq("conversation_id", conversation_id)
+    .eq("contact_id", contact_id)
     .in("status", ["active", "waiting"])
     .maybeSingle();
 
@@ -253,13 +299,63 @@ export async function processFlowEngine(
   let isResuming = false;
 
   if (session) {
-    currentFlowId = session.flow_id;
-    currentFlowVersionId = session.flow_version_id || null;
-    currentNodeId = session.current_node_id;
-    session_id = session.id;
-    run_id = session.active_run_id || null;
-    isResuming = true;
-  } else {
+    if (session.conversation_id !== conversation_id) {
+      // The session is tied to a different conversation (e.g. deleted/recreated).
+      // Discard/abandon it to allow new sessions to be created for this contact.
+      await supabase
+        .from("w_flow_sessions")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", session.id);
+
+      if (session.active_run_id) {
+        await supabase
+          .from("w_flow_runs")
+          .update({
+            status: "completed",
+            ended_at: new Date().toISOString(),
+          })
+          .eq("id", session.active_run_id);
+      }
+      console.log(`[Flow] Abandoned orphaned session ${session.id} for contact ${contact_id} due to conversation mismatch (old: ${session.conversation_id}, new: ${conversation_id})`);
+    } else {
+      const flowObj = (session as any).w_flows;
+      const flowStatus = Array.isArray(flowObj) ? flowObj[0]?.status : flowObj?.status;
+
+      if (!flowStatus || flowStatus !== "active") {
+        // Flow is archived, draft, or deleted; ignore/abandon the stale session
+        await supabase
+          .from("w_flow_sessions")
+          .update({
+            status: "completed",
+            completed_at: new Date().toISOString(),
+          })
+          .eq("id", session.id);
+
+        if (session.active_run_id) {
+          await supabase
+            .from("w_flow_runs")
+            .update({
+              status: "completed",
+              ended_at: new Date().toISOString(),
+            })
+            .eq("id", session.active_run_id);
+        }
+        console.log(`[Flow] Abandoned stale session ${session.id} for inactive flow ${session.flow_id} (status: ${flowStatus || "deleted"})`);
+      } else {
+        currentFlowId = session.flow_id;
+        currentFlowVersionId = session.flow_version_id || null;
+        currentNodeId = session.current_node_id;
+        session_id = session.id;
+        run_id = session.active_run_id || null;
+        isResuming = true;
+      }
+    }
+  }
+
+  if (!isResuming) {
     // 2. Check for trigger matches in active flows
     const { data: activeFlows } = await supabase
       .from("w_flows")
@@ -286,9 +382,15 @@ export async function processFlowEngine(
       const nodes = version?.nodes || flow.nodes || [];
       const allTriggers = getFlowTriggerKeywords(version || flow, nodes);
 
-      if (
-        allTriggers.some((t: string) => normalized.includes(t.toLowerCase()))
-      ) {
+      const isMatch = allTriggers.some((t: string) => {
+        const keyword = t.toLowerCase().trim();
+        if (!keyword) return false;
+        const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+        return regex.test(normalized);
+      });
+
+      if (isMatch) {
         matchedFlow = flow;
         matchedVersion = version;
         break;
@@ -506,8 +608,41 @@ export async function processFlowEngine(
               e.sourceHandle &&
               normalized.includes(e.sourceHandle.toLowerCase())
             );
-          }) ||
-          outEdges[0]; // fallback: pehla edge
+          });
+
+        if (!nextEdge) {
+          // User input didn't match any button option.
+          // ALWAYS consume the message when a flow session is active — never let AI bot take over.
+          // Re-send the button question so the user picks a valid option.
+          console.log(`[Flow] Resumed at button node but input "${text}" did not match any buttons. Re-asking button question.`);
+          const body = renderFlowTemplate(
+            currentNode.data?.config?.text || currentNode.data?.config?.headerText || "Please choose an option:",
+            flowState,
+          );
+          const footer = renderFlowTemplate(currentNode.data?.config?.footerText || "", flowState);
+          const buttons = (currentNode.data?.config?.buttons || []).filter((b: any) => b.text).slice(0, 3);
+          if (buttons.length > 0) {
+            return {
+              consumed: true,
+              output: null,
+              ...flowMeta,
+              flow_node_id: currentNode.id,
+              interactive: {
+                type: "button",
+                body,
+                footer,
+                buttons: buttons.map((b: any) => ({ id: b.id || b.text, text: b.text })),
+              },
+            };
+          }
+          // No buttons configured — re-ask as plain text
+          return {
+            consumed: true,
+            output: body || "Please reply with a valid option.",
+            ...flowMeta,
+            flow_node_id: currentNode.id,
+          };
+        }
       }
 
       if (nextEdge) {

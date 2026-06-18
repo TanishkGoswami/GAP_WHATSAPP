@@ -30,25 +30,32 @@ export async function getConversations(req: any, res: Response) {
             if (isUuid(wa_account_id)) {
                 query = query.eq('wa_account_id', wa_account_id);
             } else {
-                const raw = String(wa_account_id);
+                let raw = String(wa_account_id);
+                if (raw.startsWith(' ')) {
+                    raw = '+' + raw.trim();
+                }
                 const digits = raw.replace(/\D+/g, '');
 
                 const findAccountId = async (value: string) => {
                     const { data: byPhoneId, error: e1 } = await supabase
                         .from('w_wa_accounts')
                         .select('id')
+                        .eq('organization_id', organization_id)
                         .eq('phone_number_id', value)
-                        .maybeSingle();
+                        .order('status', { ascending: true })
+                        .limit(1);
                     if (e1) throw e1;
-                    if (byPhoneId?.id) return byPhoneId.id;
+                    if (byPhoneId?.[0]?.id) return byPhoneId[0].id;
 
                     const { data: byDisplay, error: e2 } = await supabase
                         .from('w_wa_accounts')
                         .select('id')
+                        .eq('organization_id', organization_id)
                         .eq('display_phone_number', value)
-                        .maybeSingle();
+                        .order('status', { ascending: true })
+                        .limit(1);
                     if (e2) throw e2;
-                    if (byDisplay?.id) return byDisplay.id;
+                    if (byDisplay?.[0]?.id) return byDisplay[0].id;
 
                     return null;
                 };

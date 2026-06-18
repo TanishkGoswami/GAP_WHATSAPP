@@ -13,6 +13,10 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true
+      },
+      '/webhook': {
+        target: 'http://localhost:3001',
+        changeOrigin: true
       }
     }
   },
