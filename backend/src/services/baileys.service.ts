@@ -17,7 +17,6 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import { upsertContact, sanitizeContactDisplayName, normalizeContactWaIdForStorage, pickBestBaileysContactName } from './contacts.service.js';
 import { getBotAgentReply } from './ai.service.js';
-// Add any missing helpers here or import them
 
 async function ensureDefaultOrganizationId(): Promise<string | null> {
     return null;

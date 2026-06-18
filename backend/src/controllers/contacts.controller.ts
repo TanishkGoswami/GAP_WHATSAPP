@@ -55,6 +55,33 @@ export async function getContacts(req: any, res: Response) {
     }
 }
 
+export async function getContactProfilePhoto(req: any, res: Response) {
+    const organization_id = req.organization_id;
+    const contactId = req.params.id;
+
+    try {
+        if (!organization_id) return res.status(400).json({ error: 'organization_id is required' });
+
+        const { data, error } = await supabase
+            .from('w_contacts')
+            .select('id, custom_fields')
+            .eq('id', contactId)
+            .eq('organization_id', organization_id)
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!data?.id) {
+            return res.status(200).json({ profile_photo_url: null });
+        }
+
+        const profilePhotoUrl = data.custom_fields?.profile_photo_url || null;
+        res.json({ profile_photo_url: profilePhotoUrl });
+    } catch (err: any) {
+        console.error('Error fetching contact profile photo:', err);
+        res.status(500).json({ error: err.message || 'Failed to fetch contact profile photo' });
+    }
+}
+
 export async function createContact(req: any, res: Response) {
     const organization_id = req.organization_id;
     const { name, phone, custom_name, tags = [], custom_fields = {}, wa_account_id = null } = req.body || {};

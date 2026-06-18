@@ -2,6 +2,30 @@ import { supabase } from '../config/supabase.js';
 import { isUuid } from '../utils/format.js';
 import { getBotAgentReply } from './ai.service.js';
 
+export type FlowEngineResult = {
+    consumed: boolean;
+    output?: string | null;
+    media?: Array<{
+        type: 'image' | 'video' | 'audio' | 'document';
+        url: string;
+        caption?: string | null;
+        mimeType?: string | null;
+        fileName?: string | null;
+    }>;
+    interactive?: {
+        type: 'button';
+        body: string;
+        footer?: string;
+        buttons: Array<{ id: string; text: string }>;
+    };
+    handoff?: boolean;
+    flow_id?: string | null;
+    flow_version_id?: string | null;
+    flow_session_id?: string | null;
+    flow_run_id?: string | null;
+    flow_node_id?: string | null;
+};
+
 export const SUPPORTED_FLOW_NODE_TYPES = new Set([
     'startBotFlow',
     'textMessage',
@@ -43,6 +67,33 @@ export function getFlowTriggerKeywords(flow: any, nodesOverride?: any[]): string
         ...parseFlowKeywords(flow?.triggers),
         ...parseFlowKeywords(startNode?.data?.config?.keywords),
     ])];
+}
+
+async function logFlowStep(params: {
+    organization_id: string;
+    run_id?: string | null;
+    node_id: string;
+    node_type: string;
+    input_data?: any;
+    output_data?: any;
+    status?: 'success' | 'failed' | 'skipped' | 'waiting';
+    error_message?: string | null;
+}) {
+    if (!params.run_id) return;
+    try {
+        await supabase.from('w_flow_run_steps').insert({
+            organization_id: params.organization_id,
+            run_id: params.run_id,
+            node_id: params.node_id,
+            node_type: params.node_type,
+            input_data: params.input_data || {},
+            output_data: params.output_data || {},
+            status: params.status || 'success',
+            error_message: params.error_message || null,
+        });
+    } catch (err: any) {
+        console.warn('[Flow] Step log failed:', err?.message || err);
+    }
 }
 
 export function normalizeFlowAccountScope(value: any) {
@@ -222,52 +273,6 @@ export function validateFlowDefinition(flow: any) {
     }
 
     return { valid: errors.length === 0, errors };
-}
-
-export type FlowEngineResult = {
-  consumed: boolean;
-  output: string | null;
-  interactive?: any;
-  media?: Array<{
-    type: "image" | "video" | "audio" | "document";
-    url: string;
-    caption?: string;
-    fileName?: string;
-    mimeType?: string;
-  }>;
-  handoff?: boolean;
-  flow_id?: string | null;
-  flow_version_id?: string | null;
-  flow_session_id?: string | null;
-  flow_run_id?: string | null;
-  flow_node_id?: string | null;
-};
-
-export async function logFlowStep(params: {
-  organization_id: string;
-  run_id?: string | null;
-  node_id: string;
-  node_type: string;
-  input_data?: any;
-  output_data?: any;
-  status?: "success" | "failed" | "skipped" | "waiting";
-  error_message?: string | null;
-}) {
-  if (!params.run_id) return;
-  try {
-    await supabase.from("w_flow_run_steps").insert({
-      organization_id: params.organization_id,
-      run_id: params.run_id,
-      node_id: params.node_id,
-      node_type: params.node_type,
-      input_data: params.input_data || {},
-      output_data: params.output_data || {},
-      status: params.status || "success",
-      error_message: params.error_message || null,
-    });
-  } catch (err: any) {
-    console.warn("[Flow] Step log failed:", err?.message || err);
-  }
 }
 
 export async function processFlowEngine(
@@ -1033,4 +1038,3 @@ export async function processFlowEngine(
     ...flowMeta,
   };
 }
-
