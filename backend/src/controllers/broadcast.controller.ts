@@ -5,7 +5,8 @@ import { inspectMetaTokenPermissions } from '../services/meta.service.js';
 import { 
     uploadMediaToStorage, 
     buildBroadcastBillingEstimate, 
-    normalizeTemplateHeaderMedia
+    normalizeTemplateHeaderMedia,
+    processCampaign
 } from '../services/broadcast.service.js';
 import crypto from 'crypto';
 
@@ -161,12 +162,9 @@ export async function sendBroadcast(req: any, res: Response) {
         const { data, error } = await supabase.from('w_campaigns').insert(payload).select().single();
         if (error) throw error;
 
-        // processing logic will be handled by background worker or by manual call.
-        // We will call processCampaign async from worker instead of here,
-        // or just let the worker handle it since we insert it as 'processing'.
-        // Actually, the background scheduler runs processCampaign.
-        // I will let it just be.
-
+        if (!scheduled_at) {
+            processCampaign(data).catch(err => console.error('Background processCampaign error:', err));
+        }
         res.json({ success: true, campaign: data });
     } catch (err: any) {
         console.error('Send Broadcast Error:', err);
