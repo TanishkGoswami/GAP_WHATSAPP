@@ -463,6 +463,76 @@ export async function sendMessage(req: any, res: Response) {
     }
 }
 
+export async function deleteMessage(req: any, res: Response) {
+    const { messageId } = req.params;
+    const orgId = req.organization_id;
+
+    try {
+        const { data: message, error: msgErr } = await supabase
+            .from('w_messages')
+            .select('id, organization_id, conversation_id')
+            .eq('id', messageId)
+            .eq('organization_id', orgId)
+            .maybeSingle();
+
+        if (msgErr) throw msgErr;
+        if (!message) return res.status(404).json({ error: 'Message not found' });
+
+        const { error: deleteErr } = await supabase
+            .from('w_messages')
+            .delete()
+            .eq('id', message.id)
+            .eq('organization_id', orgId);
+        if (deleteErr) throw deleteErr;
+
+        const { data: latest, error: latestErr } = await supabase
+            .from('w_messages')
+            .select('id, text_body, content, created_at')
+            .eq('conversation_id', message.conversation_id)
+            .eq('organization_id', orgId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (latestErr) throw latestErr;
+
+        const latestContent = latest?.content && typeof latest.content === 'object' ? latest.content : {};
+        const latestPreview = latest
+            ? String(latest.text_body || latestContent.text || latestContent.caption || latestContent.template?.body || 'Media').slice(0, 160)
+            : 'No messages';
+
+        const conversationPatch: any = {
+            last_message_preview: latestPreview,
+            unread_count: latest ? undefined : 0,
+        };
+        if (latest?.created_at) {
+            conversationPatch.last_message_at = latest.created_at;
+        }
+        Object.keys(conversationPatch).forEach(key => conversationPatch[key] === undefined && delete conversationPatch[key]);
+
+        await supabase
+            .from('w_conversations')
+            .update(conversationPatch)
+            .eq('id', message.conversation_id)
+            .eq('organization_id', orgId);
+
+        io.to(`org:${orgId}`).emit('message_deleted', {
+            conversation_id: message.conversation_id,
+            message_id: message.id,
+            last_message_preview: latestPreview,
+        });
+
+        res.json({
+            success: true,
+            conversation_id: message.conversation_id,
+            message_id: message.id,
+            last_message_preview: latestPreview,
+        });
+    } catch (err: any) {
+        console.error('Delete message error:', err);
+        res.status(500).json({ error: err.message || 'Failed to delete message' });
+    }
+}
+
 export async function markAsRead(req: any, res: Response) {
     const { id } = req.params;
     const { user_id } = req.body; 

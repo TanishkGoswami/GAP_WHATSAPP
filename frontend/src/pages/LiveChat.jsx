@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Search, MoreVertical, Paperclip, Send, Smile, Phone, Tag, Check, CheckCheck, Clock, AlertCircle, Info, ChevronLeft, ChevronDown, ArrowDown, FileText, Mic, Pencil, Bot, User, ExternalLink, Reply, Forward, X, Copy, Trash2, Archive, Pin, PinOff, MailOpen, Star, StarOff, Eraser, Inbox, BellOff } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { format, isToday, isYesterday } from 'date-fns'
 import { io } from "socket.io-client";
 import QRCode from 'react-qr-code'
@@ -28,6 +29,9 @@ const AGENT_SETTINGS_ITEM_TYPE = '__agent_settings';
 const MUTED_UNTIL_LABEL_PREFIX = 'muted_until:';
 const ACTIVE_CHAT_SYNC_MS = 2500;
 const CHAT_LIST_SYNC_MS = 6000;
+const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const CUSTOMER_WINDOW_ERROR_RE = /(24\s*hour|24-hour|customer\s+service\s+window|outside\s+the\s+allowed\s+window|template\s+message|required\s+template)/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const WHATSAPP_EMOJI_ASSET_BASE = 'https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/apple/64';
 const QUICK_REACTIONS = [
@@ -99,6 +103,7 @@ function ForwardedIndicator() {
 }
 
 export default function LiveChat() {
+    const navigate = useNavigate()
     const { user, session, loginType, memberProfile, userRole } = useAuth()
     const { alertDialog, confirmDialog } = useDialog()
     const isAdmin = userRole === 'admin' || userRole === 'owner'
@@ -228,6 +233,8 @@ export default function LiveChat() {
     const [forwardSearch, setForwardSearch] = useState('')
     const [forwardSelectedIds, setForwardSelectedIds] = useState([])
     const [isForwarding, setIsForwarding] = useState(false)
+    const [expiredWindowChatIds, setExpiredWindowChatIds] = useState(() => new Set())
+    const [hiddenMessageKeys, setHiddenMessageKeys] = useState(() => new Set())
 
     // Bot state
     const [botEnabled, setBotEnabled] = useState(false)
@@ -522,6 +529,35 @@ export default function LiveChat() {
         contact?.custom_fields?.profile_photo_url ||
         ''
     )
+
+    const clearBrokenProfilePhoto = (contactId) => {
+        if (!contactId) return
+        profilePhotoFetchRef.current.delete(contactId)
+        setChats(prev => prev.map(chat => {
+            if (!idsEqual(chat.contactId, contactId)) return chat
+            const nextContact = {
+                ...(chat.contact || {}),
+                profile_photo_url: '',
+                custom_fields: {
+                    ...(chat.contact?.custom_fields || {}),
+                    profile_photo_url: '',
+                },
+            }
+            return { ...chat, contact: nextContact, profilePhotoUrl: '' }
+        }))
+        setSelectedChat(prev => {
+            if (!prev || !idsEqual(prev.contactId, contactId)) return prev
+            const nextContact = {
+                ...(prev.contact || {}),
+                profile_photo_url: '',
+                custom_fields: {
+                    ...(prev.contact?.custom_fields || {}),
+                    profile_photo_url: '',
+                },
+            }
+            return { ...prev, contact: nextContact, profilePhotoUrl: '' }
+        })
+    }
 
     const fetchMissingProfilePhotos = async (chatRows) => {
         if (!session?.access_token) return
@@ -1063,10 +1099,12 @@ export default function LiveChat() {
             setNewMessagesPending(0);
             setShowJumpToLatest(false);
             setMessages([]);
+            setHiddenMessageKeys(new Set());
             return;
         }
 
         setMessages([]);
+        setHiddenMessageKeys(new Set());
         setNewMessagesPending(0)
         setShowJumpToLatest(false)
         fetchMessages(selectedChat, { limit: 50 })
@@ -1572,6 +1610,16 @@ export default function LiveChat() {
 
         if (!selectedChat) return
 
+        if (isCustomerWindowExpired) {
+            alertDialog('The 24-hour WhatsApp reply window is closed for this contact. Send an approved template message instead.', {
+                title: '24 Hour Limit',
+                tone: 'warning',
+            })
+            return
+        }
+
+        const activeChatId = selectedChat.id
+
         // Audio send
         if (pendingAudio?.file) {
             const optimisticId = Date.now()
@@ -1623,6 +1671,7 @@ export default function LiveChat() {
                 await fetchChats()
             } catch (err) {
                 console.error('Send audio failed:', err)
+                if (CUSTOMER_WINDOW_ERROR_RE.test(err?.message || '')) markCustomerWindowExpired(activeChatId)
                 setMessages(prev => prev.map(m => m.id === optimisticId ? { ...m, status: 'failed' } : m))
             }
             return
@@ -1678,6 +1727,7 @@ export default function LiveChat() {
                 await fetchChats()
             } catch (err) {
                 console.error('Send media failed:', err)
+                if (CUSTOMER_WINDOW_ERROR_RE.test(err?.message || '')) markCustomerWindowExpired(activeChatId)
                 setMessages(prev => prev.map(m => m.id === optimisticId ? { ...m, status: 'failed' } : m))
             }
             return
@@ -1747,6 +1797,7 @@ export default function LiveChat() {
             fetchChats()
         } catch (err) {
             console.error('Send failed:', err)
+            if (CUSTOMER_WINDOW_ERROR_RE.test(err?.message || '')) markCustomerWindowExpired(activeChatId)
             // Mark as failed
             setMessages(prev => prev.map(m => m.id === optimisticId ? { ...m, status: 'failed' } : m))
         }
@@ -2143,7 +2194,60 @@ export default function LiveChat() {
             confirmLabel: 'Delete message',
         })
         if (!confirmed) return
-        setMessages(prev => prev.filter(item => item.id !== msg.id))
+        const keys = [
+            getMessageKey(msg),
+            msg?.id ? String(msg.id) : '',
+            msg?.wa_message_id ? String(msg.wa_message_id) : '',
+            msg?.clientMessageId ? String(msg.clientMessageId) : '',
+            msg?.client_message_id ? String(msg.client_message_id) : '',
+            msg?.content?.client_message_id ? String(msg.content.client_message_id) : '',
+        ].filter(Boolean)
+
+        const dbMessageId = msg?.id && UUID_RE.test(String(msg.id)) ? String(msg.id) : ''
+        if (dbMessageId && session?.access_token) {
+            try {
+                const res = await fetch(`${API_BASE}/messages/${encodeURIComponent(dbMessageId)}`, {
+                    method: 'DELETE',
+                    headers: authHeaders,
+                })
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok) throw new Error(data?.error || 'Failed to delete message')
+
+                if (data?.conversation_id) {
+                    setChats(prev => prev.map(chat => (
+                        idsEqual(chat.id, data.conversation_id)
+                            ? { ...chat, lastMessage: data.last_message_preview || 'No messages' }
+                            : chat
+                    )))
+                }
+            } catch (err) {
+                console.error('Failed to delete message from table:', err)
+                alertDialog(err?.message || 'Failed to delete message from database', {
+                    title: 'Delete message failed',
+                    tone: 'danger',
+                })
+                closeMessageMenu()
+                return
+            }
+        }
+
+        setHiddenMessageKeys(prev => {
+            const next = new Set(prev)
+            keys.forEach(key => next.add(key))
+            return next
+        })
+        setMessages(prev => prev.filter(item => {
+            const itemKeys = [
+                getMessageKey(item),
+                item?.id ? String(item.id) : '',
+                item?.wa_message_id ? String(item.wa_message_id) : '',
+                item?.clientMessageId ? String(item.clientMessageId) : '',
+                item?.client_message_id ? String(item.client_message_id) : '',
+                item?.content?.client_message_id ? String(item.content.client_message_id) : '',
+            ].filter(Boolean)
+
+            return !itemKeys.some(itemKey => keys.some(key => itemKey === key || idsEqual(itemKey, key)))
+        }))
         closeMessageMenu()
     }
 
@@ -2301,6 +2405,16 @@ export default function LiveChat() {
     }
 
     const filteredMessages = messages.filter(msg => {
+        const keys = [
+            getMessageKey(msg),
+            msg?.id ? String(msg.id) : '',
+            msg?.wa_message_id ? String(msg.wa_message_id) : '',
+            msg?.clientMessageId ? String(msg.clientMessageId) : '',
+            msg?.client_message_id ? String(msg.client_message_id) : '',
+            msg?.content?.client_message_id ? String(msg.content.client_message_id) : '',
+        ].filter(Boolean)
+
+        if (keys.some(key => hiddenMessageKeys.has(key))) return false
         if (selectedAccount === 'All') return true
         if (!msg.account) return true
         return normalizeAccountKey(msg.account) === normalizeAccountKey(selectedAccount)
@@ -2398,6 +2512,81 @@ export default function LiveChat() {
 
         return items
     }, [filteredMessages]);
+
+    const customerWindowState = useMemo(() => {
+        if (!selectedChat) {
+            return {
+                hasLoadedMessages: false,
+                hasCustomerMessage: false,
+                hasFailedOutboundMessage: false,
+                latestCustomerMessageAt: null,
+            }
+        }
+
+        let latest = 0
+        let hasFailedOutboundMessage = false
+        for (const msg of filteredMessages) {
+            const sender = String(msg?.sender || msg?.direction || msg?.senderType || msg?.sender_type || '').toLowerCase()
+            const isCustomerMessage = sender === 'user' || sender === 'inbound' || sender === 'customer'
+            const isOutboundMessage = sender === 'agent' || sender === 'outbound' || sender === 'human_agent'
+
+            if (isOutboundMessage && String(msg?.status || '').toLowerCase() === 'failed') {
+                hasFailedOutboundMessage = true
+            }
+
+            if (!isCustomerMessage) continue
+            const timestamp = msg.createdAt instanceof Date
+                ? msg.createdAt.getTime()
+                : new Date(msg?.createdAt || 0).getTime()
+            if (Number.isFinite(timestamp) && timestamp > latest) {
+                latest = timestamp
+            }
+        }
+
+        return {
+            hasLoadedMessages: filteredMessages.length > 0,
+            hasCustomerMessage: latest > 0,
+            hasFailedOutboundMessage,
+            latestCustomerMessageAt: latest > 0 ? latest : null,
+        }
+    }, [filteredMessages, selectedChat?.id])
+
+    const isCustomerWindowExpired = useMemo(() => {
+        if (!selectedChat) return false
+        if (customerWindowState.latestCustomerMessageAt) {
+            return Date.now() - customerWindowState.latestCustomerMessageAt > CUSTOMER_SERVICE_WINDOW_MS
+        }
+        if (expiredWindowChatIds.has(String(selectedChat.id))) return true
+        if (customerWindowState.hasFailedOutboundMessage) return true
+
+        // If the loaded thread has no customer message, WhatsApp's free-form service window is not open.
+        return customerWindowState.hasLoadedMessages && !customerWindowState.hasCustomerMessage
+    }, [customerWindowState, expiredWindowChatIds, selectedChat])
+
+    const markCustomerWindowExpired = (chatId) => {
+        if (!chatId) return
+        setExpiredWindowChatIds(prev => {
+            const next = new Set(prev)
+            next.add(String(chatId))
+            return next
+        })
+    }
+
+    const openTemplateSender = () => {
+        if (!selectedChat) return
+        navigate('/broadcast', {
+            state: {
+                source: 'live_chat_24h_window',
+                contact: {
+                    id: selectedChat.contactId,
+                    name: selectedChat.name,
+                    phone: selectedChat.phone || selectedChat.waId,
+                    wa_id: selectedChat.waId,
+                },
+                conversationId: selectedChat.id,
+            },
+        })
+    }
 
     const requestFreshQr = () => {
         const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session';
@@ -2558,6 +2747,7 @@ export default function LiveChat() {
                                                 alt={chat.name}
                                                 className="h-11 w-11 rounded-full object-cover shadow-sm ring-1 ring-gray-200"
                                                 loading="lazy"
+                                                onError={() => clearBrokenProfilePhoto(chat.contactId)}
                                             />
                                         ) : (
                                             <div
@@ -2746,6 +2936,7 @@ export default function LiveChat() {
                                             src={selectedChat.profilePhotoUrl}
                                             alt={selectedChat?.name || 'Contact'}
                                             className="h-9 w-9 rounded-full object-cover"
+                                            onError={() => clearBrokenProfilePhoto(selectedChat.contactId)}
                                         />
                                     ) : (
                                         <div className="h-9 w-9 rounded-full bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center">
@@ -3209,6 +3400,7 @@ export default function LiveChat() {
                                                                         alt={chat.name}
                                                                         className="h-11 w-11 rounded-full object-cover"
                                                                         loading="lazy"
+                                                                        onError={() => clearBrokenProfilePhoto(chat.contactId)}
                                                                     />
                                                                 ) : (
                                                                     <div className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600">
@@ -3235,8 +3427,29 @@ export default function LiveChat() {
 
                             {/* Input Area */}
                             <div data-tour="chat-composer" className={`px-4 py-2.5 lg:px-5 ${isInternalNote ? 'border-t border-amber-200 bg-amber-50' : 'bg-[#f0f2f5]'}`}>
-                                <form onSubmit={handleSendMessage} className="mx-auto flex w-full max-w-[1180px] items-end gap-2">
-                                    <div className="flex items-center gap-1 pb-0.5">
+                                {isCustomerWindowExpired && !isInternalNote && (
+                                    <div className="mx-auto mb-2 flex w-full max-w-[1180px] flex-col gap-3 rounded-lg bg-[#fff0d8] px-4 py-3 shadow-sm ring-1 ring-amber-100 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+                                        <div className="flex min-w-0 items-start gap-3">
+                                            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+                                            <div className="min-w-0 text-sm leading-5 text-black">
+                                                <div className="font-semibold">24 Hour Limit</div>
+                                                <p>
+                                                    WhatsApp does not allow sending messages 24 hours after they last messaged you. However, you can send them a template message.
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={openTemplateSender}
+                                            className="inline-flex h-10 shrink-0 items-center justify-center rounded-md bg-[#075e54] px-8 text-sm font-semibold text-white transition hover:bg-[#064f47] focus:outline-none focus:ring-2 focus:ring-[#075e54]/30"
+                                        >
+                                            Send Template
+                                        </button>
+                                    </div>
+                                )}
+                                <form onSubmit={handleSendMessage} className={`mx-auto flex w-full max-w-[1180px] items-end gap-2 ${isCustomerWindowExpired && !isInternalNote ? 'justify-end' : ''}`}>
+                                    {!isCustomerWindowExpired && (
+                                        <div className="flex items-center gap-1 pb-0.5">
                                         <div className="relative">
                                             <button
                                                 type="button"
@@ -3274,81 +3487,84 @@ export default function LiveChat() {
                                             <Paperclip className="h-6 w-6" />
                                         </button>
                                     </div>
-                                    <div className="flex flex-1 flex-col overflow-hidden rounded-lg bg-white shadow-[0_1px_1px_rgba(11,20,26,0.08)] transition-all focus-within:ring-1 focus-within:ring-black/10">
-                                        <input
-                                            ref={fileInputRef}
-                                            type="file"
-                                            className="hidden"
-                                            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
-                                            onChange={(e) => {
-                                                const f = e.target.files?.[0] || null
-                                                setSelectedFile(f)
-                                                if (f) {
-                                                    setPendingAudio(null)
-                                                    setIsAudioPanelOpen(false)
-                                                }
-                                            }}
-                                        />
+                                    )}
+                                    {(!isCustomerWindowExpired || isInternalNote) && (
+                                        <div className="flex flex-1 flex-col overflow-hidden rounded-lg bg-white shadow-[0_1px_1px_rgba(11,20,26,0.08)] transition-all focus-within:ring-1 focus-within:ring-black/10">
+                                            <input
+                                                ref={fileInputRef}
+                                                type="file"
+                                                className="hidden"
+                                                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                                                onChange={(e) => {
+                                                    const f = e.target.files?.[0] || null
+                                                    setSelectedFile(f)
+                                                    if (f) {
+                                                        setPendingAudio(null)
+                                                        setIsAudioPanelOpen(false)
+                                                    }
+                                                }}
+                                            />
 
-                                        {selectedFile && (
-                                            <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2">
-                                                <div className="text-xs text-gray-700 truncate">
-                                                    Attached: <span className="font-medium">{selectedFile.name}</span>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSelectedFile(null)}
-                                                    className="text-xs text-gray-500 hover:text-gray-700"
-                                                >
-                                                    Remove
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {isAudioPanelOpen && !isInternalNote && (
-                                            <div className="border-b border-gray-100 bg-gray-50 px-3 py-2">
-                                                <AudioRecorderOrUploader value={pendingAudio} onChange={setPendingAudio} />
-                                            </div>
-                                        )}
-
-                                        {isInternalNote && (
-                                            <div className="flex items-center gap-1 border-b border-amber-100 bg-amber-100/50 px-3 py-1 text-[10px] font-bold text-amber-700">
-                                                <AlertCircle className="h-3 w-3" />
-                                                Internal Note (Private)
-                                            </div>
-                                        )}
-                                        {replyingTo && !isInternalNote && (
-                                            <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-green-50 px-3 py-2">
-                                                <div className="min-w-0 border-l-4 border-green-500 pl-2">
-                                                    <div className="text-xs font-semibold text-green-800">
-                                                        Replying to {replyingTo.sender === 'agent' ? 'You' : (selectedChat?.name || 'contact')}
+                                            {selectedFile && !isCustomerWindowExpired && (
+                                                <div className="flex items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2">
+                                                    <div className="text-xs text-gray-700 truncate">
+                                                        Attached: <span className="font-medium">{selectedFile.name}</span>
                                                     </div>
-                                                    <div className="truncate text-xs text-gray-600">{replyingTo.text || 'Original message'}</div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSelectedFile(null)}
+                                                        className="text-xs text-gray-500 hover:text-gray-700"
+                                                    >
+                                                        Remove
+                                                    </button>
                                                 </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setReplyingTo(null)}
-                                                    className="rounded-full p-1 text-gray-500 hover:bg-white hover:text-gray-800"
-                                                >
-                                                    <X className="h-4 w-4" />
-                                                </button>
-                                            </div>
-                                        )}
-                                        <textarea
-                                            ref={messageInputRef}
-                                            value={messageText}
-                                            onChange={e => setMessageText(e.target.value)}
-                                            placeholder={isInternalNote ? "Type an internal note..." : "Type a message..."}
-                                            rows={1}
-                                            className="max-h-42 min-h-[42px] w-full resize-none border-0 bg-transparent px-4 py-[11px] text-[15px] leading-5 text-[#111b21] outline-none placeholder:text-[#8696a0] focus:border-transparent focus:outline-none focus:ring-0"
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter' && !e.shiftKey) {
-                                                    e.preventDefault();
-                                                    handleSendMessage(e);
-                                                }
-                                            }}
-                                        />
-                                    </div>
+                                            )}
+
+                                            {isAudioPanelOpen && !isInternalNote && !isCustomerWindowExpired && (
+                                                <div className="border-b border-gray-100 bg-gray-50 px-3 py-2">
+                                                    <AudioRecorderOrUploader value={pendingAudio} onChange={setPendingAudio} />
+                                                </div>
+                                            )}
+
+                                            {isInternalNote && (
+                                                <div className="flex items-center gap-1 border-b border-amber-100 bg-amber-100/50 px-3 py-1 text-[10px] font-bold text-amber-700">
+                                                    <AlertCircle className="h-3 w-3" />
+                                                    Internal Note (Private)
+                                                </div>
+                                            )}
+                                            {replyingTo && !isInternalNote && (
+                                                <div className="flex items-start justify-between gap-3 border-b border-gray-100 bg-green-50 px-3 py-2">
+                                                    <div className="min-w-0 border-l-4 border-green-500 pl-2">
+                                                        <div className="text-xs font-semibold text-green-800">
+                                                            Replying to {replyingTo.sender === 'agent' ? 'You' : (selectedChat?.name || 'contact')}
+                                                        </div>
+                                                        <div className="truncate text-xs text-gray-600">{replyingTo.text || 'Original message'}</div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setReplyingTo(null)}
+                                                        className="rounded-full p-1 text-gray-500 hover:bg-white hover:text-gray-800"
+                                                    >
+                                                        <X className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            )}
+                                            <textarea
+                                                ref={messageInputRef}
+                                                value={messageText}
+                                                onChange={e => setMessageText(e.target.value)}
+                                                placeholder={isInternalNote ? "Type an internal note..." : "Type a message..."}
+                                                rows={1}
+                                                className="max-h-42 min-h-[42px] w-full resize-none border-0 bg-transparent px-4 py-[11px] text-[15px] leading-5 text-[#111b21] outline-none placeholder:text-[#8696a0] focus:border-transparent focus:outline-none focus:ring-0"
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                                        e.preventDefault();
+                                                        handleSendMessage(e);
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                    )}
                                     <div className="flex items-center gap-1 pb-0.5">
                                         <button
                                             type="button"
@@ -3363,11 +3579,11 @@ export default function LiveChat() {
                                             <FileText className="h-5 w-5" />
                                         </button>
 
-                                        {(messageText.trim() || selectedFile || pendingAudio?.file) ? (
+                                        {(messageText.trim() || selectedFile || pendingAudio?.file) && (!isCustomerWindowExpired || isInternalNote) ? (
                                             <button type="submit" className="flex h-10 w-10 scale-100 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm transition-all duration-200 hover:bg-[#029977] active:scale-95">
                                                 <WhatsAppSendIcon className="h-5 w-5" />
                                             </button>
-                                        ) : (
+                                        ) : (!isCustomerWindowExpired && (
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -3379,7 +3595,7 @@ export default function LiveChat() {
                                             >
                                                 <Mic className="h-5 w-5" />
                                             </button>
-                                        )}
+                                        ))}
                                     </div>
                                 </form>
                             </div>
