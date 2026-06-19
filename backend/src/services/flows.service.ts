@@ -3,225 +3,225 @@ import { isUuid } from '../utils/format.js';
 import { getBotAgentReply } from './ai.service.js';
 
 export const SUPPORTED_FLOW_NODE_TYPES = new Set([
-    'startBotFlow',
-    'textMessage',
-    'template',
-    'button',
-    'interactive',
-    'userInput',
-    'condition',
-    'image',
-    'video',
-    'audio',
-    'file',
-    'location',
-    'whatsappFlow',
-    'ai',
-    'httpApi',
-    'googleSheets',
-    'appointment',
-    'product',
-    'handoff',
-    'end',
+  'startBotFlow',
+  'textMessage',
+  'template',
+  'button',
+  'interactive',
+  'userInput',
+  'condition',
+  'image',
+  'video',
+  'audio',
+  'file',
+  'location',
+  'whatsappFlow',
+  'ai',
+  'httpApi',
+  'googleSheets',
+  'appointment',
+  'product',
+  'handoff',
+  'end',
 ]);
 
 export function parseFlowKeywords(value: any): string[] {
-    if (Array.isArray(value)) {
-        return value.map((v) => String(v || '').trim()).filter(Boolean);
-    }
-    if (typeof value === 'string') {
-        return value.split(',').map((v) => v.trim()).filter(Boolean);
-    }
-    return [];
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v || '').trim()).filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value.split(',').map((v) => v.trim()).filter(Boolean);
+  }
+  return [];
 }
 
 export function getFlowTriggerKeywords(flow: any, nodesOverride?: any[]): string[] {
-    const nodes = Array.isArray(nodesOverride) ? nodesOverride : (Array.isArray(flow?.nodes) ? flow.nodes : []);
-    const startNode = nodes.find((n: any) => n?.type === 'startBotFlow');
-    return [...new Set([
-        ...parseFlowKeywords(flow?.trigger_keywords),
-        ...parseFlowKeywords(flow?.triggers),
-        ...parseFlowKeywords(startNode?.data?.config?.keywords),
-    ])];
+  const nodes = Array.isArray(nodesOverride) ? nodesOverride : (Array.isArray(flow?.nodes) ? flow.nodes : []);
+  const startNode = nodes.find((n: any) => n?.type === 'startBotFlow');
+  return [...new Set([
+    ...parseFlowKeywords(flow?.trigger_keywords),
+    ...parseFlowKeywords(flow?.triggers),
+    ...parseFlowKeywords(startNode?.data?.config?.keywords),
+  ])];
 }
 
 export function normalizeFlowAccountScope(value: any) {
-    return value === 'selected' ? 'selected' : 'all';
+  return value === 'selected' ? 'selected' : 'all';
 }
 
 export function normalizeFlowAccountIds(value: any): string[] {
-    if (!Array.isArray(value)) return [];
-    return value.map((item) => String(item || '').trim()).filter(isUuid);
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || '').trim()).filter(isUuid);
 }
 
 export function isMissingFlowVersionAccountColumnsError(error: any) {
-    const message = String(error?.message || error?.details || '').toLowerCase();
-    const code = String(error?.code || '');
-    return (code === 'PGRST204' || code === '42703') &&
-        message.includes('w_flow_versions') &&
-        (message.includes('wa_account_scope') || message.includes('wa_account_ids'));
+  const message = String(error?.message || error?.details || '').toLowerCase();
+  const code = String(error?.code || '');
+  return (code === 'PGRST204' || code === '42703') &&
+    message.includes('w_flow_versions') &&
+    (message.includes('wa_account_scope') || message.includes('wa_account_ids'));
 }
 
 export async function insertFlowVersionWithSchemaFallback(payload: any) {
-    const insertPayload = {
-        ...payload,
-        wa_account_scope: normalizeFlowAccountScope(payload?.wa_account_scope),
-        wa_account_ids: normalizeFlowAccountIds(payload?.wa_account_ids),
-    };
+  const insertPayload = {
+    ...payload,
+    wa_account_scope: normalizeFlowAccountScope(payload?.wa_account_scope),
+    wa_account_ids: normalizeFlowAccountIds(payload?.wa_account_ids),
+  };
 
-    const firstAttempt = await supabase
-        .from('w_flow_versions')
-        .insert(insertPayload)
-        .select()
-        .single();
+  const firstAttempt = await supabase
+    .from('w_flow_versions')
+    .insert(insertPayload)
+    .select()
+    .single();
 
-    if (!firstAttempt.error || !isMissingFlowVersionAccountColumnsError(firstAttempt.error)) {
-        return firstAttempt;
-    }
+  if (!firstAttempt.error || !isMissingFlowVersionAccountColumnsError(firstAttempt.error)) {
+    return firstAttempt;
+  }
 
-    const legacyPayload = { ...insertPayload };
-    delete legacyPayload.wa_account_scope;
-    delete legacyPayload.wa_account_ids;
+  const legacyPayload = { ...insertPayload };
+  delete legacyPayload.wa_account_scope;
+  delete legacyPayload.wa_account_ids;
 
-    console.warn(
-        '[Flow] w_flow_versions account scope columns are missing. ' +
-        'Retrying publish with legacy schema; run supabase/migrations/20260523_flow_versions_account_scope_fix.sql.'
-    );
+  console.warn(
+    '[Flow] w_flow_versions account scope columns are missing. ' +
+    'Retrying publish with legacy schema; run supabase/migrations/20260523_flow_versions_account_scope_fix.sql.'
+  );
 
-    return supabase
-        .from('w_flow_versions')
-        .insert(legacyPayload)
-        .select()
-        .single();
+  return supabase
+    .from('w_flow_versions')
+    .insert(legacyPayload)
+    .select()
+    .single();
 }
 
 export function flowAppliesToAccount(flow: any, waAccountId?: string | null) {
-    const scope = normalizeFlowAccountScope(flow?.wa_account_scope);
-    if (scope !== 'selected') return true;
-    const ids = normalizeFlowAccountIds(flow?.wa_account_ids);
-    if (ids.length === 0) return false;
-    return Boolean(waAccountId && ids.includes(String(waAccountId)));
+  const scope = normalizeFlowAccountScope(flow?.wa_account_scope);
+  if (scope !== 'selected') return true;
+  const ids = normalizeFlowAccountIds(flow?.wa_account_ids);
+  if (ids.length === 0) return false;
+  return Boolean(waAccountId && ids.includes(String(waAccountId)));
 }
 
 export function flowAccountScopesOverlap(a: any, b: any) {
-    const aScope = normalizeFlowAccountScope(a?.wa_account_scope);
-    const bScope = normalizeFlowAccountScope(b?.wa_account_scope);
-    if (aScope === 'all' || bScope === 'all') return true;
-    const aIds = new Set(normalizeFlowAccountIds(a?.wa_account_ids));
-    return normalizeFlowAccountIds(b?.wa_account_ids).some((id) => aIds.has(id));
+  const aScope = normalizeFlowAccountScope(a?.wa_account_scope);
+  const bScope = normalizeFlowAccountScope(b?.wa_account_scope);
+  if (aScope === 'all' || bScope === 'all') return true;
+  const aIds = new Set(normalizeFlowAccountIds(a?.wa_account_ids));
+  return normalizeFlowAccountIds(b?.wa_account_ids).some((id) => aIds.has(id));
 }
 
 export async function findFlowTriggerConflicts(orgId: string, flow: any, triggerKeywords: string[]) {
-    const keywords = new Set((triggerKeywords || []).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean));
-    if (keywords.size === 0) return [];
+  const keywords = new Set((triggerKeywords || []).map((item) => String(item || '').trim().toLowerCase()).filter(Boolean));
+  if (keywords.size === 0) return [];
 
-    const { data, error } = await supabase
-        .from('w_flows')
-        .select('id, name, status, trigger_keywords, triggers, wa_account_scope, wa_account_ids')
-        .eq('organization_id', orgId)
-        .eq('status', 'active')
-        .neq('id', flow.id);
-    if (error) throw error;
+  const { data, error } = await supabase
+    .from('w_flows')
+    .select('id, name, status, trigger_keywords, triggers, wa_account_scope, wa_account_ids')
+    .eq('organization_id', orgId)
+    .eq('status', 'active')
+    .neq('id', flow.id);
+  if (error) throw error;
 
-    return (data || [])
-        .filter((other: any) => flowAccountScopesOverlap(flow, other))
-        .map((other: any) => {
-            const otherKeywords = getFlowTriggerKeywords(other);
-            const overlap = otherKeywords.filter((item) => keywords.has(String(item).trim().toLowerCase()));
-            return overlap.length > 0 ? { flow: other, triggers: overlap } : null;
-        })
-        .filter(Boolean);
+  return (data || [])
+    .filter((other: any) => flowAccountScopesOverlap(flow, other))
+    .map((other: any) => {
+      const otherKeywords = getFlowTriggerKeywords(other);
+      const overlap = otherKeywords.filter((item) => keywords.has(String(item).trim().toLowerCase()));
+      return overlap.length > 0 ? { flow: other, triggers: overlap } : null;
+    })
+    .filter(Boolean);
 }
 
 export function normalizeFlowVariableKey(value: any) {
-    return String(value || '')
-        .trim()
-        .replace(/^\{\{\s*/, '')
-        .replace(/\s*\}\}$/, '')
-        .trim()
-        .replace(/[^a-zA-Z0-9_]/g, '_')
-        .replace(/^_+|_+$/g, '')
-        .toLowerCase();
+  return String(value || '')
+    .trim()
+    .replace(/^\{\{\s*/, '')
+    .replace(/\s*\}\}$/, '')
+    .trim()
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
 }
 
 export function renderFlowTemplate(value: any, state: any = {}) {
-    return String(value || '').replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, rawKey) => {
-        const key = normalizeFlowVariableKey(rawKey);
-        const foundKey = Object.keys(state || {}).find((candidate) => normalizeFlowVariableKey(candidate) === key);
-        const replacement = foundKey ? state[foundKey] : state?.[key];
-        return replacement == null ? '' : String(replacement);
-    });
+  return String(value || '').replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, rawKey) => {
+    const key = normalizeFlowVariableKey(rawKey);
+    const foundKey = Object.keys(state || {}).find((candidate) => normalizeFlowVariableKey(candidate) === key);
+    const replacement = foundKey ? state[foundKey] : state?.[key];
+    return replacement == null ? '' : String(replacement);
+  });
 }
 
 export function validateFlowDefinition(flow: any) {
-    const errors: string[] = [];
-    const nodes: any[] = Array.isArray(flow?.nodes) ? flow.nodes : [];
-    const edges: any[] = Array.isArray(flow?.edges) ? flow.edges : [];
-    const nodeIds = new Set(nodes.map((n) => n?.id).filter(Boolean));
-    const startNodes = nodes.filter((n) => n?.type === 'startBotFlow');
-    const reachable = new Set<string>();
+  const errors: string[] = [];
+  const nodes: any[] = Array.isArray(flow?.nodes) ? flow.nodes : [];
+  const edges: any[] = Array.isArray(flow?.edges) ? flow.edges : [];
+  const nodeIds = new Set(nodes.map((n) => n?.id).filter(Boolean));
+  const startNodes = nodes.filter((n) => n?.type === 'startBotFlow');
+  const reachable = new Set<string>();
 
-    if (startNodes.length !== 1) errors.push('Flow must have exactly one Start Bot Flow node.');
-    if (nodes.length === 0) errors.push('Flow must contain at least one node.');
+  if (startNodes.length !== 1) errors.push('Flow must have exactly one Start Bot Flow node.');
+  if (nodes.length === 0) errors.push('Flow must contain at least one node.');
 
-    for (const edge of edges) {
-        if (!nodeIds.has(edge?.source) || !nodeIds.has(edge?.target)) {
-            errors.push('Flow has a broken connection.');
-            break;
-        }
+  for (const edge of edges) {
+    if (!nodeIds.has(edge?.source) || !nodeIds.has(edge?.target)) {
+      errors.push('Flow has a broken connection.');
+      break;
     }
+  }
 
-    if (startNodes.length === 1) {
-        const stack = [startNodes[0].id];
-        while (stack.length) {
-            const id = stack.pop();
-            if (!id || reachable.has(id)) continue;
-            reachable.add(id);
-            edges.filter((e) => e.source === id).forEach((e) => stack.push(e.target));
-        }
+  if (startNodes.length === 1) {
+    const stack = [startNodes[0].id];
+    while (stack.length) {
+      const id = stack.pop();
+      if (!id || reachable.has(id)) continue;
+      reachable.add(id);
+      edges.filter((e) => e.source === id).forEach((e) => stack.push(e.target));
     }
+  }
 
-    const nodesToValidate = reachable.size > 0
-        ? nodes.filter((n) => n?.id && reachable.has(n.id))
-        : nodes;
+  const nodesToValidate = reachable.size > 0
+    ? nodes.filter((n) => n?.id && reachable.has(n.id))
+    : nodes;
 
-    for (const node of nodesToValidate) {
-        if (!SUPPORTED_FLOW_NODE_TYPES.has(node?.type)) {
-            errors.push(`Unsupported node "${node?.type || 'unknown'}" is not available in this flow builder.`);
-        }
-        const config = node?.data?.config || {};
-        if (node?.type === 'textMessage' && !String(config.message || config.text || '').trim()) {
-            errors.push('Text Message node must have message text.');
-        }
-        if (node?.type === 'button') {
-            const buttons = Array.isArray(config.buttons) ? config.buttons.filter((b: any) => String(b?.text || '').trim()) : [];
-            if (buttons.length === 0) errors.push('Button node must have at least one button.');
-            if (buttons.length > 3) errors.push('Button node can have maximum 3 WhatsApp buttons.');
-        }
-        if (node?.type === 'userInput' && !String(config.saveToField || '').trim()) {
-            errors.push('User Input node must save the answer to a field.');
-        }
-        if (node?.type === 'condition' && (
-            !String(config.variable || '').trim()
-            || !String(config.operator || '').trim()
-            || !String(config.value || '').trim()
-        )) {
-            errors.push('Condition node must have variable, operator, and value.');
-        }
+  for (const node of nodesToValidate) {
+    if (!SUPPORTED_FLOW_NODE_TYPES.has(node?.type)) {
+      errors.push(`Unsupported node "${node?.type || 'unknown'}" is not available in this flow builder.`);
     }
-
-    if (startNodes.length === 1) {
-        const keywords = getFlowTriggerKeywords(flow, nodes);
-        if ((flow?.trigger_type || 'keyword') === 'keyword' && keywords.length === 0) {
-            errors.push('Start node must have trigger keywords.');
-        }
+    const config = node?.data?.config || {};
+    if (node?.type === 'textMessage' && !String(config.message || config.text || '').trim()) {
+      errors.push('Text Message node must have message text.');
     }
-
-    if (normalizeFlowAccountScope(flow?.wa_account_scope) === 'selected' && normalizeFlowAccountIds(flow?.wa_account_ids).length === 0) {
-        errors.push('Select at least one WhatsApp account or switch the flow to all connected numbers.');
+    if (node?.type === 'button') {
+      const buttons = Array.isArray(config.buttons) ? config.buttons.filter((b: any) => String(b?.text || '').trim()) : [];
+      if (buttons.length === 0) errors.push('Button node must have at least one button.');
+      if (buttons.length > 3) errors.push('Button node can have maximum 3 WhatsApp buttons.');
     }
+    if (node?.type === 'userInput' && !String(config.saveToField || '').trim()) {
+      errors.push('User Input node must save the answer to a field.');
+    }
+    if (node?.type === 'condition' && (
+      !String(config.variable || '').trim()
+      || !String(config.operator || '').trim()
+      || !String(config.value || '').trim()
+    )) {
+      errors.push('Condition node must have variable, operator, and value.');
+    }
+  }
 
-    return { valid: errors.length === 0, errors };
+  if (startNodes.length === 1) {
+    const keywords = getFlowTriggerKeywords(flow, nodes);
+    if ((flow?.trigger_type || 'keyword') === 'keyword' && keywords.length === 0) {
+      errors.push('Start node must have trigger keywords.');
+    }
+  }
+
+  if (normalizeFlowAccountScope(flow?.wa_account_scope) === 'selected' && normalizeFlowAccountIds(flow?.wa_account_ids).length === 0) {
+    errors.push('Select at least one WhatsApp account or switch the flow to all connected numbers.');
+  }
+
+  return { valid: errors.length === 0, errors };
 }
 
 export type FlowEngineResult = {
@@ -1033,4 +1033,4 @@ export async function processFlowEngine(
     ...flowMeta,
   };
 }
-
+

@@ -9,7 +9,7 @@ export const TEMPLATE_CATEGORIES = new Set(['MARKETING', 'UTILITY', 'AUTHENTICAT
 export const TEMPLATE_HEADER_FORMATS = new Set(['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT']);
 export const TEMPLATE_LANG_RE = /^[a-z]{2}(?:_[A-Z]{2})?$/;
 export const PROMOTIONAL_WORD_RE = /\b(discount|offer|sale|deal|promo|coupon|cashback|free|limited time|buy now|save|off|exclusive|hurry|register now|enroll now|launch|upgrade)\b/i;
-export const OTP_WORD_RE = /\b(otp|one[-\s]?time|verification code|verify|login code|security code|passcode|authentication)\b/i;
+export const OTP_WORD_RE = /\b(otp|one[-\s]?time|verification code|login code|security code|passcode|authentication)\b/i;
 
 export function extractTemplateVariables(text: string) {
     return [...String(text || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map(match => Number(match[1]));

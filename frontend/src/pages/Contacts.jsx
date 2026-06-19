@@ -854,16 +854,17 @@ function CustomSelect({ value, onChange, options, className = '' }) {
                 type="button"
                 onClick={() => setOpen(current => !current)}
                 onBlur={() => setTimeout(() => setOpen(false), 120)}
-                className={`flex h-[42px] w-full min-w-36 items-center justify-between gap-3 rounded-lg border bg-white px-3 text-left text-sm font-semibold shadow-sm outline-none transition ${open ? 'border-green-500 ring-2 ring-green-500/20' : 'border-gray-300 hover:border-gray-400'}`}
+                className={`w-full apple-select-trigger`}
+                style={{ height: '42px' }}
             >
-                <span className="min-w-0">
-                    <span className="block truncate text-gray-900">{selected?.label || 'Select'}</span>
-                    {selected?.helper ? <span className="block truncate text-[10px] font-medium text-gray-400">{selected.helper}</span> : null}
+                <span className="min-w-0 text-left">
+                    <span className="block truncate text-[#1d1d1f]">{selected?.label || 'Select'}</span>
+                    {selected?.helper ? <span className="block truncate text-[9.5px] font-medium text-gray-400 leading-tight">{selected.helper}</span> : null}
                 </span>
-                <ChevronDown className={`h-4 w-4 shrink-0 text-gray-500 transition ${open ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-gray-505 transition ${open ? 'rotate-180 text-gray-800' : ''}`} strokeWidth={1.8} />
             </button>
             {open ? (
-                <div className="absolute right-0 z-[70] mt-1 max-h-72 w-full min-w-48 overflow-y-auto rounded-lg border border-gray-200 bg-white p-1 shadow-xl">
+                <div className="absolute right-0 z-[70] mt-1 max-h-72 w-full min-w-48 overflow-y-auto apple-select-dropdown wa-chat-scroll">
                     {options.map(option => {
                         const active = option.value === value
                         return (
@@ -875,13 +876,13 @@ function CustomSelect({ value, onChange, options, className = '' }) {
                                     onChange(option.value)
                                     setOpen(false)
                                 }}
-                                className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm ${active ? 'bg-green-50 text-green-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                                className={`apple-select-option ${active ? 'apple-select-option-selected' : ''}`}
                             >
-                                <span className="min-w-0">
-                                    <span className="block truncate font-semibold">{option.label}</span>
-                                    {option.helper ? <span className="block truncate text-[11px] text-gray-400">{option.helper}</span> : null}
+                                <span className="min-w-0 text-left">
+                                    <span className="block truncate">{option.label}</span>
+                                    {option.helper ? <span className="block truncate text-[10px] text-gray-400 leading-tight mt-0.5">{option.helper}</span> : null}
                                 </span>
-                                {active ? <Check className="h-4 w-4 shrink-0" /> : null}
+                                {active ? <Check className="h-3.5 w-3.5 shrink-0 text-black ml-2" strokeWidth={2} /> : null}
                             </button>
                         )
                     })}
