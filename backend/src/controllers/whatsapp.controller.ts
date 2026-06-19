@@ -581,13 +581,62 @@ export async function createTemplate(req: any, res: Response) {
             });
         }
 
+        let metaComponents = parsedComponents;
+        if (category === 'AUTHENTICATION') {
+            const hasSecurityWording = parsedComponents.some((c: any) => 
+                c.type === 'BODY' && typeof c.text === 'string' && 
+                /\b(security|share|anyone)\b/i.test(c.text)
+            );
+
+            const authComponents: any[] = [
+                {
+                    type: 'BODY',
+                    add_security_recommendation: hasSecurityWording
+                }
+            ];
+
+            const buttonsComp = parsedComponents.find((c: any) => c.type === 'BUTTONS');
+            const copyCodeBtn = buttonsComp?.buttons?.find((b: any) => 
+                String(b.type).toUpperCase() === 'COPY_CODE' || 
+                String(b.text).toLowerCase().includes('copy')
+            );
+
+            if (copyCodeBtn) {
+                authComponents.push({
+                    type: 'BUTTONS',
+                    buttons: [
+                        {
+                            type: 'OTP',
+                            otp_type: 'COPY_CODE',
+                            text: copyCodeBtn.text || 'Copy Code'
+                        }
+                    ]
+                });
+            } else {
+                authComponents.push({
+                    type: 'BUTTONS',
+                    buttons: [
+                        {
+                            type: 'OTP',
+                            otp_type: 'COPY_CODE',
+                            text: 'Copy Code'
+                        }
+                    ]
+                });
+            }
+
+            metaComponents = authComponents;
+        }
+
+        const metaPayload = { name, category, language, components: metaComponents };
+
         const response = await fetch(`https://graph.facebook.com/v20.0/${waba_id}/message_templates`, {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(metaPayload)
         });
         const json = await response.json();
 

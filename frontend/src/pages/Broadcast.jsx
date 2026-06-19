@@ -117,6 +117,43 @@ export default function Broadcast() {
     const { alertDialog, confirmDialog } = useDialog()
     const token = session?.access_token
 
+    const getPreviewText = () => {
+        if (!selectedTemplate) return '';
+        const bodyComponent = selectedTemplate.components?.find(c => c.type === 'BODY');
+        let text = bodyComponent?.text || '';
+        
+        variables.forEach(v => {
+            const source = campaign.variable_mapping[v.key];
+            let replacement = v.token;
+            if (source === 'name') {
+                replacement = '[Contact Name]';
+            } else if (source === 'phone') {
+                replacement = '[Contact Phone]';
+            } else if (source === 'custom') {
+                replacement = customTexts[v.key] || v.token;
+            }
+            text = text.replaceAll(v.token, replacement);
+        });
+        return text;
+    };
+
+    const formatWhatsAppText = (text) => {
+        if (!text) return '';
+        let escaped = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+            
+        escaped = escaped.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
+        escaped = escaped.replace(/_(.*?)_/g, '<em>$1</em>');
+        escaped = escaped.replace(/~(.*?)~/g, '<del>$1</del>');
+        escaped = escaped.replace(/`(.*?)`/g, '<code class="bg-gray-100 px-1 rounded font-mono text-xs">$1</code>');
+        escaped = escaped.replace(/\n/g, '<br />');
+        
+        return <span dangerouslySetInnerHTML={{ __html: escaped }} />;
+    };
+
+
     const [activeTab, setActiveTab] = useState('new') // 'new' | 'history'
     const [campaignsList, setCampaignsList] = useState([])
     const [isLoadingHistory, setIsLoadingHistory] = useState(false)
@@ -1052,7 +1089,90 @@ export default function Broadcast() {
                                             )}
                                         </div>
                                     )}
+
+                                    {/* Preview box */}
+                                    {selectedTemplate && (
+                                        <div className="mt-6 space-y-3">
+                                            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                                                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                                                Live Preview
+                                            </h3>
+                                            
+                                            <div className="rounded-xl border border-gray-250/80 bg-[#efeae2] p-4 relative overflow-hidden flex flex-col justify-between shadow-[inset_0_2px_4px_rgba(0,0,0,0.03)] min-h-[220px]">
+                                                {/* Chat pattern background simulation */}
+                                                <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{
+                                                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath fill-rule='evenodd' d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7z'/%3E%3C/g%3E%3C/svg%3E")`
+                                                }} />
+
+                                                {/* WhatsApp Bubble */}
+                                                <div className="relative z-10 max-w-[85%] rounded-lg rounded-tl-none bg-white p-3.5 shadow-sm border border-gray-150 self-start">
+                                                    {/* Header text/media */}
+                                                    {selectedTemplate.components?.find(c => c.type === 'HEADER') && (() => {
+                                                        const header = selectedTemplate.components.find(c => c.type === 'HEADER');
+                                                        if (header.format === 'TEXT') {
+                                                            return <div className="font-bold text-gray-900 text-sm mb-1.5">{header.text}</div>;
+                                                        }
+                                                        if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(header.format)) {
+                                                            return (
+                                                                <div className="mb-2 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center h-32 w-full text-gray-400 font-semibold text-xs overflow-hidden relative">
+                                                                    {headerMediaUrl ? (
+                                                                        header.format === 'IMAGE' ? (
+                                                                            <img src={headerMediaUrl} alt="Header media preview" className="w-full h-full object-cover" />
+                                                                        ) : header.format === 'VIDEO' ? (
+                                                                            <video src={headerMediaUrl} className="w-full h-full object-cover" />
+                                                                        ) : (
+                                                                            <div className="flex flex-col items-center gap-1.5 p-3">
+                                                                                <FileText className="h-8 w-8 text-indigo-500" />
+                                                                                <span className="truncate max-w-[150px] text-gray-600 font-mono text-[10px]">{headerMediaUrl.split('/').pop()}</span>
+                                                                            </div>
+                                                                        )
+                                                                    ) : (
+                                                                        <span className="flex flex-col items-center gap-1">
+                                                                            <span className="uppercase text-[10px] bg-gray-200 px-2 py-0.5 rounded text-gray-600 font-bold">{header.format} Header</span>
+                                                                            <span className="text-[10px] text-gray-400 font-normal">Pending media mapping</span>
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
+
+                                                    {/* Body */}
+                                                    <div className="text-gray-900 text-sm break-words whitespace-pre-wrap leading-relaxed">
+                                                        {formatWhatsAppText(getPreviewText())}
+                                                    </div>
+
+                                                    {/* Footer */}
+                                                    {selectedTemplate.components?.find(c => c.type === 'FOOTER') && (
+                                                        <div className="text-[11px] text-gray-400 mt-1">
+                                                            {selectedTemplate.components.find(c => c.type === 'FOOTER').text}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Time & status */}
+                                                    <div className="flex items-center justify-end gap-1 text-[9px] text-gray-400 mt-1 select-none">
+                                                        <span>12:00 PM</span>
+                                                        <span className="text-blue-500">✓✓</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Buttons */}
+                                                {selectedTemplate.components?.find(c => c.type === 'BUTTONS') && (
+                                                    <div className="relative z-10 mt-2 space-y-1.5 self-start w-[85%]">
+                                                        {selectedTemplate.components.find(c => c.type === 'BUTTONS').buttons.map((btn, idx) => (
+                                                            <div key={idx} className="flex items-center justify-center gap-2 rounded-lg bg-white py-2 px-3 shadow-sm border border-gray-200 text-xs font-bold text-sky-600 cursor-default hover:bg-gray-50 transition-colors">
+                                                                {btn.type === 'PHONE_NUMBER' ? '📞' : btn.type === 'URL' ? '🔗' : '↩️'}
+                                                                <span className="truncate">{btn.text}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
+
 
                                 <div>
                                     <div className="mb-4 flex items-start justify-between gap-3">

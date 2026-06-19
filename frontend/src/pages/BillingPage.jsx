@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Check, ChevronDown, CreditCard, Loader2, Megaphone, ReceiptText, ShieldCheck, Wallet, Plus, ArrowRight, X } from 'lucide-react'
+import { AlertCircle, Check, ChevronDown, CreditCard, Hexagon, Loader2, Megaphone, ReceiptText, ShieldCheck, Wallet, Plus, ArrowRight, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../supabaseClient'
@@ -594,6 +594,179 @@ export default function BillingPage() {
                     </div>
                 </section>
 
+                {/* ═══════════════════════════════════════════════════════════════
+                    COMPREHENSIVE PLANS COMPARISON SECTION
+                ═══════════════════════════════════════════════════════════════ */}
+                <section className="space-y-6">
+                    <div className="text-center space-y-3 mt-8 mb-4">
+                        <span className="text-[11px] font-extrabold text-emerald-600 uppercase tracking-widest flex items-center justify-center gap-2">
+                            <Hexagon className="h-4 w-4 text-emerald-600 stroke-[2.5]" />
+                            Full Comparison
+                        </span>
+                        <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight leading-snug">
+                            Every feature, every plan—checks<br className="hidden sm:inline" /> for included, crosses for not yet
+                        </h2>
+                        <p className="text-sm text-gray-500 max-w-2xl mx-auto font-medium">
+                            Full matrix on desktop—checks for included, crosses for not yet.
+                        </p>
+                    </div>
+
+                    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                        <div className="overflow-x-auto">
+                            <table className="w-full min-w-[700px] border-collapse text-left">
+                                <thead>
+                                    <tr className="border-b border-gray-200">
+                                        <th className="p-5 text-xs font-bold text-gray-400 uppercase tracking-wider w-2/5">Capability</th>
+                                        <th className="p-5 text-center text-xs font-bold text-gray-900 uppercase tracking-wider w-1/5">Starter</th>
+                                        <th className="p-5 text-center text-xs font-bold bg-emerald-50/50 text-[#075E54] uppercase tracking-wider w-1/5 relative">
+                                            <span className="block font-black">Growth</span>
+                                            <span className="block text-[8px] font-extrabold text-emerald-600 tracking-widest mt-0.5">RECOMMENDED</span>
+                                        </th>
+                                        <th className="p-5 text-center text-xs font-bold text-gray-900 uppercase tracking-wider w-1/5">Pro</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                    {/* Category 1 */}
+                                    <tr className="bg-gray-50/50">
+                                        <td colSpan="4" className="px-5 py-3 text-xs font-extrabold text-gray-500 uppercase tracking-wider">
+                                            Service, Campaigns & Account
+                                        </td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Unlimited free service conversations</td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Unlimited campaigns (subject to Facebook Business Manager verification)</td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Contact list limit</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">1,000</td>
+                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">10,000</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">50,000</td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Connected WhatsApp numbers</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">1 number</td>
+                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">1 number</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">2 numbers</td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Broadcast multi-media messages</td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Carousel feature</td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Dedicated onboarding help</td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Blue tick application process help</td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                    </tr>
+
+                                    {/* Category 2 */}
+                                    <tr className="bg-gray-50/50">
+                                        <td colSpan="4" className="px-5 py-3 text-xs font-extrabold text-gray-500 uppercase tracking-wider">
+                                            Automation & AI
+                                        </td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Max automation flows</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">5 flows</td>
+                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">Unlimited</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Unlimited</td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">AI agents included</td>
+                                        <td className="px-5 py-4 text-center"><Cross /></td>
+                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">5 agents</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Unlimited</td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Visual chatbot flow builder</td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Custom fields, tags & attributes</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Basic</td>
+                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">Advanced</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Advanced</td>
+                                    </tr>
+
+                                    {/* Category 3 */}
+                                    <tr className="bg-gray-50/50">
+                                        <td colSpan="4" className="px-5 py-3 text-xs font-extrabold text-gray-500 uppercase tracking-wider">
+                                            Campaign Tools & Analytics
+                                        </td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Campaign scheduler</td>
+                                        <td className="px-5 py-4 text-center"><Cross /></td>
+                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Cross /></td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Detailed analytics dashboard</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Basic</td>
+                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">Standard</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Advanced</td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Contact list exports (CSV)</td>
+                                        <td className="px-5 py-4 text-center"><Cross /></td>
+                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Cross /></td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Developer API & Webhooks</td>
+                                        <td className="px-5 py-4 text-center"><Cross /></td>
+                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Cross /></td>
+                                        <td className="px-5 py-4 text-center"><Tick /></td>
+                                    </tr>
+
+                                    {/* Category 4 */}
+                                    <tr className="bg-gray-50/50">
+                                        <td colSpan="4" className="px-5 py-3 text-xs font-extrabold text-gray-500 uppercase tracking-wider">
+                                            Team & Support
+                                        </td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Team inbox seats (Agents)</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">5 agents</td>
+                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">5 agents</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">10 agents</td>
+                                    </tr>
+                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
+                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Customer support level</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Standard support</td>
+                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">Priority support</td>
+                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Dedicated VIP support</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
                 <section className="rounded-xl border border-gray-200 bg-white">
                     <div className="border-b border-gray-100 p-5">
                         <h2 className="text-base font-semibold text-gray-950">Recent Wallet Transactions</h2>
@@ -774,4 +947,20 @@ function getMessageChargeTitle(charge) {
     if (source === 'ai_agent') return `AI agent ${category} charge`
     if (source === 'manual') return `Manual message ${category} charge`
     return `WhatsApp ${category} charge`
+}
+
+function Tick() {
+    return (
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100 shadow-[inset_0_1px_2px_rgba(0,0,0,0.02)] transition-transform duration-200 hover:scale-110">
+            <Check className="h-4 w-4 stroke-[2.5]" />
+        </span>
+    );
+}
+
+function Cross() {
+    return (
+        <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gray-50 text-gray-400 border border-gray-200 transition-transform duration-200 hover:scale-110">
+            <X className="h-4 w-4 stroke-[2]" />
+        </span>
+    );
 }
