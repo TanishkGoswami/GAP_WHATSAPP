@@ -108,7 +108,6 @@ export function AuthProvider({ children }) {
             if (res.ok) {
                 const data = await res.json()
                 const role = data?.role || (loginType === 'agent' ? 'agent' : 'owner')
-                console.log("Profile Data:", data, "Resolved Role:", role, "Login Type:", loginType)
                 setUserRole(role)
                 setMemberProfile(data)
             } else {
@@ -143,7 +142,6 @@ export function AuthProvider({ children }) {
         // Do NOT call setLoading here — it causes children to unmount/remount on
         // TOKEN_REFRESHED events (tab switching), wiping form state in child pages.
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-            console.log('Auth state change:', event, session?.user?.email);
             setSession(session ?? null)
             if (session?.user) {
                 setUser({ ...session.user, plan: resolvePlanName(session.user.user_metadata?.plan), subscription_status: session.user.user_metadata?.subscription_status || 'inactive' })
@@ -156,7 +154,6 @@ export function AuthProvider({ children }) {
 
             // Handle sign out on token expiry
             if (event === 'SIGNED_OUT') {
-                console.log('User signed out');
                 setUserRole(null)
                 setMemberProfile(null)
                 setIsProfileLoading(false)
@@ -241,7 +238,6 @@ export function AuthProvider({ children }) {
                     const isExpiring = expiresAtMs && expiresAtMs < Date.now() + 60_000
 
                     if (!tokenOverride && isExpiring) {
-                        console.log('Token expired or expiring soon, refreshing before request...')
                         const { data, error } = await supabase.auth.refreshSession()
                         if (error) throw error
                         currentSession = data.session
@@ -270,7 +266,6 @@ export function AuthProvider({ children }) {
 
                     // If 401, try to refresh token once
                     if (response.status === 401 && retryCount === 0) {
-                        console.log('Token expired, attempting refresh...');
                         const { data, error } = await supabase.auth.refreshSession();
                         if (error) throw error;
                         if (data.session) {

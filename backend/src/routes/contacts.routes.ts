@@ -3,6 +3,7 @@ import {
     getContacts, 
     createContact, 
     updateContact, 
+    getContactProfilePhoto,
     saveContact, 
     deleteContact 
 } from '../controllers/contacts.controller.js';
@@ -14,6 +15,7 @@ const router = Router();
 
 router.get('/', authMiddleware, getContacts);
 router.post('/', authMiddleware, createContact);
+router.get('/:id/profile-photo', authMiddleware, getContactProfilePhoto);
 router.patch('/:id', authMiddleware, updateContact);
 router.post('/:id/save', authMiddleware, saveContact);
 router.delete('/:id', authMiddleware, deleteContact);
