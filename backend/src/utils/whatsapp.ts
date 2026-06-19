@@ -172,3 +172,82 @@ export function validateWhatsappTemplatePayload(payload: any) {
 
     return { normalized, issues, riskScore, approvalState, canSubmit: errorCount === 0 };
 }
+
+export function enrichTemplateExamplesWithRealisticSamples(components: any[]) {
+    if (!Array.isArray(components)) return components;
+
+    for (const comp of components) {
+        if (comp.type === 'BODY' && typeof comp.text === 'string') {
+            const matches = comp.text.match(/\{\{(\d+)\}\}/g);
+            if (matches) {
+                const varIndices = Array.from(new Set(matches.map((m: any) => parseInt(m.replace(/[^0-9]/g, ''), 10)))).sort((a, b) => a - b);
+                const maxVar = varIndices.length > 0 ? Math.max(...varIndices) : 0;
+                if (maxVar > 0) {
+                    const segments = comp.text.split(/\{\{\s*\d+\s*\}\}/);
+                    const samples = Array.from({ length: maxVar }, (_, i) => {
+                        const contextBefore = (segments[i] || '').toLowerCase();
+                        const contextAfter = (segments[i + 1] || '').toLowerCase();
+                        
+                        if (/\b(hi|hello|dear|hey|hola|welcome|greeting)\b/.test(contextBefore)) {
+                            return "John";
+                        }
+                        if (/\b(address|street|location|city|delivery address|destination)\b/.test(contextBefore) || /\b(address|location|destination)\b/.test(contextAfter)) {
+                            return "123 Main St, New York";
+                        }
+                        if (/\b(refund of|amount|price|total|payment of|fee|bill|due|charge|payment|usd|inr|rs|paying|refund)\b/.test(contextBefore) || /[\$\£\¥\₹]\s*$/.test(contextBefore)) {
+                            return "50.00";
+                        }
+                        if (/\b(order|invoice|ticket|booking|id|reference|ref|txn|transaction|#)\b/.test(contextBefore) || /#\s*$/.test(contextBefore)) {
+                            return "10834";
+                        }
+                        if (/\b(account on|website|portal|app|platform|url|link|system)\b/.test(contextBefore)) {
+                            return "our website";
+                        }
+                        if (/\b(due to|reason|because of|suspended for|error|violation)\b/.test(contextBefore)) {
+                            return "suspicious activity";
+                        }
+                        if (/\b(contact|support|call|reach|email)\b/.test(contextBefore) || /\b(support|inquiries|help)\b/.test(contextAfter)) {
+                            return "support@example.com";
+                        }
+                        if (/\b(otp|code|verification|login|security|password|passcode)\b/.test(contextBefore) || /\b(otp|code|verification)\b/.test(contextAfter)) {
+                            return "123456";
+                        }
+                        if (/\b(scheduled for|appointment on|delivery on|date of|appointment at|scheduled at|on|at|date|time|scheduled|appointment|delivery)\b/.test(contextBefore) || /\b(am|pm|ist|utc|est|gmt)\b/.test(contextAfter)) {
+                            return "June 25th";
+                        }
+                        if (/\b(within|in|takes|about|around)\b/.test(contextBefore) || /\b(days|business days|working days|hours|minutes|mins|weeks|months)\b/.test(contextAfter)) {
+                            return "3";
+                        }
+                        return "info";
+                    });
+                    comp.example = {
+                        body_text: [samples]
+                    };
+                }
+            }
+        } else if (comp.type === 'HEADER' && comp.format === 'TEXT' && typeof comp.text === 'string') {
+            const matches = comp.text.match(/\{\{(\d+)\}\}/g);
+            if (matches) {
+                const varIndices = Array.from(new Set(matches.map((m: any) => parseInt(m.replace(/[^0-9]/g, ''), 10)))).sort((a, b) => a - b);
+                const maxVar = varIndices.length > 0 ? Math.max(...varIndices) : 0;
+                if (maxVar > 0) {
+                    const segments = comp.text.split(/\{\{\s*\d+\s*\}\}/);
+                    const samples = Array.from({ length: maxVar }, (_, i) => {
+                        const contextBefore = (segments[i] || '').toLowerCase();
+                        if (/\b(hi|hello|dear|hey|hola|welcome)\b/.test(contextBefore)) {
+                            return "John";
+                        }
+                        if (/\b(order|invoice|id|#)\b/.test(contextBefore) || /#\s*$/.test(contextBefore)) {
+                            return "10834";
+                        }
+                        return "heading";
+                    });
+                    comp.example = {
+                        header_text: samples
+                    };
+                }
+            }
+        }
+    }
+    return components;
+}

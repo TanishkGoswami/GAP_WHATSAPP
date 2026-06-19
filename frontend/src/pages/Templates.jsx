@@ -474,6 +474,14 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                 <div className="flex flex-wrap gap-2">
                     <TourButton />
                     <button
+                        onClick={fetchData}
+                        disabled={loading}
+                        className="inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg font-medium transition-all shadow-sm disabled:opacity-50"
+                    >
+                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                        Sync Status
+                    </button>
+                    <button
                         onClick={() => setIsCreateOpen(true)}
                         data-tour="templates-create"
                         className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
