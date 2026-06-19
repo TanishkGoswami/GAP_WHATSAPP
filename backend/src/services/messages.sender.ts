@@ -304,7 +304,7 @@ export async function sendInteractiveButtons(
     }
   }
 
-  if (!fromId || !token) throw new Error("Missing WA creds for send");
+  if (!fromId || !token) throw new Error("Missing WA creds for interactive send");
 
   const url = `https://graph.facebook.com/v21.0/${fromId}/messages`;
 
@@ -318,11 +318,11 @@ export async function sendInteractiveButtons(
       body: { text: body },
       footer: footer ? { text: footer } : undefined,
       action: {
-        buttons: buttons.map((b) => ({
+        buttons: (buttons || []).slice(0, 3).map((b) => ({
           type: "reply",
           reply: {
-            id: b.id,
-            title: b.text.substring(0, 20), // WhatsApp limit
+            id: String(b.id || b.text || "").slice(0, 256),
+            title: String(b.text || b.title || b.id || "Option").slice(0, 20),
           },
         })),
       },

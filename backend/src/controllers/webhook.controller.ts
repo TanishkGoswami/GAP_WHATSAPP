@@ -11,11 +11,9 @@ import { normalizeMetaTemplateStatus, upsertLocalTemplateSubmission } from './wh
 import { encryptToken } from '../utils/crypto.js';
 import { uploadMediaToStorage } from '../services/broadcast.service.js';
 
-const ACCESS_TOKEN = process.env.WA_ACCESS_TOKEN;
-// (Add other imports as needed later)
-
 const VERIFY_TOKEN = process.env.WA_VERIFY_TOKEN;
 const APP_SECRET = process.env.META_APP_SECRET;
+const ACCESS_TOKEN = process.env.WA_ACCESS_TOKEN;
 const WEBHOOK_DEBUG = String(process.env.WEBHOOK_DEBUG || "true").toLowerCase() !== "false";
 
 function webhookLog(step: string, details: Record<string, any> = {}) {
