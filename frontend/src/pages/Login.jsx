@@ -181,7 +181,13 @@ export default function Login() {
                             </form>
 
                             <div className="mt-6 grid grid-cols-2 gap-3">
-                                <TrustItem icon={Users} label="Team ready" />
+                                <a
+                                    href="https://wb.getaipilot.in/agent-login"
+                                    className="flex h-11 items-center gap-2 rounded-lg border border-[#128C7E]/30 bg-[#128C7E]/5 px-3 text-sm font-semibold text-[#128C7E] transition-colors hover:bg-[#128C7E]/10 hover:border-[#128C7E]/50"
+                                >
+                                    <Users className="h-4 w-4" />
+                                    Team member?
+                                </a>
                                 <TrustItem icon={Zap} label="Dashboard first" />
                             </div>
 

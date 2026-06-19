@@ -595,8 +595,8 @@ export default function Layout() {
                                                             if (item.link) navigate(item.link);
                                                         }}
                                                         className={`group relative flex items-start gap-3 px-3 py-2.5 mx-2 my-1 rounded-xl border transition-all duration-155 cursor-pointer hover:bg-neutral-50/50 active:scale-[0.99] ${!item.read
-                                                                ? 'bg-[#0070d1]/[0.02] border-neutral-150'
-                                                                : 'bg-transparent border-transparent'
+                                                            ? 'bg-[#0070d1]/[0.02] border-neutral-150'
+                                                            : 'bg-transparent border-transparent'
                                                             }`}
                                                         style={{ borderRadius: '10px' }}
                                                     >
@@ -607,14 +607,14 @@ export default function Layout() {
 
                                                         {/* Status Icon Indicator */}
                                                         <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-xs shadow-[0_1px_2px_rgba(0,0,0,0.01)] ${isCritical
-                                                                ? 'bg-rose-50 border-rose-100 text-rose-600'
-                                                                : isError
-                                                                    ? 'bg-red-50 border-red-100 text-red-600'
-                                                                    : isSuccess
-                                                                        ? 'bg-emerald-50 border-emerald-100 text-emerald-600'
-                                                                        : isWarning
-                                                                            ? 'bg-amber-50 border-amber-100 text-amber-600'
-                                                                            : 'bg-neutral-50 border-neutral-200 text-neutral-600'
+                                                            ? 'bg-rose-50 border-rose-100 text-rose-600'
+                                                            : isError
+                                                                ? 'bg-red-50 border-red-100 text-red-600'
+                                                                : isSuccess
+                                                                    ? 'bg-emerald-50 border-emerald-100 text-emerald-600'
+                                                                    : isWarning
+                                                                        ? 'bg-amber-50 border-amber-100 text-amber-600'
+                                                                        : 'bg-neutral-50 border-neutral-200 text-neutral-600'
                                                             }`}
                                                         >
                                                             {isCritical ? (

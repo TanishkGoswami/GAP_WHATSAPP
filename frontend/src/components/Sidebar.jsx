@@ -39,7 +39,7 @@ const navigation = [
         icon: FileText,
         subItems: [
             { name: 'My Templates', href: '/templates' },
-            { name: 'Industry Library', href: '/templates/industries' }
+            { name: 'Explore Templates', href: '/templates/industries' }
         ]
     },
     { name: 'Broadcasts', href: '/broadcast', icon: Megaphone },

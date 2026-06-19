@@ -53,7 +53,9 @@
     text-align: left;
   }
 
-  h1, h2, h3 {
+  h1,
+  h2,
+  h3 {
     letter-spacing: 0;
   }
 
@@ -251,6 +253,7 @@
 }
 
 @media (max-width: 767px) {
+
   .fp-page-inner,
   .fp-page {
     width: 100%;
@@ -395,5 +398,101 @@
 
   .focus\:border-emerald-500:focus {
     border-color: #0070d1;
+  }
+
+  .meta-template-card {
+    background-color: #ffffff;
+    border: 1px solid #e8edf3 !important;
+    border-radius: 12px !important;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+
+  .meta-template-card:hover {
+    transform: translateY(-2px) !important;
+    border-color: rgba(24, 119, 242, 0.45) !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08) !important;
+  }
+
+  .meta-variable-badge {
+    display: inline-block;
+    background-color: rgba(37, 211, 102, 0.08);
+    color: #128c7e;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-weight: 600;
+    border-radius: 4px;
+    padding: 1px 4.5px;
+    border: 1px solid rgba(37, 211, 102, 0.15);
+    font-size: 9.5px;
+    margin: 0 2px;
+  }
+
+  .apple-select-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 38px;
+    background-color: #ffffff;
+    border: 1px solid #e5e5e7 !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: #1d1d1f !important;
+    padding: 0 12px !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+    transition: all 0.12s cubic-bezier(0, 0, 0.2, 1) !important;
+  }
+
+  .apple-select-trigger:hover:not(:disabled) {
+    background-color: #fafafa !important;
+    border-color: #d2d2d7 !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+  }
+
+  .apple-select-trigger:focus:not(:disabled) {
+    border-color: #000000 !important;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1) !important;
+  }
+
+  .apple-select-dropdown {
+    background-color: rgba(255, 255, 255, 0.88) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(190%) !important;
+    backdrop-filter: blur(20px) saturate(190%) !important;
+    border: 1px solid rgba(0, 0, 0, 0.08) !important;
+    border-radius: 8px !important;
+    padding: 4px !important;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.03) !important;
+    margin-top: 4px !important;
+    z-index: 50 !important;
+  }
+
+  .apple-select-option {
+    width: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 6px 10px !important;
+    font-size: 13px !important;
+    color: #1d1d1f !important;
+    border-radius: 5px !important;
+    background: transparent !important;
+    transition: background-color 0.1s ease, color 0.1s ease !important;
+    font-weight: 450 !important;
+    text-align: left !important;
+  }
+
+  .apple-select-option:hover {
+    background-color: rgba(0, 0, 0, 0.04) !important;
+    color: #000000 !important;
+  }
+
+  .apple-select-option-selected {
+    font-weight: 600 !important;
+    background-color: rgba(0, 0, 0, 0.025) !important;
+    color: #000000 !important;
+  }
+
+  .apple-select-option-selected:hover {
+    background-color: rgba(0, 0, 0, 0.05) !important;
   }
 }
