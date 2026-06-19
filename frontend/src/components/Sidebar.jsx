@@ -62,7 +62,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
     const [selectedWaAccount, setSelectedWaAccount] = useState(() => localStorage.getItem(SELECTED_WA_ACCOUNT_KEY) || 'All')
 
     const isOwner = userRole === 'owner'
-    const usesCompactSidebar = location.pathname.startsWith('/live-chat') || location.pathname.startsWith('/templates/industries')
+    const usesCompactSidebar = location.pathname.startsWith('/live-chat')
     const isCollapsed = usesCompactSidebar && !isHovered && !isOrgMenuOpen && !isAccountMenuOpen
     const isExpanded = !isCollapsed
     const displayName = memberProfile?.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Account'

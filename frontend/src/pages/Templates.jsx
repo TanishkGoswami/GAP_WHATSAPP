@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone, AlertCircle, RefreshCw, UploadCloud, Type, MessageSquareText, MousePointerClick, ChevronDown, Loader2, Check, MessageSquare, Image, ExternalLink, ArrowRight, ShieldCheck, HelpCircle, Tag, Building2, Target } from 'lucide-react'
 import Modal from '../components/Modal'
 import { useAuth } from '../context/AuthContext'
@@ -60,9 +61,21 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     const [activeTab, setActiveTab] = useState('ALL') // ALL, MARKETING, UTILITY, AUTHENTICATION
     const [activeStatus, setActiveStatus] = useState('APPROVED') // APPROVED, PENDING, DRAFT
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
-    const [templates, setTemplates] = useState([])
-    const [loading, setLoading] = useState(true)
-    const [fetchError, setFetchError] = useState('')
+    
+    const queryClient = useQueryClient()
+    const { data: templates = [], isLoading: loading, error: queryError, refetch } = useQuery({
+        queryKey: ['whatsapp-templates'],
+        queryFn: async () => {
+            const res = await apiCall(`${API_URL}/api/whatsapp/templates`)
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}))
+                throw new Error(data.error || 'Could not load templates from Meta.')
+            }
+            return res.json()
+        },
+        enabled: !!session?.access_token,
+    })
+    const fetchError = queryError?.message || ''
 
     // Prefill state
     const [prefilledTemplate, setPrefilledTemplate] = useState(null);
@@ -115,24 +128,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     }, [allTemplatesList, activeTab, activeStatus]);
 
     const fetchData = async () => {
-        setLoading(true)
-        setFetchError('')
-        try {
-            // Fetch templates
-            const tplRes = await apiCall(`${API_URL}/api/whatsapp/templates`);
-            const tplData = await tplRes.json();
-            if (tplRes.ok) {
-                setTemplates(tplData || []);
-            } else {
-                console.error('Error validating access token:', tplData.error);
-                setFetchError(tplData.error || 'Could not load templates from Meta.')
-            }
-        } catch (error) {
-            console.error('Error fetching data:', error);
-            setFetchError(error?.message || 'Could not load templates.')
-        } finally {
-            setLoading(false);
-        }
+        refetch()
     }
 
     const handleCreateSuccess = () => {
@@ -153,11 +149,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     };
 
 
-    useEffect(() => {
-        if (session?.access_token) {
-            fetchData();
-        }
-    }, [session])
+
 
     const handleDelete = async (name) => {
         const confirmed = await confirmDialog(`Are you sure you want to delete template "${name}"?`, {
@@ -473,6 +465,14 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                 </div>
                 <div className="flex flex-wrap gap-2">
                     <TourButton />
+                    <button
+                        onClick={fetchData}
+                        disabled={loading}
+                        className="inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg font-medium transition-all shadow-sm disabled:opacity-50"
+                    >
+                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                        Sync Status
+                    </button>
                     <button
                         onClick={() => setIsCreateOpen(true)}
                         data-tour="templates-create"

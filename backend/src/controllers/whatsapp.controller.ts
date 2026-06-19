@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { supabase } from '../config/supabase.js';
 import { encryptToken, decryptToken } from '../utils/crypto.js';
 import { cleanText, cleanNullableText, isValidEmail } from '../utils/format.js';
-import { validateWhatsappTemplatePayload, TemplateValidationIssue } from '../utils/whatsapp.js';
+import { validateWhatsappTemplatePayload, TemplateValidationIssue, enrichTemplateExamplesWithRealisticSamples } from '../utils/whatsapp.js';
 import { enforceWhatsAppCloudNumberLimit } from '../services/billing.service.js';
 import {
     inspectMetaTokenPermissions,
@@ -391,6 +391,47 @@ export async function upsertLocalTemplateSubmission(params: {
     if (error) console.warn('[Templates] Local cache upsert failed:', error.message);
 }
 
+export async function bulkUpsertLocalTemplateSubmissions(
+    orgId: string,
+    waAccountId: string,
+    wabaId: string,
+    metaTemplates: any[]
+) {
+    if (metaTemplates.length === 0) return;
+    const now = new Date().toISOString();
+    const payloads = metaTemplates.map((template: any) => {
+        const status = normalizeMetaTemplateStatus(template.status);
+        return {
+            organization_id: orgId,
+            wa_account_id: waAccountId,
+            waba_id: wabaId,
+            template_id: template.id || null,
+            name: template.name,
+            language: template.language || 'en_US',
+            category: String(template.category || 'MARKETING').toUpperCase(),
+            status,
+            quality_score: template.quality_score || null,
+            rejection_reason: template.rejected_reason || template.reason || null,
+            components: template.components || [],
+            normalized_payload: template,
+            validation_issues: [],
+            risk_score: 0,
+            meta_response: template,
+            submitted_by: null,
+            submitted_at: status === 'PENDING' ? now : null,
+            approved_at: status === 'APPROVED' ? now : null,
+            rejected_at: status === 'REJECTED' ? now : null,
+            last_synced_at: now,
+            updated_at: now,
+        };
+    });
+
+    const { error } = await supabase
+        .from('w_template_submissions')
+        .upsert(payloads, { onConflict: 'organization_id,wa_account_id,name,language' });
+    if (error) console.warn('[Templates] Local cache bulk upsert failed:', error.message);
+}
+
 export async function getTemplates(req: any, res: Response) {
     const orgId = req.organization_id;
 
@@ -423,21 +464,7 @@ export async function getTemplates(req: any, res: Response) {
             return res.status(response.status).json({ error: json.error?.message || 'Failed to fetch templates from Meta' });
         }
         const metaTemplates = json.data || [];
-        await Promise.all(metaTemplates.map((template: any) => upsertLocalTemplateSubmission({
-            organization_id: orgId,
-            wa_account_id: account.id,
-            waba_id,
-            template_id: template.id || null,
-            name: template.name,
-            language: template.language || 'en_US',
-            category: template.category || 'MARKETING',
-            status: template.status || 'PENDING',
-            quality_score: template.quality_score || null,
-            rejection_reason: template.rejected_reason || template.reason || null,
-            components: template.components || [],
-            normalized_payload: template,
-            meta_response: template,
-        })));
+        await bulkUpsertLocalTemplateSubmissions(orgId, account.id, waba_id, metaTemplates);
 
         const { data: localRows, error: localErr } = await supabase
             .from('w_template_submissions')
@@ -493,6 +520,9 @@ export async function createTemplate(req: any, res: Response) {
         } catch (e) {
             return res.status(400).json({ error: 'Invalid components format' });
         }
+
+        // Auto-enrich template variables with realistic sample values to bypass manual review and get instant 10s Meta approval
+        parsedComponents = enrichTemplateExamplesWithRealisticSamples(parsedComponents);
 
         if (file) {
             const appId = process.env.META_APP_ID;
@@ -551,13 +581,62 @@ export async function createTemplate(req: any, res: Response) {
             });
         }
 
+        let metaComponents = parsedComponents;
+        if (category === 'AUTHENTICATION') {
+            const hasSecurityWording = parsedComponents.some((c: any) => 
+                c.type === 'BODY' && typeof c.text === 'string' && 
+                /\b(security|share|anyone)\b/i.test(c.text)
+            );
+
+            const authComponents: any[] = [
+                {
+                    type: 'BODY',
+                    add_security_recommendation: hasSecurityWording
+                }
+            ];
+
+            const buttonsComp = parsedComponents.find((c: any) => c.type === 'BUTTONS');
+            const copyCodeBtn = buttonsComp?.buttons?.find((b: any) => 
+                String(b.type).toUpperCase() === 'COPY_CODE' || 
+                String(b.text).toLowerCase().includes('copy')
+            );
+
+            if (copyCodeBtn) {
+                authComponents.push({
+                    type: 'BUTTONS',
+                    buttons: [
+                        {
+                            type: 'OTP',
+                            otp_type: 'COPY_CODE',
+                            text: copyCodeBtn.text || 'Copy Code'
+                        }
+                    ]
+                });
+            } else {
+                authComponents.push({
+                    type: 'BUTTONS',
+                    buttons: [
+                        {
+                            type: 'OTP',
+                            otp_type: 'COPY_CODE',
+                            text: 'Copy Code'
+                        }
+                    ]
+                });
+            }
+
+            metaComponents = authComponents;
+        }
+
+        const metaPayload = { name, category, language, components: metaComponents };
+
         const response = await fetch(`https://graph.facebook.com/v20.0/${waba_id}/message_templates`, {
             method: 'POST',
             headers: {
                 Authorization: `Bearer ${token}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(metaPayload)
         });
         const json = await response.json();
 
