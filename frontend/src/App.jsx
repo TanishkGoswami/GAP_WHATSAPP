@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
@@ -22,6 +23,8 @@ import HelpCenter from './pages/HelpCenter'
 import BillingPage from './pages/BillingPage'
 import PaymentSuccessPage from './pages/PaymentSuccessPage'
 import WhatsAppNumberPage from './pages/WhatsAppNumberPage'
+import CookieConsent from './components/CookieConsent'
+import { loadFacebookSDK } from './services/facebookSdkLoader'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,6 +39,15 @@ const queryClient = new QueryClient({
 })
 
 export default function App() {
+  useEffect(() => {
+    // Rollback logic: If cookie consent is disabled, load the Facebook SDK immediately on startup.
+    if (import.meta.env.VITE_ENABLE_COOKIE_CONSENT !== 'true') {
+      loadFacebookSDK().catch((err) => {
+        console.error('Failed to load Facebook SDK automatically:', err);
+      });
+    }
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <DialogProvider>
@@ -66,6 +78,7 @@ export default function App() {
                 <Route path="help" element={<HelpCenter />} />
               </Route>
             </Routes>
+            {import.meta.env.VITE_ENABLE_COOKIE_CONSENT === 'true' && <CookieConsent />}
           </BrowserRouter>
         </AuthProvider>
       </DialogProvider>

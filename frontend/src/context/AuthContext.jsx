@@ -36,6 +36,7 @@ export function AuthProvider({ children }) {
     const [memberProfile, setMemberProfile] = useState(null)
     const [isProfileLoading, setIsProfileLoading] = useState(false)
     const fetchedForProfileKey = useRef(null) // tracks which user + portal we last fetched profile for
+    const lastSubscriptionCheckRef = useRef(0)
     const [loginType, setLoginType] = useState(localStorage.getItem('auth_login_type') || 'owner')
 
     const fetchUserProfile = useCallback(async (sessionUser) => {
@@ -132,6 +133,7 @@ export function AuthProvider({ children }) {
             if (session?.user) {
                 setUser({ ...session.user, plan: resolvePlanName(session.user.user_metadata?.plan), subscription_status: session.user.user_metadata?.subscription_status || 'inactive' })
                 fetchUserProfile(session.user)
+                lastSubscriptionCheckRef.current = Date.now()
             } else {
                 setUser(null)
             }
@@ -144,9 +146,24 @@ export function AuthProvider({ children }) {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             setSession(session ?? null)
             if (session?.user) {
-                setUser({ ...session.user, plan: resolvePlanName(session.user.user_metadata?.plan), subscription_status: session.user.user_metadata?.subscription_status || 'inactive' })
+                setUser(prev => {
+                    const isSameUser = prev && prev.id === session.user.id;
+                    return {
+                        ...session.user,
+                        plan: isSameUser && prev.subscription_checked ? prev.plan : resolvePlanName(session.user.user_metadata?.plan),
+                        subscription_status: isSameUser && prev.subscription_checked ? prev.subscription_status : (session.user.user_metadata?.subscription_status || 'inactive'),
+                        subscription_checked: isSameUser ? (prev.subscription_checked || false) : false
+                    };
+                });
                 if (event === 'SIGNED_IN' || event === 'USER_UPDATED') {
                     fetchUserProfile(session.user)
+                    lastSubscriptionCheckRef.current = Date.now()
+                } else if (event === 'TOKEN_REFRESHED') {
+                    const fiveMinutes = 5 * 60 * 1000
+                    if (Date.now() - lastSubscriptionCheckRef.current > fiveMinutes) {
+                        fetchUserProfile(session.user)
+                        lastSubscriptionCheckRef.current = Date.now()
+                    }
                 }
             } else {
                 setUser(null)
