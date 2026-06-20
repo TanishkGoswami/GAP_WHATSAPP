@@ -116,7 +116,7 @@ export default function CookieConsent({ onConsentChange }) {
               </div>
 
               {/* Integrations */}
-              <div 
+              <div
                 className="flex items-start justify-between gap-3 p-2 rounded-xl hover:bg-gray-50/50 cursor-pointer"
                 onClick={() => togglePreference('integrations')}
               >
@@ -127,13 +127,13 @@ export default function CookieConsent({ onConsentChange }) {
                 <input
                   type="checkbox"
                   checked={preferences.integrations}
-                  onChange={() => {}}
+                  onChange={() => { }}
                   className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                 />
               </div>
 
               {/* Analytics */}
-              <div 
+              <div
                 className="flex items-start justify-between gap-3 p-2 rounded-xl hover:bg-gray-50/50 cursor-pointer"
                 onClick={() => togglePreference('analytics')}
               >
@@ -144,7 +144,7 @@ export default function CookieConsent({ onConsentChange }) {
                 <input
                   type="checkbox"
                   checked={preferences.analytics}
-                  onChange={() => {}}
+                  onChange={() => { }}
                   className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                 />
               </div>
