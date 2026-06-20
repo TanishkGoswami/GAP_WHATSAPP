@@ -14,7 +14,7 @@ const formatDateToIST = (dateStr) => {
     try {
         const date = new Date(dateStr);
         if (isNaN(date.getTime())) return dateStr;
-        
+
         const formatter = new Intl.DateTimeFormat('en-US', {
             month: 'short',
             day: 'numeric',
@@ -61,9 +61,9 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     const [activeTab, setActiveTab] = useState('ALL') // ALL, MARKETING, UTILITY, AUTHENTICATION
     const [activeStatus, setActiveStatus] = useState('APPROVED') // APPROVED, PENDING, DRAFT
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
-    
+
     const queryClient = useQueryClient()
-    const { data: templates = [], isLoading: loading, error: queryError, refetch } = useQuery({
+    const { data: templates = [], isLoading: loading, isFetching, error: queryError, refetch } = useQuery({
         queryKey: ['whatsapp-templates'],
         queryFn: async () => {
             const res = await apiCall(`${API_URL}/api/whatsapp/templates`)
@@ -362,7 +362,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                             {/* WhatsApp Mock Chat Bubble Preview */}
                                             <div className="bg-[#e5ddd5] p-3 flex-1 flex flex-col justify-between relative overflow-hidden border border-gray-250/50 min-h-[160px] shadow-inner mb-4" style={{ borderRadius: '12px' }}>
                                                 <div className="absolute inset-0 opacity-[0.08] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] pointer-events-none" />
-                                                
+
                                                 <div className="bg-white p-2.5 pb-1.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] max-w-[95%] self-start relative z-10" style={{ borderRadius: '8px 8px 8px 0px' }}>
                                                     {headerComp?.format === 'TEXT' && (
                                                         <p className="text-[10px] font-extrabold text-gray-900 mb-1 leading-tight border-b border-gray-100 pb-0.5">{headerComp.text}</p>
@@ -377,15 +377,15 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                             <Video className="h-4 w-4 text-gray-450" />
                                                         </div>
                                                     )}
-                                                    
+
                                                     <p className="text-[11px] leading-relaxed text-gray-800 whitespace-pre-line font-medium">
                                                         {renderTemplateText(bodyComp?.text || '')}
                                                     </p>
-                                                    
+
                                                     {footerComp?.text && (
                                                         <p className="text-[8px] text-gray-400 mt-1 font-semibold leading-none">{footerComp.text}</p>
                                                     )}
-                                                    
+
                                                     <div className="flex items-center justify-end mt-1 gap-0.5 leading-none">
                                                         <span className="text-[7.5px] text-gray-450 font-medium">12:00 PM</span>
                                                         <span className="text-[#34b7f1] text-[8px] font-bold">✓✓</span>
@@ -466,17 +466,9 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                 <div className="flex flex-wrap gap-2">
                     <TourButton />
                     <button
-                        onClick={fetchData}
-                        disabled={loading}
-                        className="inline-flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg font-medium transition-all shadow-sm disabled:opacity-50"
-                    >
-                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                        Sync Status
-                    </button>
-                    <button
                         onClick={() => setIsCreateOpen(true)}
                         data-tour="templates-create"
-                        className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
+                        className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm"
                     >
                         <Plus className="h-4 w-4" />
                         New Template
@@ -531,7 +523,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                     <div className="hidden sm:block h-6 w-px bg-gray-200" />
 
                     {/* Status Tabs */}
-                    <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200/50 shadow-sm">
+                    <div className="flex bg-gray-100 p-0.5  rounded-xl border border-gray-200/50 shadow-sm">
                         {[
                             { status: 'APPROVED', label: 'Approved', count: approvedCount, icon: CheckCircle, activeColor: 'text-emerald-500', dotColor: 'bg-emerald-500' },
                             { status: 'PENDING', label: 'Pending', count: pendingCount, icon: Clock, activeColor: 'text-amber-500', dotColor: 'bg-amber-500' },
@@ -558,6 +550,15 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                             );
                         })}
                     </div>
+
+                    <button
+                        onClick={fetchData}
+                        disabled={isFetching}
+                        className="inline-flex items-center gap-2 bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500/20 shadow-sm transition-all disabled:opacity-50"
+                    >
+                        <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                        Sync Status
+                    </button>
                 </div>
             </div>
 
@@ -636,12 +637,11 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1.5 shrink-0">
-                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border leading-none ${
-                                                    template.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border leading-none ${template.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
                                                     template.status === 'PENDING' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                                                    template.status === 'DRAFT' ? 'bg-gray-50 text-gray-600 border-gray-200' :
-                                                    'bg-rose-50 text-rose-700 border-rose-100'
-                                                }`} style={{ borderRadius: '10px' }}>
+                                                        template.status === 'DRAFT' ? 'bg-gray-50 text-gray-600 border-gray-200' :
+                                                            'bg-rose-50 text-rose-700 border-rose-100'
+                                                    }`} style={{ borderRadius: '10px' }}>
                                                     {template.status === 'APPROVED' && <CheckCircle className="h-3 w-3 shrink-0 text-emerald-600" />}
                                                     {template.status === 'PENDING' && (
                                                         <span className="relative flex h-2.5 w-2.5 shrink-0 mr-0.5">
@@ -666,7 +666,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                         {/* WhatsApp Mock Chat Bubble Preview */}
                                         <div className="bg-[#e5ddd5] p-3 flex-1 flex flex-col justify-between relative overflow-hidden border border-gray-250/50 min-h-[160px] shadow-inner mb-2" style={{ borderRadius: '12px' }}>
                                             <div className="absolute inset-0 opacity-[0.08] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] pointer-events-none" />
-                                            
+
                                             <div className="bg-white p-2.5 pb-1.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] max-w-[95%] self-start relative z-10" style={{ borderRadius: '8px 8px 8px 0px' }}>
                                                 {headerComp?.format === 'TEXT' && (
                                                     <p className="text-[10px] font-extrabold text-gray-900 mb-1 leading-tight border-b border-gray-100 pb-0.5">{headerComp.text}</p>
@@ -681,15 +681,15 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                         <Video className="h-4 w-4 text-gray-455" />
                                                     </div>
                                                 )}
-                                                
+
                                                 <p className="text-[11px] leading-relaxed text-gray-800 whitespace-pre-line font-medium">
                                                     {renderTemplateText(bodyComp?.text || 'No preview available')}
                                                 </p>
-                                                
+
                                                 {footerComp?.text && (
                                                     <p className="text-[8px] text-gray-400 mt-1 font-semibold leading-none">{footerComp.text}</p>
                                                 )}
-                                                
+
                                                 <div className="flex items-center justify-end mt-1 gap-0.5 leading-none">
                                                     <span className="text-[7.5px] text-gray-450 font-medium">12:00 PM</span>
                                                     <span className={`${template.status === 'APPROVED' ? 'text-[#34b7f1]' : 'text-gray-400'} text-[8px] font-bold`}>✓✓</span>
@@ -1339,7 +1339,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                             <span className="w-1.5 h-1.5 rounded-full bg-gray-800 mr-2" />
                             <span className="w-8 h-1 rounded-full bg-gray-800" />
                         </div>
-                        
+
                         {/* Screen Content */}
                         <div className="h-full w-full bg-[#E5DDD5] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] p-3 pt-9 flex flex-col justify-between overflow-y-auto">
                             {/* Chat bubble */}
@@ -1366,21 +1366,21 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                                             </div>
                                         )
                                     ) : null}
-                                    
+
                                     <p className="text-[11px] leading-relaxed text-gray-800 whitespace-pre-wrap break-words font-medium">
                                         {data.bodyText ? renderTemplateText(data.bodyText) : <span className="text-gray-400 italic">Start typing your message...</span>}
                                     </p>
-                                    
+
                                     {data.footerText ? (
                                         <p className="text-[8px] text-gray-400 mt-1 font-semibold leading-none">{data.footerText}</p>
                                     ) : null}
-                                    
+
                                     <div className="flex items-center justify-end mt-1 gap-0.5 leading-none">
                                         <span className="text-[7.5px] text-gray-455 font-medium">10:00 AM</span>
                                         <span className="text-[#34b7f1] text-[8px] font-bold">✓✓</span>
                                     </div>
                                 </div>
-                                
+
                                 {/* Interactive Buttons */}
                                 {data.buttons.length > 0 ? (
                                     <div className="mt-2 space-y-1 w-[95%] self-start relative z-10">

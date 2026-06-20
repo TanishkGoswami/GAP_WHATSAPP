@@ -8,18 +8,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <!-- Facebook SDK for Meta Cloud API -->
-    <script>
-      window.fbAsyncInit = function() {
-        FB.init({
-          appId            : '%VITE_META_APP_ID%',
-          autoLogAppEvents : true,
-          xfbml            : true,
-          version          : 'v18.0' 
-        });
-      };
-    </script>
-    <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

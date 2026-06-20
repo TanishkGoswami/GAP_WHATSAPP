@@ -24,6 +24,7 @@ import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { formatINRFromPaise } from '../config/whatsappPricing'
 import TourButton from '../onboarding/TourButton'
+import { loadFacebookSDK } from '../services/facebookSdkLoader'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${API_URL}/api`
@@ -48,6 +49,20 @@ export default function WhatsAppConnect() {
     const [manualError, setManualError] = useState('')
     const [diagnostics, setDiagnostics] = useState({})
     const [diagnosticsLoadingId, setDiagnosticsLoadingId] = useState(null)
+    const [hasIntegrationConsent, setHasIntegrationConsent] = useState(() => {
+        if (import.meta.env.VITE_ENABLE_COOKIE_CONSENT !== 'true') return true
+        try {
+            const stored = localStorage.getItem('gap_cookie_consent')
+            if (stored) {
+                const parsed = JSON.parse(stored)
+                return !!parsed.integrations
+            }
+        } catch (e) {
+            console.error(e)
+        }
+        return false
+    })
+    const [isSdkLoading, setIsSdkLoading] = useState(false)
 
     const isLocalHost = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
     const isSecureForMetaLogin = window.location.protocol === 'https:' || isLocalHost
@@ -60,9 +75,47 @@ export default function WhatsAppConnect() {
     }, [session?.access_token])
 
     useEffect(() => {
-        if (!window.FB) return
-        window.FB.init({ appId: META_APP_ID, cookie: true, xfbml: true, version: 'v18.0' })
-    }, [])
+        if (import.meta.env.VITE_ENABLE_COOKIE_CONSENT === 'true') {
+            if (hasIntegrationConsent) {
+                setIsSdkLoading(true)
+                loadFacebookSDK()
+                    .then(() => setIsSdkLoading(false))
+                    .catch((err) => {
+                        console.error('Failed to load Facebook SDK:', err)
+                        setIsSdkLoading(false)
+                    })
+            }
+        } else {
+            // Rollback safety: load SDK automatically when compliance is disabled
+            loadFacebookSDK().catch((err) => {
+                console.error('Failed to load Facebook SDK (compliance disabled):', err)
+            })
+        }
+    }, [hasIntegrationConsent])
+
+    useEffect(() => {
+        const checkConsent = () => {
+            if (import.meta.env.VITE_ENABLE_COOKIE_CONSENT === 'true') {
+                try {
+                    const stored = localStorage.getItem('gap_cookie_consent')
+                    if (stored) {
+                        const parsed = JSON.parse(stored)
+                        if (!!parsed.integrations !== hasIntegrationConsent) {
+                            setHasIntegrationConsent(!!parsed.integrations)
+                        }
+                    }
+                } catch (e) {}
+            }
+        }
+
+        window.addEventListener('focus', checkConsent)
+        const interval = setInterval(checkConsent, 1000)
+
+        return () => {
+            window.removeEventListener('focus', checkConsent)
+            clearInterval(interval)
+        }
+    }, [hasIntegrationConsent])
 
     const getAuthHeader = () => {
         const token = session?.access_token
@@ -174,6 +227,48 @@ export default function WhatsAppConnect() {
         }
     }
 
+    const handleEnableAndConnect = async () => {
+        const consent = {
+            necessary: true,
+            analytics: false,
+            integrations: true,
+            version: 1
+        }
+        try {
+            const stored = localStorage.getItem('gap_cookie_consent')
+            if (stored) {
+                const parsed = JSON.parse(stored)
+                Object.assign(consent, parsed, { integrations: true })
+            }
+        } catch (e) {}
+        
+        localStorage.setItem('gap_cookie_consent', JSON.stringify(consent))
+        setHasIntegrationConsent(true)
+
+        setIsSdkLoading(true)
+        try {
+            await loadFacebookSDK()
+            setIsSdkLoading(false)
+            // Trigger login immediately
+            setEmbedStatus('loading')
+            setEmbedError('')
+            window.FB.login((response) => handleEmbeddedSignupResponse(response), {
+                config_id: META_CONFIG_ID,
+                response_type: 'code',
+                override_default_response_type: true,
+                extras: {
+                    setup: {},
+                    featureType: '',
+                    sessionInfoVersion: META_EMBEDDED_SESSION_INFO_VERSION,
+                    version: META_EMBEDDED_SIGNUP_VERSION,
+                },
+            })
+        } catch (err) {
+            setIsSdkLoading(false)
+            alertDialog(err.message || 'Failed to load Facebook SDK. Check connection.', { title: 'Load failed', tone: 'danger' })
+        }
+    }
+
     const handleEmbeddedSignup = () => {
         if (!isSecureForMetaLogin) {
             setEmbedStatus('error')
@@ -181,6 +276,10 @@ export default function WhatsAppConnect() {
             return
         }
         if (!window.FB) {
+            if (import.meta.env.VITE_ENABLE_COOKIE_CONSENT === 'true' && !hasIntegrationConsent) {
+                handleEnableAndConnect()
+                return
+            }
             alertDialog('Facebook SDK is loading. Try again in a moment.', { title: 'Meta login not ready', tone: 'warning' })
             return
         }
@@ -274,20 +373,20 @@ export default function WhatsAppConnect() {
                         <div className="mt-5 flex flex-col gap-3 sm:flex-row">
                             <button
                                 type="button"
-                                onClick={handleEmbeddedSignup}
+                                onClick={hasIntegrationConsent ? handleEmbeddedSignup : handleEnableAndConnect}
                                 data-tour="connect-primary"
-                                disabled={embedStatus === 'loading' || embedStatus === 'saving'}
+                                disabled={embedStatus === 'loading' || embedStatus === 'saving' || isSdkLoading}
                                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#0070d1] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#0064b7] disabled:cursor-not-allowed disabled:bg-[#79b8ef]"
                             >
-                                {embedStatus === 'loading' || embedStatus === 'saving' ? (
+                                {embedStatus === 'loading' || embedStatus === 'saving' || isSdkLoading ? (
                                     <>
                                         <Loader2 className="h-4 w-4 animate-spin" />
-                                        {embedStatus === 'saving' ? 'Saving account...' : 'Opening Meta signup...'}
+                                        {isSdkLoading ? 'Enabling...' : embedStatus === 'saving' ? 'Saving account...' : 'Opening Meta signup...'}
                                     </>
                                 ) : (
                                     <>
                                         <Smartphone className="h-4 w-4" />
-                                        Connect WhatsApp account
+                                        {hasIntegrationConsent ? 'Connect WhatsApp account' : 'Enable & Connect'}
                                     </>
                                 )}
                             </button>
@@ -408,39 +507,70 @@ export default function WhatsAppConnect() {
                             <Notice tone="danger" title="HTTPS required" text="Meta login deployed HTTPS ya ngrok HTTPS URL par test karein. Localhost bhi allowed hai." />
                         )}
 
-                        <button
-                            type="button"
-                            onClick={handleEmbeddedSignup}
-                            disabled={embedStatus === 'loading' || embedStatus === 'saving'}
-                            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 py-3.5 text-sm font-bold text-white shadow-md shadow-green-100 transition hover:bg-[#20b956] disabled:cursor-not-allowed disabled:bg-green-400"
-                        >
-                            {embedStatus === 'loading' || embedStatus === 'saving' ? (
-                                <>
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    {embedStatus === 'saving' ? 'Saving account...' : 'Opening Meta signup...'}
-                                </>
-                            ) : (
-                                <>
-                                    <Smartphone className="h-4 w-4" />
-                                    Connect WhatsApp with Meta
-                                </>
-                            )}
-                        </button>
-
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                            {[
-                                ['1', 'Prepare business', 'Legal name, website and admin access ready rakhein.'],
-                                ['2', 'Login with Meta', 'Business portfolio select/create karein.'],
-                                ['3', 'Verify number', 'Fresh/dedicated number OTP complete karein.'],
-                                ['4', 'Start setup', 'Templates, wallet and automations unlock honge.'],
-                            ].map(([step, title, text]) => (
-                                <div key={step} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-xs font-bold text-white">{step}</div>
-                                    <p className="mt-3 text-sm font-semibold text-gray-950">{title}</p>
-                                    <p className="mt-1 text-xs leading-5 text-gray-500">{text}</p>
+                        {!hasIntegrationConsent ? (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 space-y-4">
+                                <div className="flex items-start gap-3">
+                                    <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-amber-900">Meta Integration Cookie Permission Required</h3>
+                                        <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                                            To connect your WhatsApp business numbers, please enable integration cookies. This allows official Meta signup SDK elements to load securely.
+                                        </p>
+                                    </div>
                                 </div>
-                            ))}
-                        </div>
+                                <button
+                                    type="button"
+                                    onClick={handleEnableAndConnect}
+                                    disabled={isSdkLoading}
+                                    className="inline-flex items-center gap-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-4 py-2.5 transition-colors shadow-sm disabled:bg-amber-400 disabled:cursor-not-allowed"
+                                >
+                                    {isSdkLoading ? (
+                                        <>
+                                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            Enabling...
+                                        </>
+                                    ) : (
+                                        'Enable & Connect'
+                                    )}
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={handleEmbeddedSignup}
+                                    disabled={embedStatus === 'loading' || embedStatus === 'saving'}
+                                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 py-3.5 text-sm font-bold text-white shadow-md shadow-green-100 transition hover:bg-[#20b956] disabled:cursor-not-allowed disabled:bg-green-400"
+                                >
+                                    {embedStatus === 'loading' || embedStatus === 'saving' ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 animate-spin" />
+                                            {embedStatus === 'saving' ? 'Saving account...' : 'Opening Meta signup...'}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Smartphone className="h-4 w-4" />
+                                            Connect WhatsApp with Meta
+                                        </>
+                                    )}
+                                </button>
+
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+                                    {[
+                                        ['1', 'Prepare business', 'Legal name, website and admin access ready rakhein.'],
+                                        ['2', 'Login with Meta', 'Business portfolio select/create karein.'],
+                                        ['3', 'Verify number', 'Fresh/dedicated number OTP complete karein.'],
+                                        ['4', 'Start setup', 'Templates, wallet and automations unlock honge.'],
+                                    ].map(([step, title, text]) => (
+                                        <div key={step} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-green-600 text-xs font-bold text-white">{step}</div>
+                                            <p className="mt-3 text-sm font-semibold text-gray-950">{title}</p>
+                                            <p className="mt-1 text-xs leading-5 text-gray-500">{text}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -486,12 +616,12 @@ export default function WhatsAppConnect() {
                                 <div className="mt-4 flex flex-col justify-center gap-3 sm:flex-row">
                                     <button
                                         type="button"
-                                        onClick={handleEmbeddedSignup}
-                                        disabled={embedStatus === 'loading' || embedStatus === 'saving'}
+                                        onClick={hasIntegrationConsent ? handleEmbeddedSignup : handleEnableAndConnect}
+                                        disabled={embedStatus === 'loading' || embedStatus === 'saving' || isSdkLoading}
                                         className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0070d1] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0064b7] disabled:bg-[#79b8ef]"
                                     >
                                         <Smartphone className="h-4 w-4" />
-                                        Connect now
+                                        {isSdkLoading ? 'Enabling...' : hasIntegrationConsent ? 'Connect now' : 'Enable & Connect'}
                                     </button>
                                     <Link to="/whatsapp-number" className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50">
                                         <PhoneCall className="h-4 w-4" />
