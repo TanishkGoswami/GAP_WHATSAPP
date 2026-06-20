@@ -2041,27 +2041,33 @@ export default function LiveChat() {
         </div>
     )
 
-    const getMessageSourceBadge = (msg) => {
-        const source = msg.automationSource || msg.automation_source || msg.metadata?.automation_source
-        const senderType = msg.senderType || msg.sender_type
-        if (source === 'flow' || msg.metadata?.flow_id) return { label: 'Flow', className: 'bg-blue-50 text-blue-700 border-blue-100' }
-        if (source === 'ai_agent' || msg.isBotReply || msg.botAgentId) {
-            const botName = msg.botAgentName || getBotName(msg.botAgentId);
-            return { label: botName, className: 'bg-emerald-50 text-emerald-700 border-emerald-100' }
-        }
-        if (source === 'broadcast') return { label: 'Broadcast', className: 'bg-purple-50 text-purple-700 border-purple-100' }
-        if (senderType === 'human_agent') return { label: 'Human', className: 'bg-slate-50 text-slate-600 border-slate-100' }
-        return null
-    }
-
     const renderMessageSourceBadge = (msg) => {
-        const badge = getMessageSourceBadge(msg)
-        if (!badge || msg.sender !== 'agent') return null
+        if (msg.sender !== 'agent' || msg.forwarded) return null;
+        
+        const source = msg.automationSource || msg.automation_source || msg.metadata?.automation_source;
+        const senderType = msg.senderType || msg.sender_type;
+        
+        let label = msg.agentName || 'You';
+        let colorClass = 'text-[#6676ff]'; // Default color for You
+
+        if (source === 'flow' || msg.metadata?.flow_id) {
+            label = 'Flow';
+            colorClass = 'text-[#0284c7]';
+        } else if (source === 'ai_agent' || msg.isBotReply || msg.botAgentId) {
+            label = msg.botAgentName || getBotName(msg.botAgentId) || 'AI Agent';
+            colorClass = 'text-[#059669]';
+        } else if (source === 'broadcast') {
+            label = 'Broadcast';
+            colorClass = 'text-[#9333ea]';
+        } else if (senderType === 'human_agent') {
+            label = msg.agentName || 'You';
+        }
+
         return (
-            <div className={`mb-1 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${badge.className}`}>
-                {badge.label}
+            <div className={`mb-0.5 text-[13px] font-medium leading-4 ${colorClass}`}>
+                {label}
             </div>
-        )
+        );
     }
 
     const startReplyToMessage = (msg) => {
@@ -3225,9 +3231,6 @@ export default function LiveChat() {
                                                             <ChevronDown className="h-4 w-4" />
                                                         </button>
                                                     </div>
-                                                    {row.msg.sender === 'agent' && !row.msg.forwarded && (
-                                                        <div className="mb-0.5 text-[11px] font-semibold leading-4 text-[#6676ff]">{row.msg.agentName}</div>
-                                                    )}
                                                     {renderMessageSourceBadge(row.msg)}
                                                     {renderMessageBody(row.msg)}
                                                     {renderReactionsPill(row.msg)}
