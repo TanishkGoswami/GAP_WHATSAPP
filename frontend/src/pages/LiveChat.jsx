@@ -116,6 +116,7 @@ export default function LiveChat() {
     const [chats, setChats] = useState([])
     const chatsRef = useRef([])
     const [chatSearch, setChatSearch] = useState('')
+    const [isOnline, setIsOnline] = useState(false)
     const [chatFilter, setChatFilter] = useState('all')
     const [isChatFilterMenuOpen, setIsChatFilterMenuOpen] = useState(false)
     const [isAssignMenuOpen, setIsAssignMenuOpen] = useState(false)
@@ -929,9 +930,36 @@ export default function LiveChat() {
             if (res.ok) {
                 const data = await res.json();
                 setTeamMembers(data);
-            }
+                if (user?.id) {
+                    const myProfile = data.find(m => m.user_id === user.id);
+                    if (myProfile && typeof myProfile.is_online !== 'undefined') {
+                        setIsOnline(myProfile.is_online);
+                    }
+                }
+            } else { }
         } catch (err) {
             console.error("Failed to fetch team members:", err);
+        }
+    };
+
+    const toggleOnlineStatus = async () => {
+        const nextStatus = !isOnline;
+        setIsOnline(nextStatus);
+        try {
+            await fetch(`${API_BASE}/team/status`, {
+                method: 'POST',
+                headers: { ...authHeaders, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_online: nextStatus })
+            });
+            if (socket.connected && memberProfile?.organization_id && user?.id) {
+                socket.emit(nextStatus ? 'agent_connected' : 'agent_disconnected', { 
+                    organization_id: memberProfile.organization_id, 
+                    user_id: user.id 
+                });
+            }
+        } catch (e) {
+            console.error("Failed to toggle status", e);
+            setIsOnline(!nextStatus);
         }
     };
 
@@ -1153,11 +1181,15 @@ export default function LiveChat() {
             console.log('[socket] connected', socket.id)
 
             // Re-join org room on reconnect if profile is available
-            if (memberProfile?.organization_id) {
-                console.log('[socket] joining org room:', memberProfile.organization_id)
+            if (memberProfile?.organization_id) {                console.log('[socket] joining org room:', memberProfile.organization_id)
                 socket.emit('join_org', memberProfile.organization_id)
+                if (user?.id) {
+                    socket.emit('agent_connected', { organization_id: memberProfile.organization_id, user_id: user.id })
+                }
+                
+                // Fetch unread counts when socket reconnects
+                fetchChats()
             }
-            fetchChats()
             const active = selectedChatRef.current
             if (active) fetchMessages(active, { limit: 50 })
         }
@@ -1174,6 +1206,9 @@ export default function LiveChat() {
         if (socket.connected && memberProfile?.organization_id) {
             console.log('[socket] joining org room (manual):', memberProfile.organization_id)
             socket.emit('join_org', memberProfile.organization_id)
+            if (user?.id) {
+                socket.emit('agent_connected', { organization_id: memberProfile.organization_id, user_id: user.id })
+            }
         }
 
         const handleNewMessage = (msg) => {
@@ -1352,6 +1387,25 @@ export default function LiveChat() {
             if (active && idsEqual(active.id, conversationId)) {
                 setSelectedChat(prev => prev ? { ...prev, assigned_to: assignedTo } : prev)
             }
+            
+            if (assignedTo && user?.id && idsEqual(assignedTo, user.id)) {
+                playNotification({
+                    title: 'Chat Assigned To You',
+                    body: 'A handoff chat has been automatically routed to you.'
+                })
+            }
+        }
+
+        const handleAgentOnline = (payload) => {
+            if (payload?.user_id) {
+                setTeamMembers(prev => prev.map(m => m.user_id === payload.user_id ? { ...m, is_online: true } : m));
+            }
+        }
+
+        const handleAgentOffline = (payload) => {
+            if (payload?.user_id) {
+                setTeamMembers(prev => prev.map(m => m.user_id === payload.user_id ? { ...m, is_online: false } : m));
+            }
         }
 
         socket.on('connect', handleConnect)
@@ -1361,6 +1415,8 @@ export default function LiveChat() {
         socket.on('new_message', handleNewMessage);
         socket.on('contact_updated', handleContactUpdated)
         socket.on('conversation_assigned', handleConversationAssigned)
+        socket.on('agent_online', handleAgentOnline)
+        socket.on('agent_offline', handleAgentOffline)
 
         socket.on('message_updated', (update) => {
             const targetId = update?.message_id || null
@@ -1436,10 +1492,12 @@ export default function LiveChat() {
             socket.off('connect', handleConnect)
             socket.off('connect_error', handleConnectError)
             socket.off('disconnect', handleDisconnect)
-            socket.off('new_message', handleNewMessage);
+            socket.off('new_message', handleNewMessage)
             socket.off('contact_updated', handleContactUpdated)
             socket.off('conversation_assigned', handleConversationAssigned)
-            socket.off('message_updated');
+            socket.off('agent_online')
+            socket.off('agent_offline')
+            socket.off('message_updated')
             socket.off('message_status_update');
             socket.off('connected_account');
             socket.off('qr');
@@ -2041,27 +2099,33 @@ export default function LiveChat() {
         </div>
     )
 
-    const getMessageSourceBadge = (msg) => {
-        const source = msg.automationSource || msg.automation_source || msg.metadata?.automation_source
-        const senderType = msg.senderType || msg.sender_type
-        if (source === 'flow' || msg.metadata?.flow_id) return { label: 'Flow', className: 'bg-blue-50 text-blue-700 border-blue-100' }
-        if (source === 'ai_agent' || msg.isBotReply || msg.botAgentId) {
-            const botName = msg.botAgentName || getBotName(msg.botAgentId);
-            return { label: botName, className: 'bg-emerald-50 text-emerald-700 border-emerald-100' }
-        }
-        if (source === 'broadcast') return { label: 'Broadcast', className: 'bg-purple-50 text-purple-700 border-purple-100' }
-        if (senderType === 'human_agent') return { label: 'Human', className: 'bg-slate-50 text-slate-600 border-slate-100' }
-        return null
-    }
-
     const renderMessageSourceBadge = (msg) => {
-        const badge = getMessageSourceBadge(msg)
-        if (!badge || msg.sender !== 'agent') return null
+        if (msg.sender !== 'agent' || msg.forwarded) return null;
+        
+        const source = msg.automationSource || msg.automation_source || msg.metadata?.automation_source;
+        const senderType = msg.senderType || msg.sender_type;
+        
+        let label = msg.agentName || 'You';
+        let colorClass = 'text-[#6676ff]'; // Default color for You
+
+        if (source === 'flow' || msg.metadata?.flow_id) {
+            label = 'Flow';
+            colorClass = 'text-[#0284c7]';
+        } else if (source === 'ai_agent' || msg.isBotReply || msg.botAgentId) {
+            label = msg.botAgentName || getBotName(msg.botAgentId) || 'AI Agent';
+            colorClass = 'text-[#059669]';
+        } else if (source === 'broadcast') {
+            label = 'Broadcast';
+            colorClass = 'text-[#9333ea]';
+        } else if (senderType === 'human_agent') {
+            label = msg.agentName || 'You';
+        }
+
         return (
-            <div className={`mb-1 inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold leading-none ${badge.className}`}>
-                {badge.label}
+            <div className={`mb-0.5 text-[13px] font-medium leading-4 ${colorClass}`}>
+                {label}
             </div>
-        )
+        );
     }
 
     const startReplyToMessage = (msg) => {
@@ -3008,7 +3072,10 @@ export default function LiveChat() {
                                                         }}
                                                         className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm ${selectedChat?.assigned_to === m.user_id ? 'bg-green-50 text-green-800' : 'text-gray-700 hover:bg-gray-50'}`}
                                                     >
-                                                        <span className="truncate">{m.name}</span>
+                                                        <span className="truncate flex items-center gap-2">
+                                                            {m.name}
+                                                            {m.is_online && <span className="h-2 w-2 rounded-full bg-green-500"></span>}
+                                                        </span>
                                                         {selectedChat?.assigned_to === m.user_id && <Check className="h-4 w-4" />}
                                                     </button>
                                                 ))}
@@ -3016,8 +3083,30 @@ export default function LiveChat() {
                                         )}
                                     </div>
 
+                                    {/* Agent Online Toggle Button */}
+                                    <div className="relative ml-2">
+                                        <button
+                                            onClick={() => toggleOnlineStatus(!isOnline)}
+                                            className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold tracking-tight transition-all duration-150 outline-none ${isOnline
+                                                ? 'border-green-600 bg-green-600 text-white shadow-sm hover:bg-green-700'
+                                                : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                                                }`}
+                                            title={isOnline ? 'You are online and will receive chats' : 'Go online to receive handoff chats'}
+                                        >
+                                            {isOnline ? (
+                                                <span className="relative flex h-1.5 w-1.5">
+                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-200 opacity-75"></span>
+                                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
+                                                </span>
+                                            ) : (
+                                                <span className="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
+                                            )}
+                                            <span>{isOnline ? 'Online' : 'Offline'}</span>
+                                        </button>
+                                    </div>
+
                                     {/* Bot Toggle Button */}
-                                    <div className="relative" data-bot-menu>
+                                    <div className="relative ml-2" data-bot-menu>
                                         <button
                                             onClick={() => setShowBotMenu(!showBotMenu)}
                                             className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold tracking-tight transition-all duration-150 outline-none ${effectiveBotEnabled
@@ -3225,9 +3314,6 @@ export default function LiveChat() {
                                                             <ChevronDown className="h-4 w-4" />
                                                         </button>
                                                     </div>
-                                                    {row.msg.sender === 'agent' && !row.msg.forwarded && (
-                                                        <div className="mb-0.5 text-[11px] font-semibold leading-4 text-[#6676ff]">{row.msg.agentName}</div>
-                                                    )}
                                                     {renderMessageSourceBadge(row.msg)}
                                                     {renderMessageBody(row.msg)}
                                                     {renderReactionsPill(row.msg)}

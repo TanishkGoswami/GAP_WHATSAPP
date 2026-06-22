@@ -949,7 +949,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
     const normalizedName = data.name.trim()
     const bodyLength = data.bodyText.length
     const previewFileUrl = useMemo(() => file ? URL.createObjectURL(file) : '', [file])
-    const canSubmit = normalizedName && /^[a-z0-9_]+$/.test(normalizedName) && data.bodyText.trim() && bodyLength <= 1024 && !(data.headerType === 'TEXT' && !data.headerText.trim()) && (isPreApproved || !((data.headerType === 'IMAGE' || data.headerType === 'VIDEO') && !file))
+    const canSubmit = normalizedName && /^[a-z0-9_]+$/.test(normalizedName) && data.bodyText.trim() && bodyLength <= 1024 && !(data.headerType === 'TEXT' && !data.headerText.trim()) && !((data.headerType === 'IMAGE' || data.headerType === 'VIDEO') && !file)
 
     useEffect(() => {
         if (initialData && isOpen) {
@@ -1050,6 +1050,11 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                                 header_text: Array.from({ length: maxVar }, (_, i) => `Sample ${i + 1}`)
                             };
                         }
+                    }
+                } else if (isPreApproved && initialData) {
+                    const origHeader = initialData.components?.find(c => c.type === 'HEADER');
+                    if (origHeader?.example) {
+                        headerComp.example = origHeader.example;
                     }
                 }
                 components.push(headerComp);
@@ -1234,14 +1239,14 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                                                     <div className="text-xs text-gray-500">{Math.ceil(file.size / 1024)} KB selected</div>
                                                 </div>
                                             </div>
-                                            <button type="button" disabled={isPreApproved} onClick={() => setFile(null)} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">Remove</button>
+                                            <button type="button" onClick={() => setFile(null)} className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50">Remove</button>
                                         </div>
                                     ) : (
                                         <>
                                             <UploadCloud className="mx-auto h-7 w-7 text-gray-400" />
                                             <div className="mt-2 text-sm font-semibold text-gray-800">Upload {data.headerType.toLowerCase()} sample</div>
                                             <div className="mt-1 text-xs text-gray-500">Required by Meta for media header approval.</div>
-                                            <input type="file" disabled={isPreApproved} accept={data.headerType === 'IMAGE' ? 'image/*' : 'video/mp4'} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" onChange={e => setFile(e.target.files?.[0] || null)} />
+                                            <input type="file" accept={data.headerType === 'IMAGE' ? 'image/*' : 'video/mp4'} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" onChange={e => setFile(e.target.files?.[0] || null)} />
                                         </>
                                     )}
                                 </div>

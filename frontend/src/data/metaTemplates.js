@@ -418,5 +418,90 @@ export const META_TEMPLATES_LIBRARY = [
                 ]
             }
         ]
+    },
+    {
+        id: 'meta-img-1',
+        name: 'seasonal_sale_promotion',
+        displayName: 'Seasonal Sale Promotion (Image)',
+        category: 'MARKETING',
+        useCase: 'MARKETING_CAMPAIGNS',
+        industry: 'E-commerce',
+        language: 'en_US',
+        components: [
+            {
+                type: 'HEADER',
+                format: 'IMAGE',
+                example: { header_handle: ['https://example.com/sale_banner.jpg'] }
+            },
+            {
+                type: 'BODY',
+                text: 'Hi {{1}}! 🎉 Our biggest sale of the season is here. Enjoy up to {{2}} off on all your favorite items. Tap below to shop now!',
+                example: { body_text: [['John', '50%']] }
+            },
+            {
+                type: 'BUTTONS',
+                buttons: [
+                    { type: 'URL', text: 'Shop the Sale', url: 'https://example.com/sale' }
+                ]
+            }
+        ]
+    },
+    {
+        id: 'meta-img-2',
+        name: 'new_collection_launch',
+        displayName: 'New Collection Launch (Image)',
+        category: 'MARKETING',
+        useCase: 'MARKETING_CAMPAIGNS',
+        industry: 'Retail',
+        language: 'en_US',
+        components: [
+            {
+                type: 'HEADER',
+                format: 'IMAGE',
+                example: { header_handle: ['https://example.com/new_collection.jpg'] }
+            },
+            {
+                type: 'BODY',
+                text: 'Hey {{1}}, be the first to check out our exclusive new collection! ✨ Discover the latest trends starting at just {{2}}. Limited stock available.',
+                example: { body_text: [['John', '$29']] }
+            },
+            {
+                type: 'BUTTONS',
+                buttons: [
+                    { type: 'URL', text: 'View Collection', url: 'https://example.com/new-collection' }
+                ]
+            }
+        ]
+    },
+    {
+        id: 'meta-img-3',
+        name: 'festival_greeting_offer',
+        displayName: 'Festival Greeting & Offer (Image)',
+        category: 'MARKETING',
+        useCase: 'MARKETING_CAMPAIGNS',
+        industry: 'General',
+        language: 'en_US',
+        components: [
+            {
+                type: 'HEADER',
+                format: 'IMAGE',
+                example: { header_handle: ['https://example.com/festival_greeting.jpg'] }
+            },
+            {
+                type: 'BODY',
+                text: 'Wishing you a very Happy {{1}}, {{2}}! 🌟 To celebrate, we are gifting you a special {{3}} discount code: {{4}}. Valid for 48 hours only.',
+                example: { body_text: [['Diwali', 'John', '20%', 'FEST20']] }
+            },
+            {
+                type: 'FOOTER',
+                text: 'Reply STOP to opt out'
+            },
+            {
+                type: 'BUTTONS',
+                buttons: [
+                    { type: 'URL', text: 'Claim Offer', url: 'https://example.com/offer' }
+                ]
+            }
+        ]
     }
 ];

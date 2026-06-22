@@ -37,7 +37,9 @@ export const getBillingOverview = async (req: any, res: Response) => {
             todayUsageResult,
             walletTransactionsResult,
             messageDebitTransactionsResult,
-            messageChargesResult
+            messageChargesResult,
+            legacyMonthSpendResult,
+            legacyTodaySpendResult
         ] = await Promise.all([
             supabase
                 .from('organizations')
@@ -90,7 +92,19 @@ export const getBillingOverview = async (req: any, res: Response) => {
                 .select('id, source, category, template_name, campaign_id, wa_message_id, charged_amount_paise, billing_status, delivery_status, created_at')
                 .eq('organization_id', orgId)
                 .order('created_at', { ascending: false })
-                .limit(12)
+                .limit(12),
+            supabase
+                .from('whatsapp_wallet_transactions')
+                .select('amount_paise, metadata')
+                .eq('organization_id', orgId)
+                .filter('type', 'in', '("message_debit","failed_debit")')
+                .gte('created_at', monthStart),
+            supabase
+                .from('whatsapp_wallet_transactions')
+                .select('amount_paise')
+                .eq('organization_id', orgId)
+                .filter('type', 'in', '("message_debit","failed_debit")')
+                .gte('created_at', todayStart)
         ]);
 
         let walletData = walletResult.data;
@@ -149,8 +163,28 @@ export const getBillingOverview = async (req: any, res: Response) => {
             return acc;
         }, emptyCategoryStats);
 
+        // Include legacy wallet transactions in category stats
+        const legacyMonthRows = legacyMonthSpendResult.error ? [] : (legacyMonthSpendResult.data || []);
+        legacyMonthRows.forEach((row: any) => {
+            const category = row.metadata?.category || 'marketing';
+            if (!categoryStats[category]) {
+                categoryStats[category] = {
+                    category,
+                    label: DEFAULT_WHATSAPP_RATE_CARD[category]?.label || category,
+                    message_count: 0,
+                    charged_amount_paise: 0,
+                    meta_cost_paise: 0
+                };
+            }
+            categoryStats[category].message_count += 1;
+            categoryStats[category].charged_amount_paise += Math.abs(Number(row.amount_paise || 0));
+        });
+
         const monthSpendPaise = Object.values(categoryStats).reduce((sum: number, item: any) => sum + Number(item.charged_amount_paise || 0), 0);
-        const todaySpendPaise = todayUsageRows.reduce((sum: number, row: any) => sum + Number(row.charged_amount_paise || 0), 0);
+        
+        const legacyTodayRows = legacyTodaySpendResult.error ? [] : (legacyTodaySpendResult.data || []);
+        const legacyTodaySpend = legacyTodayRows.reduce((sum: number, row: any) => sum + Math.abs(Number(row.amount_paise || 0)), 0);
+        const todaySpendPaise = todayUsageRows.reduce((sum: number, row: any) => sum + Number(row.charged_amount_paise || 0), 0) + legacyTodaySpend;
         const walletTransactions = walletTransactionsResult.error ? [] : (walletTransactionsResult.data || []);
         const usageLogCharges = messageChargesResult.error ? [] : (messageChargesResult.data || []);
         const legacyMessageDebitCharges = messageDebitTransactionsResult.error
