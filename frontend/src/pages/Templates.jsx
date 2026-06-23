@@ -175,11 +175,12 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
 
     const filteredLibrary = useMemo(() => {
         return META_TEMPLATES_LIBRARY.filter(t => {
-            const matchesSearch = t.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            const matchesSearch = t.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                 t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                t.components.find(c => c.type === 'BODY')?.text.toLowerCase().includes(searchQuery.toLowerCase());
+                t.components?.find(c => c.type === 'BODY')?.text?.toLowerCase()?.includes(searchQuery.toLowerCase());
 
-            const matchesIndustry = activeIndustry === 'All Industries' || t.industry === activeIndustry;
+            const tInd = Array.isArray(t.industry) ? t.industry[0] : (t.industry || 'General');
+            const matchesIndustry = activeIndustry === 'All Industries' || tInd === activeIndustry;
             const matchesTopic = libraryTopic === 'ALL' || t.category === libraryTopic;
             const matchesUseCase = libraryUseCase === 'All Use Cases' || t.useCase === libraryUseCase;
 
@@ -330,10 +331,10 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                     ) : (
                         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                             {filteredLibrary.map((item) => {
-                                const bodyComp = item.components.find(c => c.type === 'BODY');
-                                const buttonsComp = item.components.find(c => c.type === 'BUTTONS');
-                                const headerComp = item.components.find(c => c.type === 'HEADER');
-                                const footerComp = item.components.find(c => c.type === 'FOOTER');
+                                const bodyComp = item.components?.find(c => c.type === 'BODY');
+                                const buttonsComp = item.components?.find(c => c.type === 'BUTTONS');
+                                const headerComp = item.components?.find(c => c.type === 'HEADER');
+                                const footerComp = item.components?.find(c => c.type === 'FOOTER');
                                 const catStyle = categoryColors[item.category] || 'bg-gray-50 text-gray-600 border-gray-200';
 
                                 return (
