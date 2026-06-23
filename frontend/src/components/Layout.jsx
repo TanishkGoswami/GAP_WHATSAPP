@@ -11,7 +11,7 @@ import { formatINRFromPaise } from '../config/whatsappPricing'
 const NIGHT_LIGHT_KEY = 'gap_night_light_enabled'
 
 export default function Layout() {
-    const { user, userRole, loading, isProfileLoading, memberProfile, signOut, updateMyProfile, apiCall } = useAuth()
+    const { user, userRole, loading, isProfileLoading, memberProfile, signOut, updateMyProfile, apiCall, updateMyOnlineStatus, setMemberProfile } = useAuth()
     const navigate = useNavigate()
     const location = useLocation()
     const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
@@ -22,6 +22,21 @@ export default function Layout() {
     const [profileDraft, setProfileDraft] = useState({ name: '', avatar_color: '#4f46e5' })
     const [isMobileNavOpen, setIsMobileNavOpen] = useState(false)
     const [isNightLight, setIsNightLight] = useState(() => localStorage.getItem(NIGHT_LIGHT_KEY) === 'true')
+    const handleStatusToggle = async () => {
+        if (!memberProfile) return
+        const nextStatus = !memberProfile.is_online
+        
+        // Optimistic UI Update
+        setMemberProfile(prev => prev ? { ...prev, is_online: nextStatus } : prev)
+        
+        try {
+            await updateMyOnlineStatus(nextStatus)
+        } catch (e) {
+            console.error("Failed to toggle online status in navbar", e)
+            // Revert state on failure
+            setMemberProfile(prev => prev ? { ...prev, is_online: !nextStatus } : prev)
+        }
+    }
 
     const [walletBalance, setWalletBalance] = useState(null)
     const [isWalletLoading, setIsWalletLoading] = useState(true)
@@ -457,6 +472,41 @@ export default function Layout() {
 
                         <div className="flex min-w-0 items-center gap-2 sm:gap-4">
                             <TourButton compact />
+                            {user && ['agent', 'admin'].includes(userRole) && memberProfile && (
+                                <button
+                                    type="button"
+                                    onClick={handleStatusToggle}
+                                    className={`relative inline-flex h-9 w-[98px] shrink-0 items-center rounded-full border p-1 transition-all duration-300 ease-out active:scale-[0.97] cursor-pointer shadow-inner ${
+                                        memberProfile.is_online
+                                            ? 'border-emerald-250 bg-emerald-100/50 hover:bg-emerald-100/80 text-emerald-800'
+                                            : 'border-gray-200 bg-gray-100/65 hover:bg-gray-100/85 text-gray-500'
+                                    }`}
+                                    title={memberProfile.is_online ? "You are online (Click to go offline)" : "You are offline (Click to go online)"}
+                                >
+                                    <span
+                                        className={`absolute left-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-white border border-gray-200/80 shadow-[0_2px_5px_rgba(0,0,0,0.1)] transition-transform duration-300 ease-out ${
+                                            memberProfile.is_online ? 'translate-x-[62px]' : 'translate-x-0'
+                                        }`}
+                                    >
+                                        <span className="relative flex h-2 w-2 shrink-0">
+                                            {memberProfile.is_online && (
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            )}
+                                            <span className={`relative inline-flex rounded-full h-2 w-2 ${memberProfile.is_online ? 'bg-emerald-500' : 'bg-gray-400'}`}></span>
+                                        </span>
+                                    </span>
+                                    
+                                    {memberProfile.is_online ? (
+                                        <span className="pl-2.5 pr-1.5 mr-auto text-[10px] font-black uppercase tracking-wider text-emerald-700 select-none">
+                                            Online
+                                        </span>
+                                    ) : (
+                                        <span className="pl-1.5 pr-2.5 ml-auto text-[10px] font-black uppercase tracking-wider text-gray-500 select-none">
+                                            Offline
+                                        </span>
+                                    )}
+                                </button>
+                            )}
                             {user && (
                                 <button
                                     type="button"

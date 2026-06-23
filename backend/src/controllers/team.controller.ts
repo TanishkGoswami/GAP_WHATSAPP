@@ -2,6 +2,9 @@ import { Response } from 'express';
 import { supabase } from '../config/supabase.js';
 import { enforcePlanResourceLimit } from '../services/billing.service.js';
 import { encryptToken, decryptToken } from '../utils/crypto.js';
+import { getIO } from '../config/socket.js';
+import { reassignPendingChats } from '../services/assignment.service.js';
+
 import { 
     createInviteToken, 
     hashInviteToken, 
@@ -22,10 +25,67 @@ export async function getMembers(req: any, res: Response) {
             .order('created_at', { ascending: true });
 
         if (error) throw error;
-        res.json((data || []).map((member: any) => ({
-            ...member,
-            invite_status: getMemberInviteState(member)
-        })));
+
+        // Fetch active chats count for each agent in this org
+        const { data: convCounts } = await supabase
+            .from('w_conversations')
+            .select('assigned_to')
+            .eq('organization_id', orgId)
+            .eq('status', 'open');
+
+        const activeChatsMap: Record<string, number> = {};
+        if (convCounts) {
+            for (const c of convCounts) {
+                if (c.assigned_to) {
+                    activeChatsMap[c.assigned_to] = (activeChatsMap[c.assigned_to] || 0) + 1;
+                }
+            }
+        }
+
+        // Fetch last active timestamp for each agent in this org
+        const enrichedMembers = await Promise.all((data || []).map(async (member: any) => {
+            let lastActiveAt = member.invite_accepted_at || member.created_at;
+            
+            if (member.user_id) {
+                const { data: lastMsg } = await supabase
+                    .from('w_messages')
+                    .select('created_at')
+                    .eq('organization_id', orgId)
+                    .eq('sender_user_id', member.user_id)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (lastMsg?.created_at) {
+                    lastActiveAt = lastMsg.created_at;
+                }
+            }
+
+            const now = new Date();
+            const todayStr = now.toISOString().split('T')[0];
+
+            let onlineTimeToday = member.online_time_today || 0;
+            if (member.last_reset_date !== todayStr) {
+                onlineTimeToday = 0;
+            }
+
+            if (member.is_online && member.last_online_at) {
+                const lastOnline = new Date(member.last_online_at);
+                const diffMs = now.getTime() - lastOnline.getTime();
+                const diffSecs = Math.max(0, Math.floor(diffMs / 1000));
+                onlineTimeToday += diffSecs;
+            }
+
+            return {
+                ...member,
+                invite_status: getMemberInviteState(member),
+                active_chats_count: member.user_id ? (activeChatsMap[member.user_id] || 0) : 0,
+                last_active_at: lastActiveAt,
+                online_time_today: onlineTimeToday
+            };
+        }));
+
+        res.json(enrichedMembers);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
@@ -424,9 +484,9 @@ export async function getAgents(req: any, res: Response) {
     try {
         const { data, error } = await supabase
             .from('organization_members')
-            .select('user_id, name, email, role, is_active')
+            .select('user_id, name, email, role, is_active, is_online')
             .eq('organization_id', organization_id)
-            .eq('role', 'agent')
+            .in('role', ['agent', 'admin', 'owner'])
             .eq('is_active', true);
 
         if (error) throw error;
@@ -436,3 +496,102 @@ export async function getAgents(req: any, res: Response) {
         res.status(500).json({ error: err.message || 'Failed to fetch agents' });
     }
 }
+
+export async function updateMyOnlineStatus(req: any, res: Response) {
+    try {
+        const isOnline = req.body?.is_online;
+        if (typeof isOnline !== 'boolean') {
+            return res.status(400).json({ error: 'is_online must be a boolean' });
+        }
+
+        const { data: member, error: fetchError } = await supabase
+            .from('organization_members')
+            .select('*')
+            .eq('user_id', req.user.id)
+            .eq('organization_id', req.organization_id)
+            .maybeSingle();
+
+        if (fetchError) throw fetchError;
+        if (!member) return res.status(404).json({ error: 'Profile not found' });
+        if (!['agent', 'admin', 'owner'].includes(member.role)) {
+            return res.status(400).json({ error: 'Online/offline status is not applicable' });
+        }
+
+        const now = new Date();
+        const todayStr = now.toISOString().split('T')[0];
+
+        let nextOnlineTime = member.online_time_today || 0;
+        if (member.last_reset_date !== todayStr) {
+            nextOnlineTime = 0;
+        }
+
+        const updatePayload: any = {
+            is_online: isOnline,
+            last_reset_date: todayStr
+        };
+
+        if (isOnline) {
+            updatePayload.last_online_at = now.toISOString();
+            updatePayload.online_time_today = nextOnlineTime;
+        } else {
+            if (member.is_online && member.last_online_at) {
+                const lastOnline = new Date(member.last_online_at);
+                const diffMs = now.getTime() - lastOnline.getTime();
+                const diffSecs = Math.max(0, Math.floor(diffMs / 1000));
+                updatePayload.online_time_today = nextOnlineTime + diffSecs;
+            } else {
+                updatePayload.online_time_today = nextOnlineTime;
+            }
+            updatePayload.last_online_at = null;
+        }
+
+        let { data, error } = await supabase
+            .from('organization_members')
+            .update(updatePayload)
+            .eq('user_id', req.user.id)
+            .eq('organization_id', req.organization_id)
+            .select('*')
+            .maybeSingle();
+
+        if (error) {
+            if (error.code === '42703') {
+                console.warn("[Availability] Timing columns not found in database. Running fallback status update.");
+                const { data: fallbackData, error: fallbackErr } = await supabase
+                    .from('organization_members')
+                    .update({ is_online: isOnline })
+                    .eq('user_id', req.user.id)
+                    .eq('organization_id', req.organization_id)
+                    .select('*')
+                    .maybeSingle();
+                data = fallbackData;
+                error = fallbackErr;
+            }
+        }
+
+        if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Profile not found' });
+
+        // Emit online/offline status changes to client rooms
+        try {
+            getIO().to(`org:${req.organization_id}`).emit(isOnline ? 'agent_online' : 'agent_offline', {
+                user_id: req.user.id,
+                organization_id: req.organization_id,
+                name: data.name
+            });
+        } catch (socketErr) {
+            console.error("Failed to emit agent online status change:", socketErr);
+        }
+
+        // Trigger auto-reassignment asynchronously if agent went online
+        if (isOnline) {
+            reassignPendingChats(req.organization_id).catch(reassignErr => {
+                console.error("Error running reassignPendingChats on agent login/online toggle:", reassignErr);
+            });
+        }
+
+        res.json(data);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to update online status' });
+    }
+}
+

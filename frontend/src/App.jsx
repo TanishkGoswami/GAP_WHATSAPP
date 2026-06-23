@@ -16,6 +16,7 @@ import Broadcast from './pages/Broadcast'
 import LiveChat from './pages/LiveChat'
 import BotAgents from './pages/BotAgents'
 import Settings from './pages/Settings'
+import TeamMembers from './pages/TeamMembers'
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import SSOLogin from './pages/SSOLogin'
 import AcceptInvite from './pages/AcceptInvite'
@@ -75,6 +76,7 @@ export default function App() {
                 <Route path="bot-agents" element={<BotAgents />} />
                 <Route path="billing" element={<BillingPage />} />
                 <Route path="settings" element={<Settings />} />
+                <Route path="team-members" element={<TeamMembers />} />
                 <Route path="help" element={<HelpCenter />} />
               </Route>
             </Routes>

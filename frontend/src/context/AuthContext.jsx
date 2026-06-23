@@ -193,6 +193,55 @@ export function AuthProvider({ children }) {
         }
     }, [session?.user?.id, loginType])
 
+    const updateMyOnlineStatus = async (isOnline) => {
+        const token = session?.access_token
+        if (!token) throw new Error('No session token')
+
+        const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/status`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+                'X-Auth-Portal': loginType || 'owner'
+            },
+            body: JSON.stringify({ is_online: isOnline })
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.error || 'Failed to update online status')
+
+        setMemberProfile(prev => prev ? { ...prev, is_online: isOnline } : prev)
+        return data
+    }
+
+    useEffect(() => {
+        if (session?.access_token && ['agent', 'admin', 'owner'].includes(loginType)) {
+            let sent = false;
+            const handleUnload = () => {
+                if (sent) return;
+                sent = true;
+                const token = session.access_token;
+                const url = `${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/status`;
+                fetch(url, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
+                        'X-Auth-Portal': 'agent'
+                    },
+                    body: JSON.stringify({ is_online: false }),
+                    keepalive: true
+                }).catch(() => {});
+            };
+
+            window.addEventListener('beforeunload', handleUnload);
+            window.addEventListener('pagehide', handleUnload);
+            return () => {
+                window.removeEventListener('beforeunload', handleUnload);
+                window.removeEventListener('pagehide', handleUnload);
+            };
+        }
+    }, [session?.access_token, loginType]);
+
     const updateMyProfile = async ({ name, avatar_color }) => {
         const token = session?.access_token
         if (!token) throw new Error('No session token')
@@ -238,7 +287,22 @@ export function AuthProvider({ children }) {
                 redirectTo: `${window.location.origin}/dashboard`
             }
         }),
-        signOut: () => {
+        signOut: async () => {
+            if (session?.access_token && loginType === 'agent') {
+                try {
+                    await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/status`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session.access_token}`,
+                            'X-Auth-Portal': 'agent'
+                        },
+                        body: JSON.stringify({ is_online: false })
+                    });
+                } catch (e) {
+                    console.error("Failed to set offline status on signOut", e);
+                }
+            }
             setUserRole(null)
             setMemberProfile(null)
             fetchedForProfileKey.current = null
@@ -308,7 +372,9 @@ export function AuthProvider({ children }) {
         memberProfile,
         isProfileLoading,
         loginType,
-        updateMyProfile
+        updateMyProfile,
+        updateMyOnlineStatus,
+        setMemberProfile
     }
 
     return (

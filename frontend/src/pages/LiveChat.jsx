@@ -119,7 +119,6 @@ export default function LiveChat() {
     const [chats, setChats] = useState([])
     const chatsRef = useRef([])
     const [chatSearch, setChatSearch] = useState('')
-    const [isOnline, setIsOnline] = useState(false)
     const [chatFilter, setChatFilter] = useState('all')
     const [isChatFilterMenuOpen, setIsChatFilterMenuOpen] = useState(false)
     const [isAssignMenuOpen, setIsAssignMenuOpen] = useState(false)
@@ -266,7 +265,7 @@ export default function LiveChat() {
     // Team members for assignment
     const [teamMembers, setTeamMembers] = useState([])
     const assignableTeamMembers = useMemo(
-        () => teamMembers.filter(member => String(member?.role || '').toLowerCase() === 'agent' && member?.is_active !== false),
+        () => teamMembers.filter(member => ['agent', 'admin'].includes(String(member?.role || '').toLowerCase()) && member?.is_active !== false),
         [teamMembers]
     )
     const getBotAutomationSettings = (bot) => {
@@ -957,42 +956,12 @@ export default function LiveChat() {
             if (res.ok) {
                 const data = await res.json();
                 setTeamMembers(data);
-                if (user?.id) {
-                    const myProfile = data.find(m => m.user_id === user.id);
-                    if (myProfile && typeof myProfile.is_online !== 'undefined') {
-                        setIsOnline(myProfile.is_online);
-                    }
-                }
             } else { }
         } catch (err) {
             console.error("Failed to fetch team members:", err);
         }
     };
 
-    const toggleOnlineStatus = async () => {
-        const nextStatus = !isOnline;
-        setIsOnline(nextStatus);
-        try {
-            const res = await fetch(`${API_BASE}/team/status`, {
-                method: 'POST',
-                headers: { ...authHeaders, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ is_online: nextStatus })
-            });
-            if (!res.ok) {
-                const body = await res.json().catch(() => ({}))
-                throw new Error(body?.error || `Failed to update status (HTTP ${res.status})`)
-            }
-            if (socket.connected && memberProfile?.organization_id && user?.id) {
-                socket.emit(nextStatus ? 'agent_connected' : 'agent_disconnected', { 
-                    organization_id: memberProfile.organization_id, 
-                    user_id: user.id 
-                });
-            }
-        } catch (e) {
-            console.error("Failed to toggle status", e);
-            setIsOnline(!nextStatus);
-        }
-    };
 
     const assignAgent = async (conversationId, agentId) => {
         if (!session?.access_token) return;
@@ -1211,24 +1180,24 @@ export default function LiveChat() {
 
         const channel = supabase
             .channel(`public:w_messages_livechat:${memberProfile.organization_id}`)
-            .on('postgres_changes', { 
-                event: 'INSERT', 
-                schema: 'public', 
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
                 table: 'w_messages',
                 filter: `organization_id=eq.${memberProfile.organization_id}`
             }, (payload) => {
                 const newMsg = payload.new;
-                
+
                 // Extract relevant details for notification
                 const activeChat = selectedChatRef.current;
                 const inbound = newMsg.direction === 'inbound';
                 const convId = newMsg.conversation_id;
-                
+
                 // Check if we should play a notification
                 const targetChat = chatsRef.current.find(c => idsEqual(c?.id, convId));
                 // We play sound if it's inbound, we have a convId, it's NOT the active chat we are looking at
                 const shouldPlayNotificationSound = inbound && convId && (!activeChat || !idsEqual(activeChat.id, convId));
-                
+
                 if (shouldPlayNotificationSound) {
                     playNotification({ messageId: String(newMsg.id || newMsg.wa_message_id) });
                 }
@@ -1239,9 +1208,9 @@ export default function LiveChat() {
                     fetchMessages(activeChat, { limit: 50, silent: true });
                 }
             })
-            .on('postgres_changes', { 
-                event: '*', 
-                schema: 'public', 
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
                 table: 'w_conversations',
                 filter: `organization_id=eq.${memberProfile.organization_id}`
             }, () => {
@@ -1269,7 +1238,7 @@ export default function LiveChat() {
                 if (user?.id) {
                     socket.emit('agent_connected', { organization_id: memberProfile.organization_id, user_id: user.id })
                 }
-                
+
                 // Fetch unread counts when socket reconnects
                 fetchChats()
             }
@@ -1470,7 +1439,7 @@ export default function LiveChat() {
             if (active && idsEqual(active.id, conversationId)) {
                 setSelectedChat(prev => prev ? { ...prev, assigned_to: assignedTo } : prev)
             }
-            
+
             if (assignedTo && user?.id && idsEqual(assignedTo, user.id)) {
                 playNotification({
                     title: 'Chat Assigned To You',
@@ -1479,17 +1448,6 @@ export default function LiveChat() {
             }
         }
 
-        const handleAgentOnline = (payload) => {
-            if (payload?.user_id) {
-                setTeamMembers(prev => prev.map(m => m.user_id === payload.user_id ? { ...m, is_online: true } : m));
-            }
-        }
-
-        const handleAgentOffline = (payload) => {
-            if (payload?.user_id) {
-                setTeamMembers(prev => prev.map(m => m.user_id === payload.user_id ? { ...m, is_online: false } : m));
-            }
-        }
 
         socket.on('connect', handleConnect)
         socket.on('connect_error', handleConnectError)
@@ -1498,8 +1456,16 @@ export default function LiveChat() {
         socket.on('new_message', handleNewMessage);
         socket.on('contact_updated', handleContactUpdated)
         socket.on('conversation_assigned', handleConversationAssigned)
-        socket.on('agent_online', handleAgentOnline)
-        socket.on('agent_offline', handleAgentOffline)
+
+        socket.on('agent_online', (data) => {
+            console.log("Agent went online:", data);
+            setTeamMembers(prev => prev.map(m => m.user_id === data.user_id ? { ...m, is_online: true } : m));
+        });
+
+        socket.on('agent_offline', (data) => {
+            console.log("Agent went offline:", data);
+            setTeamMembers(prev => prev.map(m => m.user_id === data.user_id ? { ...m, is_online: false } : m));
+        });
 
         socket.on('message_updated', (update) => {
             const targetId = update?.message_id || null
@@ -1728,8 +1694,13 @@ export default function LiveChat() {
         }
     }
 
+    const handleTextChange = (e) => {
+        setMessageText(e.target.value)
+    }
+
     const handleSendMessage = async (e) => {
         e.preventDefault()
+
         if (!messageText.trim() && !selectedFile) return
 
         // Internal notes are UI-only for now
@@ -2183,10 +2154,10 @@ export default function LiveChat() {
 
     const renderMessageSourceBadge = (msg) => {
         if (msg.sender !== 'agent' || msg.forwarded) return null;
-        
+
         const source = msg.automationSource || msg.automation_source || msg.metadata?.automation_source;
         const senderType = msg.senderType || msg.sender_type;
-        
+
         let label = msg.agentName || 'You';
         let colorClass = 'text-[#6676ff]'; // Default color for You
 
@@ -3117,31 +3088,51 @@ export default function LiveChat() {
                                         <button
                                             type="button"
                                             onClick={() => setIsAssignMenuOpen(v => !v)}
-                                            className="inline-flex h-10 min-w-[150px] items-center justify-between gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-800 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-green-500/30"
+                                            className="inline-flex h-10 min-w-[160px] items-center justify-between gap-2.5 rounded-xl border border-gray-200 bg-white px-3.5 text-sm font-semibold text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500/20"
                                             title="Assign chat"
                                         >
                                             <span className="flex min-w-0 items-center gap-2">
-                                                <User className="h-4 w-4 shrink-0 text-gray-400" />
+                                                {(() => {
+                                                    const assignedMember = teamMembers.find(m => m.user_id === selectedChat?.assigned_to);
+                                                    if (assignedMember) {
+                                                        if (assignedMember.is_online) {
+                                                            return (
+                                                                <span className="relative flex h-2 w-2 shrink-0">
+                                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+                                                                </span>
+                                                            );
+                                                        } else {
+                                                            return (
+                                                                <span className="h-2 w-2 rounded-full bg-rose-300 shrink-0" />
+                                                            );
+                                                        }
+                                                    }
+                                                    return <User className="h-4 w-4 shrink-0 text-gray-400" />;
+                                                })()}
                                                 <span className="truncate">{getAgentName(selectedChat?.assigned_to)}</span>
                                             </span>
                                             <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
                                         </button>
                                         {isAssignMenuOpen && (
-                                            <div className="absolute right-0 top-11 z-50 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl">
+                                            <div className="absolute right-0 top-11 z-50 w-60 rounded-xl border border-gray-200 bg-white p-1 shadow-xl transition-all duration-150 animate-in fade-in slide-in-from-top-2">
                                                 <button
                                                     type="button"
                                                     onClick={() => {
                                                         assignAgent(selectedChat.id, '')
                                                         setIsAssignMenuOpen(false)
                                                     }}
-                                                    className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm ${!selectedChat?.assigned_to ? 'bg-green-50 text-green-800' : 'text-gray-700 hover:bg-gray-50'}`}
+                                                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm rounded-lg transition-colors ${!selectedChat?.assigned_to ? 'bg-green-50 text-green-800 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
                                                 >
-                                                    <span>Unassigned</span>
-                                                    {!selectedChat?.assigned_to && <Check className="h-4 w-4" />}
+                                                    <span className="flex items-center gap-2.5">
+                                                        <span className="h-2 w-2 rounded-full bg-gray-350 shrink-0" />
+                                                        <span className="font-medium">Unassigned</span>
+                                                    </span>
+                                                    {!selectedChat?.assigned_to && <Check className="h-4 w-4 text-emerald-600" />}
                                                 </button>
                                                 <div className="my-1 border-t border-gray-100" />
                                                 {assignableTeamMembers.length === 0 && (
-                                                    <div className="px-3 py-2.5 text-sm text-gray-500">
+                                                    <div className="px-3 py-2 text-sm text-gray-500">
                                                         No active agents available
                                                     </div>
                                                 )}
@@ -3153,40 +3144,29 @@ export default function LiveChat() {
                                                             assignAgent(selectedChat.id, m.user_id)
                                                             setIsAssignMenuOpen(false)
                                                         }}
-                                                        className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm ${selectedChat?.assigned_to === m.user_id ? 'bg-green-50 text-green-800' : 'text-gray-700 hover:bg-gray-50'}`}
+                                                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm rounded-lg transition-colors ${selectedChat?.assigned_to === m.user_id ? 'bg-green-50 text-green-800' : 'text-gray-700 hover:bg-gray-50'}`}
                                                     >
-                                                        <span className="truncate flex items-center gap-2">
-                                                            {m.name}
-                                                            {m.is_online && <span className="h-2 w-2 rounded-full bg-green-500"></span>}
+                                                        <span className="truncate flex items-center gap-2.5">
+                                                            {m.is_online ? (
+                                                                <span className="relative flex h-2 w-2 shrink-0">
+                                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400"></span>
+                                                                </span>
+                                                            ) : (
+                                                                <span className="h-2 w-2 rounded-full bg-rose-300 shrink-0" />
+                                                            )}
+                                                            <span className="font-medium text-gray-700">{m.name}</span>
+                                                            <span className="text-[9px] text-gray-400 font-bold uppercase bg-gray-100 px-1.5 py-0.5 rounded tracking-wide ml-1 shrink-0">
+                                                                {m.role}
+                                                            </span>
                                                         </span>
-                                                        {selectedChat?.assigned_to === m.user_id && <Check className="h-4 w-4" />}
+                                                        {selectedChat?.assigned_to === m.user_id && <Check className="h-4 w-4 text-emerald-600" />}
                                                     </button>
                                                 ))}
                                             </div>
                                         )}
                                     </div>
 
-                                    {/* Agent Online Toggle Button */}
-                                    <div className="relative ml-2">
-                                        <button
-                                            onClick={() => toggleOnlineStatus(!isOnline)}
-                                            className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold tracking-tight transition-all duration-150 outline-none ${isOnline
-                                                ? 'border-green-600 bg-green-600 text-white shadow-sm hover:bg-green-700'
-                                                : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-800'
-                                                }`}
-                                            title={isOnline ? 'You are online and will receive chats' : 'Go online to receive handoff chats'}
-                                        >
-                                            {isOnline ? (
-                                                <span className="relative flex h-1.5 w-1.5">
-                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-200 opacity-75"></span>
-                                                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white"></span>
-                                                </span>
-                                            ) : (
-                                                <span className="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
-                                            )}
-                                            <span>{isOnline ? 'Online' : 'Offline'}</span>
-                                        </button>
-                                    </div>
 
                                     {/* Bot Toggle Button */}
                                     <div className="relative ml-2" data-bot-menu>
@@ -3619,43 +3599,43 @@ export default function LiveChat() {
                                 <form onSubmit={handleSendMessage} className={`mx-auto flex w-full max-w-[1180px] items-end gap-2 ${isCustomerWindowExpired && !isInternalNote ? 'justify-end' : ''}`}>
                                     {!isCustomerWindowExpired && (
                                         <div className="flex items-center gap-1 pb-0.5">
-                                        <div className="relative">
+                                            <div className="relative">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsEmojiOpen(v => !v)}
+                                                    className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
+                                                    title="Emoji"
+                                                >
+                                                    <Smile className="h-6 w-6" />
+                                                </button>
+
+                                                {isEmojiOpen && (
+                                                    <div className="absolute bottom-12 left-0 z-20 w-64 rounded-xl border border-gray-200 bg-white shadow-lg p-2">
+                                                        <div className="text-[11px] font-bold text-gray-500 mb-2">Emoji</div>
+                                                        <div className="grid grid-cols-8 gap-1">
+                                                            {EMOJI_PICKER_ITEMS.map(e => (
+                                                                <button
+                                                                    key={e}
+                                                                    type="button"
+                                                                    onClick={() => insertEmoji(e)}
+                                                                    className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100"
+                                                                >
+                                                                    <EmojiAsset emoji={e} className="h-5 w-5" />
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
                                             <button
                                                 type="button"
-                                                onClick={() => setIsEmojiOpen(v => !v)}
+                                                onClick={() => fileInputRef.current?.click()}
                                                 className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
-                                                title="Emoji"
+                                                title="Attach file"
                                             >
-                                                <Smile className="h-6 w-6" />
+                                                <Paperclip className="h-6 w-6" />
                                             </button>
-
-                                            {isEmojiOpen && (
-                                                <div className="absolute bottom-12 left-0 z-20 w-64 rounded-xl border border-gray-200 bg-white shadow-lg p-2">
-                                                    <div className="text-[11px] font-bold text-gray-500 mb-2">Emoji</div>
-                                                    <div className="grid grid-cols-8 gap-1">
-                                                        {EMOJI_PICKER_ITEMS.map(e => (
-                                                            <button
-                                                                key={e}
-                                                                type="button"
-                                                                onClick={() => insertEmoji(e)}
-                                                                className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-gray-100"
-                                                            >
-                                                                <EmojiAsset emoji={e} className="h-5 w-5" />
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            )}
                                         </div>
-                                        <button
-                                            type="button"
-                                            onClick={() => fileInputRef.current?.click()}
-                                            className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
-                                            title="Attach file"
-                                        >
-                                            <Paperclip className="h-6 w-6" />
-                                        </button>
-                                    </div>
                                     )}
                                     {(!isCustomerWindowExpired || isInternalNote) && (
                                         <div className="flex flex-1 flex-col overflow-hidden rounded-lg bg-white shadow-[0_1px_1px_rgba(11,20,26,0.08)] transition-all focus-within:ring-1 focus-within:ring-black/10">
@@ -3721,7 +3701,7 @@ export default function LiveChat() {
                                             <textarea
                                                 ref={messageInputRef}
                                                 value={messageText}
-                                                onChange={e => setMessageText(e.target.value)}
+                                                onChange={handleTextChange}
                                                 placeholder={isInternalNote ? "Type an internal note..." : "Type a message..."}
                                                 rows={1}
                                                 className="max-h-42 min-h-[42px] w-full resize-none border-0 bg-transparent px-4 py-[11px] text-[15px] leading-5 text-[#111b21] outline-none placeholder:text-[#8696a0] focus:border-transparent focus:outline-none focus:ring-0"

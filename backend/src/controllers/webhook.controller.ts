@@ -2,6 +2,8 @@ import { Response } from 'express';
 import crypto from "crypto";
 import { supabase } from '../config/supabase.js';
 import { io } from '../socket.js';
+import { performAutoAssignment } from '../services/assignment.service.js';
+
 import { storeMessage, upsertConversation } from '../services/messages.service.js';
 import { sendTextMessage, applyReactionUpdate, downloadMetaMedia, sendInteractiveButtons, sendFlowMediaMessageMeta } from '../services/messages.sender.js';
 import { processFlowEngine } from '../services/flows.service.js';
@@ -1190,6 +1192,11 @@ export async function handleWebhook(req: any, res: Response) {
         });
         console.error("Bot auto-reply error:", botErr.message || botErr);
       }
+      
+      // Auto assign the conversation
+      performAutoAssignment(organization_id, conv.id).catch(err => {
+        console.error("Error running auto assignment for inbound webhook message:", err);
+      });
     }
 
     // 3. Handle Status Updates (Sent/Delivered/Read)

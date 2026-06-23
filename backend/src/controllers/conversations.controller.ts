@@ -246,8 +246,8 @@ export async function assignConversation(req: any, res: Response) {
                 .eq('user_id', normalizedAgentId)
                 .maybeSingle();
             if (memberErr) throw memberErr;
-            if (!member || member.role !== 'agent' || member.is_active === false) {
-                return res.status(400).json({ error: 'Conversation can only be assigned to an active agent' });
+            if (!member || !['agent', 'admin', 'owner'].includes(member.role) || member.is_active === false) {
+                return res.status(400).json({ error: 'Conversation can only be assigned to an active team member' });
             }
         }
 
@@ -264,7 +264,10 @@ export async function assignConversation(req: any, res: Response) {
 
         if (error) throw error;
 
-        try { getIO().to(`org:${orgId}`).emit('conversation_assigned', { conversation_id: id, assigned_to: normalizedAgentId }); } catch(e) {}
+        try { 
+            getIO().to(`org:${orgId}`).emit('conversation_assigned', { conversation_id: id, assigned_to: normalizedAgentId }); 
+            getIO().to(`org:${orgId}`).emit('chat_assigned', { conversation_id: id, assigned_to: normalizedAgentId }); 
+        } catch(e) {}
         res.json({ success: true, conversation: updated });
     } catch (err: any) {
         res.status(500).json({ error: err.message });

@@ -122,7 +122,7 @@ export default function Broadcast() {
         if (!selectedTemplate) return '';
         const bodyComponent = selectedTemplate.components?.find(c => c.type === 'BODY');
         let text = bodyComponent?.text || '';
-        
+
         variables.forEach(v => {
             const source = campaign.variable_mapping[v.key];
             let replacement = v.token;
@@ -144,13 +144,13 @@ export default function Broadcast() {
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;');
-            
+
         escaped = escaped.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
         escaped = escaped.replace(/_(.*?)_/g, '<em>$1</em>');
         escaped = escaped.replace(/~(.*?)~/g, '<del>$1</del>');
         escaped = escaped.replace(/`(.*?)`/g, '<code class="bg-gray-100 px-1 rounded font-mono text-xs">$1</code>');
         escaped = escaped.replace(/\n/g, '<br />');
-        
+
         return <span dangerouslySetInnerHTML={{ __html: escaped }} />;
     };
 
@@ -165,11 +165,11 @@ export default function Broadcast() {
         name: '',
         wa_account_id: '',
         scheduled_at: '',
-        audience_type: 'saved', 
-        audience_tag: '', 
+        audience_type: 'saved',
+        audience_tag: '',
         template_name: '',
         template_language: 'en_US',
-        variable_mapping: {} 
+        variable_mapping: {}
     })
     const [customTexts, setCustomTexts] = useState({})
     const [csvData, setCsvData] = useState(null)
@@ -196,7 +196,7 @@ export default function Broadcast() {
     const needsHeaderMedia = ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(selectedHeaderFormat)
     const [headerMediaUrl, setHeaderMediaUrl] = useState('')
     const [isHeaderUploading, setIsHeaderUploading] = useState(false)
-    
+
     const filteredContacts = campaign.audience_type === 'CSV_UPLOAD'
         ? (csvData || [])
         : campaign.audience_type === 'tag' && campaign.audience_tag
@@ -228,9 +228,9 @@ export default function Broadcast() {
         setIsLoading(p => ({ ...p, contacts: true }));
         apiCall(`${API_URL}/api/contacts?include_unsaved=true`)
             .then(res => res.json())
-            .then(data => { 
+            .then(data => {
                 const individuals = (data?.contacts || data || []).filter(c => c.contact_type === 'individual');
-                setContacts(individuals); 
+                setContacts(individuals);
                 setIsLoading(p => ({ ...p, contacts: false }));
             })
             .catch(() => setIsLoading(p => ({ ...p, contacts: false })));
@@ -345,7 +345,7 @@ export default function Broadcast() {
         const file = e.target.files[0];
         if (!file) return;
         setCsvFileName(file.name);
-        
+
         const reader = new FileReader();
         reader.onload = (evt) => {
             const text = evt.target.result;
@@ -354,16 +354,16 @@ export default function Broadcast() {
                 alertDialog('CSV is empty', { title: 'CSV import failed', tone: 'warning' });
                 return;
             }
-            
+
             const headers = lines[0].split(',').map(h => h.toLowerCase().trim());
             const phoneIdx = headers.findIndex(h => h.includes('phone') || h.includes('number'));
             const nameIdx = headers.findIndex(h => h.includes('name'));
-            
+
             if (phoneIdx === -1) {
                 alertDialog('CSV must contain a column for phone numbers (e.g. "Phone" or "Number")', { title: 'CSV import failed', tone: 'warning' });
                 return;
             }
-            
+
             const parsed = [];
             for (let i = 1; i < lines.length; i++) {
                 // simple split by comma, ignoring quotes for basic usage
@@ -488,7 +488,7 @@ export default function Broadcast() {
         }
         setCurrentStep(p => Math.min(5, p + 1))
     };
-    
+
     const handleBack = () => setCurrentStep(p => Math.max(1, p - 1));
 
     const handleLaunch = async () => {
@@ -669,21 +669,21 @@ export default function Broadcast() {
                     <p className="text-sm text-gray-500 mt-2 max-w-lg leading-relaxed">Design, schedule, and track bulk message campaigns for your audience.</p>
                 </div>
                 <div data-tour="broadcast-tabs" className="flex flex-wrap items-center gap-2">
-                <TourButton />
-                <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-sm backdrop-blur-sm">
-                    <button 
-                        onClick={() => setActiveTab('new')}
-                        className={`px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'new' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
-                    >
-                        New Campaign
-                    </button>
-                    <button 
-                        onClick={() => setActiveTab('history')}
-                        className={`px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'history' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
-                    >
-                        History
-                    </button>
-                </div>
+                    <TourButton />
+                    <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-sm backdrop-blur-sm">
+                        <button
+                            onClick={() => setActiveTab('new')}
+                            className={`px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'new' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
+                        >
+                            New Campaign
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('history')}
+                            className={`px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'history' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
+                        >
+                            History
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -697,7 +697,7 @@ export default function Broadcast() {
                         </button>
                     </div>
                     {isLoadingHistory && campaignsList.length === 0 ? (
-                        <div className="p-16 text-center flex justify-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500"/></div>
+                        <div className="p-16 text-center flex justify-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500" /></div>
                     ) : campaignsList.length === 0 ? (
                         <div className="p-16 text-center flex flex-col items-center justify-center">
                             <div className="w-16 h-16 bg-indigo-50 text-indigo-300 rounded-2xl flex items-center justify-center mb-4"><Calendar className="w-8 h-8" /></div>
@@ -728,13 +728,12 @@ export default function Broadcast() {
                                                     </div>
                                                 </td>
                                                 <td className="px-8 py-5">
-                                                    <span className={`px-3 py-1.5 text-xs font-bold rounded-lg uppercase tracking-wide flex items-center inline-flex gap-1.5 ${
-                                                        camp.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' :
-                                                        camp.status === 'failed' ? 'bg-rose-50 text-rose-700 border border-rose-200/60' :
-                                                        camp.status === 'cancelled' ? 'bg-gray-50 text-gray-700 border border-gray-300' :
-                                                        camp.status === 'processing' ? 'bg-blue-50 text-blue-700 border border-blue-200/60' :
-                                                        'bg-amber-50 text-amber-700 border border-amber-200/60'
-                                                    }`}>
+                                                    <span className={`px-3 py-1.5 text-xs font-bold rounded-lg uppercase tracking-wide flex items-center inline-flex gap-1.5 ${camp.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' :
+                                                            camp.status === 'failed' ? 'bg-rose-50 text-rose-700 border border-rose-200/60' :
+                                                                camp.status === 'cancelled' ? 'bg-gray-50 text-gray-700 border border-gray-300' :
+                                                                    camp.status === 'processing' ? 'bg-blue-50 text-blue-700 border border-blue-200/60' :
+                                                                        'bg-amber-50 text-amber-700 border border-amber-200/60'
+                                                        }`}>
                                                         {camp.status === 'processing' && <Loader2 className="w-3 h-3 animate-spin" />}
                                                         {camp.status}
                                                     </span>
@@ -763,7 +762,7 @@ export default function Broadcast() {
                                                 <td className="px-8 py-5 text-right">
                                                     <div className="flex justify-end gap-3 items-center">
                                                         {(camp.status === 'processing' || camp.status === 'scheduled') && (
-                                                            <button 
+                                                            <button
                                                                 onClick={() => cancelCampaign(camp.id)}
                                                                 className="text-rose-600 hover:text-white text-xs font-bold flex items-center gap-1.5 bg-rose-50 hover:bg-rose-500 px-3 py-1.5 rounded-lg transition-colors border border-rose-200 hover:border-rose-500"
                                                                 title="Stop and Abandon Campaign"
@@ -772,7 +771,7 @@ export default function Broadcast() {
                                                             </button>
                                                         )}
                                                         {(camp.status === 'completed' || camp.status === 'cancelled') && camp.results && camp.results.length > 0 && (
-                                                            <button 
+                                                            <button
                                                                 onClick={() => setExpandedCampaignId(expandedCampaignId === camp.id ? null : camp.id)}
                                                                 className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors"
                                                             >
@@ -794,7 +793,7 @@ export default function Broadcast() {
                                                                 <div key={idx} className="grid grid-cols-[1fr_auto] gap-4 text-sm p-4 bg-white rounded-xl shadow-sm border border-gray-200/60 hover:border-gray-300 transition-colors">
                                                                     <div className="flex min-w-0 items-center gap-3">
                                                                         <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${res.status === 'sent' ? 'bg-emerald-500 shadow-emerald-200' : 'bg-rose-500 shadow-rose-200'}`}></div>
-                                                                        <span className="font-bold text-gray-900">{res.name}</span> 
+                                                                        <span className="font-bold text-gray-900">{res.name}</span>
                                                                         <span className="text-gray-500 bg-gray-100/80 px-2.5 py-1 rounded-md font-mono text-xs">{res.phone || 'Unknown Phone'}</span>
                                                                     </div>
                                                                     {res.status === 'sent' ? (
@@ -829,19 +828,19 @@ export default function Broadcast() {
                             {sendResult.status === 'scheduled' ? 'Campaign Scheduled!' : 'Campaign Launched!'}
                         </h2>
                         <p className="text-gray-500 text-lg leading-relaxed">
-                            {sendResult.status === 'scheduled' 
+                            {sendResult.status === 'scheduled'
                                 ? `It will automatically run at ${format(new Date(campaign.scheduled_at), 'PPp')}.`
                                 : 'Your messages are currently being processed in the background.'}
                         </p>
                     </div>
                     <div className="flex justify-center gap-4 pt-4 border-t border-gray-100">
-                        <button 
+                        <button
                             onClick={startNew}
                             className="px-8 py-3.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-bold shadow-lg shadow-indigo-200 transition-all hover:-translate-y-0.5"
                         >
                             Start New Campaign
                         </button>
-                        <button 
+                        <button
                             onClick={() => setActiveTab('history')}
                             className="px-8 py-3.5 bg-white border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 font-bold shadow-sm transition-all"
                         >
@@ -921,7 +920,7 @@ export default function Broadcast() {
                                     <div>
                                         <label className="mb-1.5 block text-sm font-semibold text-gray-800">WhatsApp Account <span className="text-red-500">*</span></label>
                                         {isLoading.accounts ? (
-                                            <div className="flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin"/> Loading accounts...</div>
+                                            <div className="flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading accounts...</div>
                                         ) : (
                                             <div className="relative">
                                                 <select
@@ -1002,7 +1001,7 @@ export default function Broadcast() {
                                                 <span className="block text-sm font-semibold text-gray-950">Saved Contacts Only <span className="ml-2 inline-flex items-center rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-[#0064b7] ring-1 ring-[#cfe5fb]">Recommended</span></span>
                                                 <span className="mt-1 flex items-center text-sm text-gray-500">
                                                     <Users className="h-4 w-4 mr-1" />
-                                                    {isLoading.contacts ? <Loader2 className="w-3 h-3 animate-spin mr-1"/> : null}
+                                                    {isLoading.contacts ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
                                                     {contacts.filter(c => c.saved_at != null).length} saved contacts
                                                 </span>
                                             </span>
@@ -1026,14 +1025,14 @@ export default function Broadcast() {
                                                 <span className="block text-sm font-semibold text-gray-950">All Contacts <span className="text-xs font-normal text-gray-400">(includes synced)</span></span>
                                                 <span className="mt-1 flex items-center text-sm text-gray-500">
                                                     <Users className="h-4 w-4 mr-1" />
-                                                    {isLoading.contacts ? <Loader2 className="w-3 h-3 animate-spin mr-1"/> : null}
+                                                    {isLoading.contacts ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
                                                     {contacts.length} total contacts
                                                 </span>
                                             </span>
                                         </span>
                                         <Check className={`h-5 w-5 ${campaign.audience_type === 'all' ? 'text-[#0070d1]' : 'invisible'}`} />
                                     </label>
-                                    
+
                                     <label className={`
                                         relative flex cursor-pointer rounded-lg border p-4 focus:outline-none transition-colors
                                         ${campaign.audience_type === 'CSV_UPLOAD' ? 'border-[#0070d1] bg-[#eef7ff] ring-1 ring-[#0070d1]/20' : 'border-gray-200 bg-white hover:bg-gray-50'}
@@ -1155,8 +1154,8 @@ export default function Broadcast() {
                                                         });
                                                     }}
                                                     className={`p-4 rounded-lg border cursor-pointer transition-colors ${campaign.template_name === tpl.name
-                                                            ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
-                                                            : 'border-gray-200 hover:border-gray-300'
+                                                        ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
+                                                        : 'border-gray-200 hover:border-gray-300'
                                                         }`}
                                                 >
                                                     <div className="flex justify-between items-start">
@@ -1177,7 +1176,6 @@ export default function Broadcast() {
                                         </div>
                                     )}
                                 </div>
-
                                 <div>
                                     {renderLivePreview()}
                                 </div>
@@ -1189,7 +1187,6 @@ export default function Broadcast() {
                                 <div>
                                     {renderLivePreview()}
                                 </div>
-
 
                                 <div>
                                     <div className="mb-4 flex items-start justify-between gap-3">
@@ -1210,121 +1207,121 @@ export default function Broadcast() {
                                                 <div className="mt-1 text-xs text-gray-500">{selectedTemplate.category || 'Template'} · {selectedTemplate.language}</div>
                                             </div>
                                             <div className="space-y-5 p-5">
-                                            {needsHeaderMedia && (
-                                                <div className="rounded-lg border border-gray-200 bg-white">
-                                                    <div className="flex items-start gap-3 border-b border-gray-100 px-4 py-3">
-                                                        <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
-                                                            <FileText className="h-4 w-4" />
-                                                        </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center gap-2">
-                                                                <h3 className="text-sm font-semibold text-gray-900">Template header</h3>
-                                                                <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase text-red-600">Required</span>
+                                                {needsHeaderMedia && (
+                                                    <div className="rounded-lg border border-gray-200 bg-white">
+                                                        <div className="flex items-start gap-3 border-b border-gray-100 px-4 py-3">
+                                                            <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                                                                <FileText className="h-4 w-4" />
                                                             </div>
-                                                            <p className="mt-1 text-xs text-gray-500">
-                                                                This approved template has a {selectedHeaderFormat.toLowerCase()} header, so Meta requires one public media URL for every send.
-                                                            </p>
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <h3 className="text-sm font-semibold text-gray-900">Template header</h3>
+                                                                    <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase text-red-600">Required</span>
+                                                                </div>
+                                                                <p className="mt-1 text-xs text-gray-500">
+                                                                    This approved template has a {selectedHeaderFormat.toLowerCase()} header, so Meta requires one public media URL for every send.
+                                                                </p>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                    <div className="space-y-3 p-4">
-                                                        <label className="flex min-h-20 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-center transition-colors hover:border-indigo-300 hover:bg-indigo-50">
-                                                            {isHeaderUploading ? (
-                                                                <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
-                                                            ) : (
-                                                                <Upload className="h-5 w-5 text-indigo-600" />
-                                                            )}
-                                                            <span className="mt-2 text-sm font-medium text-indigo-700">
-                                                                {isHeaderUploading ? 'Uploading...' : `Upload ${selectedHeaderFormat.toLowerCase()}`}
-                                                            </span>
-                                                            <input
-                                                                type="file"
-                                                                className="hidden"
-                                                                accept={selectedHeaderFormat === 'IMAGE' ? 'image/*' : selectedHeaderFormat === 'VIDEO' ? 'video/mp4,video/*' : '*/*'}
-                                                                disabled={isHeaderUploading}
-                                                                onChange={(e) => handleHeaderMediaUpload(e.target.files?.[0])}
-                                                            />
-                                                        </label>
-                                                        <div className="hidden">
-                                                            <label className="mb-1.5 block text-xs font-medium text-gray-700">Public media URL</label>
-                                                            <div className="relative">
-                                                                <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                                        <div className="space-y-3 p-4">
+                                                            <label className="flex min-h-20 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-center transition-colors hover:border-indigo-300 hover:bg-indigo-50">
+                                                                {isHeaderUploading ? (
+                                                                    <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+                                                                ) : (
+                                                                    <Upload className="h-5 w-5 text-indigo-600" />
+                                                                )}
+                                                                <span className="mt-2 text-sm font-medium text-indigo-700">
+                                                                    {isHeaderUploading ? 'Uploading...' : `Upload ${selectedHeaderFormat.toLowerCase()}`}
+                                                                </span>
                                                                 <input
-                                                                    type="url"
-                                                                    required
-                                                                    placeholder="https://..."
-                                                                    className={`h-10 w-full rounded-lg pl-9 text-sm ${headerMediaUrl.trim() ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
-                                                                    value={headerMediaUrl}
-                                                                    onChange={(e) => syncHeaderMediaUrl(e.target.value)}
+                                                                    type="file"
+                                                                    className="hidden"
+                                                                    accept={selectedHeaderFormat === 'IMAGE' ? 'image/*' : selectedHeaderFormat === 'VIDEO' ? 'video/mp4,video/*' : '*/*'}
+                                                                    disabled={isHeaderUploading}
+                                                                    onChange={(e) => handleHeaderMediaUpload(e.target.files?.[0])}
                                                                 />
-                                                            </div>
-                                                            <p className="mt-1.5 flex items-start gap-1.5 text-xs text-gray-500">
-                                                                <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
-                                                                Header placeholder text is not sent. Use an uploaded file or a public URL.
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                            {dynamicUrlButtons.map((button) => (
-                                                <div key={`button-url-${button.index}`} className="rounded-lg border border-gray-200 bg-white p-4">
-                                                    <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                                        URL button · {button.text}
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        required
-                                                        placeholder={`Value for "${button.text}" URL`}
-                                                        className={`h-10 w-full rounded-lg text-sm ${(campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`]) ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
-                                                        value={campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`] || ''}
-                                                        onChange={(e) => handleButtonUrlParamChange(button.index, e.target.value)}
-                                                    />
-                                                    <p className="mt-1 text-xs text-gray-500">
-                                                        Approved URL: {button.url}. Enter only the placeholder value, for example ads or ?utm_source=whatsapp.
-                                                    </p>
-                                                </div>
-                                            ))}
-                                            {(variables.length > 0 || dynamicUrlButtons.length > 0) && (
-                                                <div className="border-t border-gray-100 pt-5">
-                                                    <h3 className="text-sm font-semibold text-gray-900">Body variables</h3>
-                                                    <p className="mt-1 text-xs text-gray-500">Choose where each placeholder value should come from.</p>
-                                                </div>
-                                            )}
-                                            {variables.length > 0 ? variables.map((variable) => (
-                                                <div key={variable.key} className="rounded-lg border border-gray-200 bg-white p-4">
-                                                    <div className="mb-3 flex items-center justify-between gap-3">
-                                                        <div>
-                                                            <label className="block text-sm font-semibold capitalize text-gray-900">
-                                                                {variable.label}
                                                             </label>
-                                                            <div className="mt-0.5 font-mono text-xs text-gray-400">{variable.token}</div>
+                                                            <div>
+                                                                <label className="mb-1.5 block text-xs font-medium text-gray-700">Public media URL</label>
+                                                                <div className="relative">
+                                                                    <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                                                                    <input
+                                                                        type="url"
+                                                                        required
+                                                                        placeholder="https://..."
+                                                                        className={`h-10 w-full rounded-lg pl-9 text-sm ${headerMediaUrl.trim() ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                                                                        value={headerMediaUrl}
+                                                                        onChange={(e) => syncHeaderMediaUrl(e.target.value)}
+                                                                    />
+                                                                </div>
+                                                                <p className="mt-1.5 flex items-start gap-1.5 text-xs text-gray-500">
+                                                                    <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                                                                    Header placeholder text is not sent. Use an uploaded file or a public URL.
+                                                                </p>
+                                                            </div>
                                                         </div>
                                                     </div>
-                                                    <select 
-                                                        className="h-10 w-full rounded-lg border-gray-300 text-sm"
-                                                        value={campaign.variable_mapping[variable.key] || ''}
-                                                        onChange={e => handleVariableMapChange(variable.key, e.target.value)}
-                                                    >
-                                                        <option value="">Select source</option>
-                                                        <option value="name">Contact Name</option>
-                                                        <option value="phone">Contact Phone</option>
-                                                        <option value="custom">Custom Text...</option>
-                                                    </select>
-                                                    
-                                                    {campaign.variable_mapping[variable.key] === 'custom' && (
-                                                        <input 
-                                                            type="text" 
-                                                            placeholder="Enter custom text..." 
-                                                            className="mt-2 h-10 w-full rounded-lg border-gray-300 text-sm"
-                                                            value={customTexts[variable.key] || ''}
-                                                            onChange={e => setCustomTexts({ ...customTexts, [variable.key]: e.target.value })}
+                                                )}
+                                                {dynamicUrlButtons.map((button) => (
+                                                    <div key={`button-url-${button.index}`} className="rounded-lg border border-gray-200 bg-white p-4">
+                                                        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                                            URL button · {button.text}
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            required
+                                                            placeholder={`Value for "${button.text}" URL`}
+                                                            className={`h-10 w-full rounded-lg text-sm ${(campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`]) ? 'border-gray-300' : 'border-red-300 bg-red-50'}`}
+                                                            value={campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`] || ''}
+                                                            onChange={(e) => handleButtonUrlParamChange(button.index, e.target.value)}
                                                         />
-                                                    )}
-                                                </div>
-                                            )) : (
-                                                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 py-8 text-center text-sm text-gray-500">
-                                                    This template has no variables.
-                                                </div>
-                                            )}
+                                                        <p className="mt-1 text-xs text-gray-500">
+                                                            Approved URL: {button.url}. Enter only the placeholder value, for example ads or ?utm_source=whatsapp.
+                                                        </p>
+                                                    </div>
+                                                ))}
+                                                {(variables.length > 0 || dynamicUrlButtons.length > 0) && (
+                                                    <div className="border-t border-gray-100 pt-5">
+                                                        <h3 className="text-sm font-semibold text-gray-900">Body variables</h3>
+                                                        <p className="mt-1 text-xs text-gray-500">Choose where each placeholder value should come from.</p>
+                                                    </div>
+                                                )}
+                                                {variables.length > 0 ? variables.map((variable) => (
+                                                    <div key={variable.key} className="rounded-lg border border-gray-200 bg-white p-4">
+                                                        <div className="mb-3 flex items-center justify-between gap-3">
+                                                            <div>
+                                                                <label className="block text-sm font-semibold capitalize text-gray-900">
+                                                                    {variable.label}
+                                                                </label>
+                                                                <div className="mt-0.5 font-mono text-xs text-gray-400">{variable.token}</div>
+                                                            </div>
+                                                        </div>
+                                                        <select
+                                                            className="h-10 w-full rounded-lg border-gray-300 text-sm"
+                                                            value={campaign.variable_mapping[variable.key] || ''}
+                                                            onChange={e => handleVariableMapChange(variable.key, e.target.value)}
+                                                        >
+                                                            <option value="">Select source</option>
+                                                            <option value="name">Contact Name</option>
+                                                            <option value="phone">Contact Phone</option>
+                                                            <option value="custom">Custom Text...</option>
+                                                        </select>
+
+                                                        {campaign.variable_mapping[variable.key] === 'custom' && (
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Enter custom text..."
+                                                                className="mt-2 h-10 w-full rounded-lg border-gray-300 text-sm"
+                                                                value={customTexts[variable.key] || ''}
+                                                                onChange={e => setCustomTexts({ ...customTexts, [variable.key]: e.target.value })}
+                                                            />
+                                                        )}
+                                                    </div>
+                                                )) : (
+                                                    <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 py-8 text-center text-sm text-gray-500">
+                                                        This template has no variables.
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     ) : (
@@ -1369,9 +1366,8 @@ export default function Broadcast() {
                                     </div>
                                 </div>
 
-                                <div className={`rounded-xl border p-4 text-left ${
-                                    billingEstimate?.can_launch ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'
-                                }`}>
+                                <div className={`rounded-xl border p-4 text-left ${billingEstimate?.can_launch ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'
+                                    }`}>
                                     <div className="mb-3 flex items-center justify-between gap-3">
                                         <div className="flex items-center gap-2">
                                             <Wallet className={`h-4 w-4 ${billingEstimate?.can_launch ? 'text-green-700' : 'text-amber-700'}`} />

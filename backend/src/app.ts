@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from "dotenv";
+import path from 'path';
 
 import billingRoutes from './routes/billing.routes.js';
 import broadcastRoutes from './routes/broadcast.routes.js';
@@ -61,6 +62,8 @@ app.use(
         },
     })
 );
+
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.use('/api/billing', billingRoutes);
 app.use('/api/broadcasts', broadcastRoutes);

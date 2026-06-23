@@ -1,5 +1,7 @@
 import { supabase } from '../config/supabase.js';
 import { DEFAULT_BILLING_CURRENCY, DEFAULT_BILLING_MARKET, DEFAULT_WHATSAPP_RATE_CARD } from '../utils/billing.js';
+import { io } from '../socket.js';
+
 
 export type WhatsappBillingCategory = 'marketing' | 'utility' | 'authentication' | 'service';
 
@@ -192,8 +194,17 @@ export async function upsertConversation(organization_id: string, wa_account_id:
             .single();
         if (error) console.error("Conversation Insert Error:", error);
 
-        if (data && lastMessageOpts.direction === 'inbound') {
-            // Auto assignment logic should be called externally if needed.
+        if (data) {
+            try {
+                // Emit new_chat_received event when a new conversation is created
+                io.to(`org:${organization_id}`).emit('new_chat_received', data);
+            } catch (e) {
+                console.error("Failed to emit new_chat_received event:", e);
+            }
+
+            if (lastMessageOpts.direction === 'inbound') {
+                // Auto assignment logic should be called externally if needed.
+            }
         }
 
         return data;
