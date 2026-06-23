@@ -280,6 +280,19 @@ Keep your responses highly conversational, concise, and direct. Avoid repeating 
       messages.push({ role: "user", content: text });
     }
 
+    messages.push({
+      role: "system",
+      content: `CRITICAL SYSTEM INSTRUCTION: You must strictly evaluate the user's last message. 
+If the user is asking for:
+- Recipes (e.g. "aloo ki sabzi kaise banaye")
+- General knowledge or trivia
+- Technical coding explanations (e.g. "CSS/HTML/Syntax")
+- Anything completely unrelated to business, automation, SaaS, CRM, marketing, or your services.
+
+YOU MUST REFUSE TO ANSWER IT. Do NOT provide the recipe or explanation.
+Instead, reply EXACTLY with: "Main sirf business aur automation se related queries handle karne ke liye train kiya gaya hoon. Kya main aapke business needs ya automation mein aapki help kar sakta hoon?"`
+    });
+
     console.log(`[AI Debug] Sending to OpenAI for Conv ${conversation_id}:`, JSON.stringify(messages, null, 2));
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
