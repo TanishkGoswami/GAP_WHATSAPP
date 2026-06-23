@@ -18,6 +18,9 @@ import makeWASocket, {
 import { upsertContact, sanitizeContactDisplayName, normalizeContactWaIdForStorage, pickBestBaileysContactName } from './contacts.service.js';
 import { getBotAgentReply } from './ai.service.js';
 
+const botDebounceMap = new Map<string, NodeJS.Timeout>();
+const botLockMap = new Map<string, Promise<void>>();
+
 async function ensureDefaultOrganizationId(): Promise<string | null> {
     return null;
 }
@@ -633,61 +636,99 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                                 }
 
                                 if (!flowConsumedMessage) {
-                                    const botResult = await getBotAgentReply({
-                                        organization_id: orgId,
-                                        conversation_id: conv.id,
-                                        text: captionText
-                                    });
+                                    const debounceKey = conv.id;
+                                    
+                                    // Send typing indicator immediately
+                                    try {
+                                        await sock.sendPresenceUpdate('composing', remoteJid);
+                                    } catch (e) {
+                                        console.error('Failed to send composing presence', e);
+                                    }
 
-                                    if (botResult?.reply) {
-                                        console.log(`ðŸ¤– Bot "${botResult.agent?.name}" replying via Baileys to: "${captionText.substring(0, 50)}..."`);
+                                    if (botDebounceMap.has(debounceKey)) {
+                                        clearTimeout(botDebounceMap.get(debounceKey)!);
+                                    }
 
-                                        // Send the reply via Baileys
-                                        const botMsg = await sock.sendMessage(remoteJid, { text: botResult.reply });
-                                        const botWaMessageId = botMsg?.key?.id || null;
+                                    botDebounceMap.set(debounceKey, setTimeout(async () => {
+                                        botDebounceMap.delete(debounceKey);
+                                        
+                                        // Ensure sequential execution of AI generation for the same conversation
+                                        let prevPromise = botLockMap.get(debounceKey) || Promise.resolve();
+                                        
+                                        const nextPromise = prevPromise.then(async () => {
+                                            try {
+                                                const botResult = await getBotAgentReply({
+                                                    organization_id: orgId,
+                                                    conversation_id: conv.id,
+                                                    text: captionText
+                                                });
 
-                                        // Store the bot's reply message
-                                        const storedBotReply = await storeMessage({
-                                            organization_id: orgId,
-                                            contact_id: contact.id,
-                                            conversation_id: conv.id,
-                                            wa_message_id: botWaMessageId,
-                                            direction: "outbound",
-                                            type: "text",
-                                            content: { text: botResult.reply, bot_agent_id: botResult.agent?.id, bot_agent_name: botResult.agent?.name },
-                                            status: "sent",
-                                            is_bot_reply: true,
-                                            bot_agent_id: botResult.agent?.id || null,
-                                            sender_type: 'ai_agent',
-                                            automation_source: 'ai_agent',
-                                        } as any);
+                                                if (botResult?.reply) {
+                                                    console.log(`🤖 Bot "${botResult.agent?.name}" replying via Baileys to: "${captionText.substring(0, 50)}..."`);
 
-                                        // Emit the bot reply to frontend
-                                        io.emit("new_message", {
-                                            from: myPhone,
-                                            phone: contactWaId,
-                                            text: botResult.reply,
-                                            sender: 'agent',
-                                            conversation_id: conv.id,
-                                            contact_id: contact.id,
-                                            message_id: storedBotReply?.id || null,
-                                            wa_message_id: botWaMessageId,
-                                            created_at: storedBotReply?.created_at || new Date().toISOString(),
-                                            connectedAccount: myPhone,
-                                            type: 'text',
-                                            is_bot_reply: true,
-                                            bot_agent_name: botResult.agent?.name,
+                                                    // Send the reply via Baileys
+                                                    const botMsg = await sock.sendMessage(remoteJid, { text: botResult.reply });
+                                                    const botWaMessageId = botMsg?.key?.id || null;
+
+                                                    // Store the bot's reply message
+                                                    const storedBotReply = await storeMessage({
+                                                        organization_id: orgId,
+                                                        contact_id: contact.id,
+                                                        conversation_id: conv.id,
+                                                        wa_message_id: botWaMessageId,
+                                                        direction: "outbound",
+                                                        type: "text",
+                                                        content: { text: botResult.reply, bot_agent_id: botResult.agent?.id, bot_agent_name: botResult.agent?.name },
+                                                        status: "sent",
+                                                        is_bot_reply: true,
+                                                        bot_agent_id: botResult.agent?.id || null,
+                                                        sender_type: 'ai_agent',
+                                                        automation_source: 'ai_agent',
+                                                    } as any);
+
+                                                    // Emit the bot reply to frontend
+                                                    io.emit("new_message", {
+                                                        from: myPhone,
+                                                        phone: contactWaId,
+                                                        text: botResult.reply,
+                                                        sender: 'agent',
+                                                        conversation_id: conv.id,
+                                                        contact_id: contact.id,
+                                                        message_id: storedBotReply?.id || null,
+                                                        wa_message_id: botWaMessageId,
+                                                        created_at: storedBotReply?.created_at || new Date().toISOString(),
+                                                        connectedAccount: myPhone,
+                                                        type: 'text',
+                                                        is_bot_reply: true,
+                                                        bot_agent_name: botResult.agent?.name,
+                                                    });
+
+                                                    // Update conversation preview
+                                                    await supabase
+                                                        .from('w_conversations')
+                                                        .update({
+                                                            last_message_at: new Date().toISOString(),
+                                                            last_message_preview: botResult.reply.substring(0, 100)
+                                                        })
+                                                        .eq('id', conv.id);
+                                                }
+                                            } catch (botErr: any) {
+                                                console.error('Bot auto-reply execution error:', botErr.message || botErr);
+                                            } finally {
+                                                // Clear typing indicator
+                                                try {
+                                                    await sock.sendPresenceUpdate('paused', remoteJid);
+                                                } catch (e) {
+                                                    // ignore
+                                                }
+                                            }
+                                        }).catch(err => {
+                                            console.error("Queue execution error:", err);
                                         });
 
-                                        // Update conversation preview
-                                        await supabase
-                                            .from('w_conversations')
-                                            .update({
-                                                last_message_at: new Date().toISOString(),
-                                                last_message_preview: botResult.reply.substring(0, 100)
-                                            })
-                                            .eq('id', conv.id);
-                                    }
+                                        botLockMap.set(debounceKey, nextPromise);
+                                        
+                                    }, 6000));
                                 }
                             } catch (botErr: any) {
                                 console.error('Bot auto-reply error (Baileys):', botErr.message || botErr);

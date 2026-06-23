@@ -12,13 +12,15 @@ import AudioMessageBubble from '../components/AudioMessageBubble'
 import AudioRecorderOrUploader from '../components/AudioRecorderOrUploader'
 import { useNotificationSound } from '../hooks/useNotificationSound'
 import TourButton from '../onboarding/TourButton'
+import { supabase } from '../supabaseClient'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
 // Connect to backend
 const socket = io(BACKEND_BASE, {
     autoConnect: false,
-    transports: ['websocket', 'polling'],
+    transports: ['polling', 'websocket'],
+    upgrade: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 500,
     reconnectionDelayMax: 5000,
@@ -27,11 +29,12 @@ const socket = io(BACKEND_BASE, {
 const API_BASE = `${BACKEND_BASE}/api`;
 const AGENT_SETTINGS_ITEM_TYPE = '__agent_settings';
 const MUTED_UNTIL_LABEL_PREFIX = 'muted_until:';
-const ACTIVE_CHAT_SYNC_MS = 2500;
-const CHAT_LIST_SYNC_MS = 6000;
+const ACTIVE_CHAT_SYNC_MS = 30000;
+const CHAT_LIST_SYNC_MS = 30000;
 const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CUSTOMER_WINDOW_ERROR_RE = /(24\s*hour|24-hour|customer\s+service\s+window|outside\s+the\s+allowed\s+window|template\s+message|required\s+template)/i;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const BROKEN_PROFILE_PHOTOS_KEY = 'gap_livechat_broken_profile_photos';
 
 const WHATSAPP_EMOJI_ASSET_BASE = 'https://cdn.jsdelivr.net/npm/emoji-datasource-apple@16.0.0/img/apple/64';
 const QUICK_REACTIONS = [
@@ -130,6 +133,7 @@ export default function LiveChat() {
     const messagesListRef = useRef(null)
     const messageInputRef = useRef(null)
     const profilePhotoFetchRef = useRef(new Set())
+    const brokenProfilePhotoUrlsRef = useRef(new Set())
     const sessionRef = useRef(session)
     const userRef = useRef(user)
     const authHeadersRef = useRef(authHeaders)
@@ -299,6 +303,17 @@ export default function LiveChat() {
         userRef.current = user
         authHeadersRef.current = authHeaders
     }, [session, user, authHeaders])
+
+    useEffect(() => {
+        try {
+            const cached = JSON.parse(localStorage.getItem(BROKEN_PROFILE_PHOTOS_KEY) || '[]')
+            if (Array.isArray(cached)) {
+                brokenProfilePhotoUrlsRef.current = new Set(cached.filter(Boolean).slice(-100))
+            }
+        } catch {
+            brokenProfilePhotoUrlsRef.current = new Set()
+        }
+    }, [])
 
     // Auto scroll to bottom on new messages
     useEffect(() => {
@@ -522,17 +537,29 @@ export default function LiveChat() {
         return colors[h % colors.length]
     }
 
-    const getProfilePhotoUrl = (contact) => (
-        contact?.profile_photo_url ||
-        contact?.profilePhotoUrl ||
-        contact?.photo_url ||
-        contact?.avatar_url ||
-        contact?.custom_fields?.profile_photo_url ||
-        ''
-    )
+    const getProfilePhotoUrl = (contact) => {
+        const url = (
+            contact?.profile_photo_url ||
+            contact?.profilePhotoUrl ||
+            contact?.photo_url ||
+            contact?.avatar_url ||
+            contact?.custom_fields?.profile_photo_url ||
+            ''
+        )
+        return url && !brokenProfilePhotoUrlsRef.current.has(url) ? url : ''
+    }
 
-    const clearBrokenProfilePhoto = (contactId) => {
+    const clearBrokenProfilePhoto = (contactId, photoUrl = '') => {
         if (!contactId) return
+        if (photoUrl) {
+            brokenProfilePhotoUrlsRef.current.add(photoUrl)
+            try {
+                localStorage.setItem(
+                    BROKEN_PROFILE_PHOTOS_KEY,
+                    JSON.stringify(Array.from(brokenProfilePhotoUrlsRef.current).slice(-100))
+                )
+            } catch { }
+        }
         profilePhotoFetchRef.current.delete(contactId)
         setChats(prev => prev.map(chat => {
             if (!idsEqual(chat.contactId, contactId)) return chat
@@ -577,7 +604,7 @@ export default function LiveChat() {
                 if (!res.ok) return
                 const data = await res.json()
                 const photoUrl = data?.profile_photo_url
-                if (!photoUrl) return
+                if (!photoUrl || brokenProfilePhotoUrlsRef.current.has(photoUrl)) return
 
                 setChats(prev => prev.map(item => {
                     if (!idsEqual(item.contactId, chat.contactId)) return item
@@ -726,7 +753,7 @@ export default function LiveChat() {
             automationSource: msg.automation_source || msg.automationSource || null,
             isBotReply: msg.is_bot_reply === true || msg.isBotReply === true,
             botAgentId: msg.bot_agent_id || msg.botAgentId || null,
-            botAgentName: msg.bot_agent_name || msg.botAgentName || msg.content?.bot_agent_name || msg.metadata?.bot_agent_name || null,
+            botAgentName: msg.bot_agent_name || msg.botAgentId || msg.content?.bot_agent_name || msg.metadata?.bot_agent_name || null,
             metadata: msg.metadata || msg.content?.metadata || {},
             reactions: Array.isArray(msg.reactions) ? msg.reactions : [],
             content: msg.content || {},
@@ -946,11 +973,15 @@ export default function LiveChat() {
         const nextStatus = !isOnline;
         setIsOnline(nextStatus);
         try {
-            await fetch(`${API_BASE}/team/status`, {
+            const res = await fetch(`${API_BASE}/team/status`, {
                 method: 'POST',
                 headers: { ...authHeaders, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ is_online: nextStatus })
             });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}))
+                throw new Error(body?.error || `Failed to update status (HTTP ${res.status})`)
+            }
             if (socket.connected && memberProfile?.organization_id && user?.id) {
                 socket.emit(nextStatus ? 'agent_connected' : 'agent_disconnected', { 
                     organization_id: memberProfile.organization_id, 
@@ -1174,14 +1205,66 @@ export default function LiveChat() {
         }
     }
 
+    // Supabase Realtime Listener (Replaces long-polling/socket for instant updates)
+    useEffect(() => {
+        if (!session?.access_token || !memberProfile?.organization_id) return;
+
+        const channel = supabase
+            .channel(`public:w_messages_livechat:${memberProfile.organization_id}`)
+            .on('postgres_changes', { 
+                event: 'INSERT', 
+                schema: 'public', 
+                table: 'w_messages',
+                filter: `organization_id=eq.${memberProfile.organization_id}`
+            }, (payload) => {
+                const newMsg = payload.new;
+                
+                // Extract relevant details for notification
+                const activeChat = selectedChatRef.current;
+                const inbound = newMsg.direction === 'inbound';
+                const convId = newMsg.conversation_id;
+                
+                // Check if we should play a notification
+                const targetChat = chatsRef.current.find(c => idsEqual(c?.id, convId));
+                // We play sound if it's inbound, we have a convId, it's NOT the active chat we are looking at
+                const shouldPlayNotificationSound = inbound && convId && (!activeChat || !idsEqual(activeChat.id, convId));
+                
+                if (shouldPlayNotificationSound) {
+                    playNotification({ messageId: String(newMsg.id || newMsg.wa_message_id) });
+                }
+
+                // Trigger UI updates instantly
+                fetchChats();
+                if (activeChat && idsEqual(activeChat.id, convId)) {
+                    fetchMessages(activeChat, { limit: 50, silent: true });
+                }
+            })
+            .on('postgres_changes', { 
+                event: '*', 
+                schema: 'public', 
+                table: 'w_conversations',
+                filter: `organization_id=eq.${memberProfile.organization_id}`
+            }, () => {
+                fetchChats();
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [session?.access_token, memberProfile?.organization_id, playNotification]);
+
     // Socket Listener
     useEffect(() => {
+        if (!memberProfile?.organization_id) return
+
         const handleConnect = () => {
             // Socket transport is separate from WA connection state; keep logs minimal.
             console.log('[socket] connected', socket.id)
 
             // Re-join org room on reconnect if profile is available
-            if (memberProfile?.organization_id) {                console.log('[socket] joining org room:', memberProfile.organization_id)
+            if (memberProfile?.organization_id) {
+                console.log('[socket] joining org room:', memberProfile.organization_id)
                 socket.emit('join_org', memberProfile.organization_id)
                 if (user?.id) {
                     socket.emit('agent_connected', { organization_id: memberProfile.organization_id, user_id: user.id })
@@ -1486,7 +1569,7 @@ export default function LiveChat() {
         if (!socket.connected) {
             socket.connect();
         }
-        socket.emit('join_session', sessionId);
+        socket.emit('join_session', sessionId, memberProfile.organization_id);
 
         return () => {
             socket.off('connect', handleConnect)
@@ -1503,7 +1586,6 @@ export default function LiveChat() {
             socket.off('qr');
             socket.off('status');
             socket.off('session_not_found');
-            socket.disconnect();
         };
     }, [memberProfile?.organization_id, playNotification]);
 
@@ -2654,7 +2736,8 @@ export default function LiveChat() {
 
     const requestFreshQr = () => {
         const sessionId = localStorage.getItem('whatsapp_session_id') || 'dashboard_session';
-        socket.emit('request_qr', sessionId);
+        if (!socket.connected) socket.connect();
+        socket.emit('request_qr', sessionId, memberProfile?.organization_id);
     };
 
     const activeMenuMessage = activeMessageMenuId
@@ -2811,7 +2894,7 @@ export default function LiveChat() {
                                                 alt={chat.name}
                                                 className="h-11 w-11 rounded-full object-cover shadow-sm ring-1 ring-gray-200"
                                                 loading="lazy"
-                                                onError={() => clearBrokenProfilePhoto(chat.contactId)}
+                                                onError={() => clearBrokenProfilePhoto(chat.contactId, chat.profilePhotoUrl)}
                                             />
                                         ) : (
                                             <div
@@ -3000,7 +3083,7 @@ export default function LiveChat() {
                                             src={selectedChat.profilePhotoUrl}
                                             alt={selectedChat?.name || 'Contact'}
                                             className="h-9 w-9 rounded-full object-cover"
-                                            onError={() => clearBrokenProfilePhoto(selectedChat.contactId)}
+                                            onError={() => clearBrokenProfilePhoto(selectedChat.contactId, selectedChat.profilePhotoUrl)}
                                         />
                                     ) : (
                                         <div className="h-9 w-9 rounded-full bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center">
@@ -3486,7 +3569,7 @@ export default function LiveChat() {
                                                                         alt={chat.name}
                                                                         className="h-11 w-11 rounded-full object-cover"
                                                                         loading="lazy"
-                                                                        onError={() => clearBrokenProfilePhoto(chat.contactId)}
+                                                                        onError={() => clearBrokenProfilePhoto(chat.contactId, chat.profilePhotoUrl)}
                                                                     />
                                                                 ) : (
                                                                     <div className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600">

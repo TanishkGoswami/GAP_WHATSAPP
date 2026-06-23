@@ -202,23 +202,89 @@ export async function getBotAgentReply(params: {
         .slice(0, KNOWLEDGE_MAX_CONTEXT_CHARS);
     }
 
-    // Call OpenAI
-    const systemPrompt =
-      targetAgent.system_prompt ||
-      `You are ${targetAgent.name}, a helpful WhatsApp assistant. ${targetAgent.description || ""}`;
+    let systemPrompt = targetAgent.system_prompt 
+      ? targetAgent.system_prompt 
+      : `You are a highly capable AI assistant representing "${targetAgent.name}". Your goal is to assist the user effectively and naturally.`;
 
-    const messages = [
-      {
-        role: "system",
-        content:
-          systemPrompt +
-          (knowledgeContext ? `\n\nKnowledge Base:\n${knowledgeContext}` : ""),
-      },
-      {
-        role: "user",
-        content: text,
-      },
+    systemPrompt += `\n\nIMPORTANT MEMORY RULES:
+- Always remember information the user provides about themselves (Name, City, Profession, Company, Interests, etc.) and treat it as core memory.
+- If the user asks "what is my name?", "where do I live?", or "what do I do?", immediately fetch the answer from the conversation history and reply confidently.
+- Never say "I don't know" if the information was mentioned previously in the chat.
+- Act like you have perfect memory of this conversation.
+
+Keep your responses highly conversational, concise, and direct. Avoid repeating yourself. Act like a real human texting a friend on WhatsApp.`;
+
+    if (knowledgeContext) {
+      systemPrompt += `\n\nKnowledge Base:\n${knowledgeContext}`;
+    }
+
+    // Fetch conversation history
+    const { data: dbMessages } = await supabase
+      .from("w_messages")
+      .select("direction, type, content, automation_source")
+      .eq("conversation_id", conversation_id)
+      .in("type", ["text", "button", "interactive"])
+      .order("created_at", { ascending: false })
+      .limit(40);
+
+    let hasHistory = false;
+    let pastMessages: { role: string; content: string }[] = [];
+
+    if (dbMessages && dbMessages.length > 0) {
+      hasHistory = dbMessages.length > 1; // if > 1, there's history beyond the current message
+
+      pastMessages = dbMessages
+        .reverse()
+        .map((m: any) => {
+          let msgText = m.content?.text || "";
+
+          // Filter greetings out of bot's previous messages to prevent it from repeating greetings
+          if (m.direction === "outbound" && m.automation_source === "ai_agent") {
+            msgText = msgText
+              .replace(/^(hi|hello|hey|hey there|greetings)[,\s.:!]*\s*/i, "")
+              .trim();
+          }
+
+          return {
+            role: m.direction === "inbound" ? "user" : "assistant",
+            content: msgText,
+          };
+        })
+        .filter((m: any) => m.content && m.content.trim().length > 0);
+    }
+
+    // Add extra prompt instructions based on history
+    systemPrompt += `\n\nCRITICAL CONVERSATION RULES:`;
+    if (hasHistory) {
+      systemPrompt += `\n1. NO GREETINGS: The conversation is already ongoing. NEVER start your response with "Hi", "Hello", "Hey", "Hey there", or any variations. Jump straight into the conversation.`;
+    } else {
+      systemPrompt += `\n1. GREETING: This is the first message. You may greet the user naturally and briefly.`;
+    }
+
+    const isDuplicate =
+      pastMessages.length > 0 &&
+      pastMessages[pastMessages.length - 1].role === "user" &&
+      pastMessages[pastMessages.length - 1].content === text;
+
+    let messages = [
+      { role: "system", content: systemPrompt },
+      ...pastMessages,
     ];
+
+    if (!isDuplicate) {
+      messages.push({ role: "user", content: text });
+    }
+
+    messages.push({
+      role: "system",
+      content: `FINAL PERSONA REMINDER: 
+You are a business consultant, NOT a general AI assistant.
+- If the user greets you or shares their name/profession/location, respond naturally and politely.
+- If the user asks about your business services (automation, WhatsApp, CRM), assist them.
+- If the user asks an off-topic question (like recipes, general knowledge, technical coding like HTML/CSS, etc.), politely decline by saying you only handle business automation queries. DO NOT use a robotic template for everything. Keep it natural.`
+    });
+
+    console.log(`[AI Debug] Sending to OpenAI for Conv ${conversation_id}:`, JSON.stringify(messages, null, 2));
 
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",

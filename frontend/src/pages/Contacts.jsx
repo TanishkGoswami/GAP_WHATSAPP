@@ -11,6 +11,7 @@ import {
     ClipboardList,
     CreditCard,
     Database,
+    Download,
     FileText,
     Filter,
     IndianRupee,
@@ -482,6 +483,105 @@ export default function Contacts() {
         }
     }
 
+    const handleExportExcel = async () => {
+        const toExport = filteredContacts.length > 0 ? filteredContacts : contacts;
+        if (!toExport || toExport.length === 0) return;
+
+        const formatHeader = (key) => {
+            return String(key).split(/[_-\s]+/)
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                .join(' ');
+        };
+
+        const baseHeaders = ['Name', 'Phone', 'Tags', 'Account', 'Joined', 'Last Active'];
+        const customFieldsHeaders = new Set();
+        toExport.forEach(contact => {
+            visibleCustomFields(contact).forEach(([key]) => customFieldsHeaders.add(key));
+        });
+        const customHeadersArray = Array.from(customFieldsHeaders);
+        
+        const headers = [...baseHeaders, ...customHeadersArray.map(formatHeader)];
+
+        // Dynamic import to avoid initial bundle size increase
+        const ExcelJS = await import('exceljs');
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet('Contacts');
+
+        sheet.addRow(headers);
+        
+        const headerRow = sheet.getRow(1);
+        headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+        headerRow.height = 25;
+        headerRow.eachCell((cell) => {
+            cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FF4F46E5' } // Indigo 600
+            };
+            cell.border = {
+                top: { style: 'thin' },
+                left: { style: 'thin' },
+                bottom: { style: 'thin' },
+                right: { style: 'thin' }
+            };
+        });
+
+        toExport.forEach(contact => {
+            const row = [];
+            row.push(getDisplayName(contact));
+            
+            const phone = getPhone(contact) || contact.wa_id || '';
+            row.push(phone.startsWith('+') ? phone : (phone ? `+${phone}` : ''));
+            
+            row.push((contact.tags || []).join(', '));
+            row.push(getAccountLabel(contact));
+            row.push(contact.created_at ? format(new Date(contact.created_at), 'MMM d, yyyy') : '');
+            row.push(contact.last_active ? format(new Date(contact.last_active), 'MMM d, yyyy h:mm a') : '');
+
+            const contactFields = Object.fromEntries(visibleCustomFields(contact));
+            customHeadersArray.forEach(header => {
+                row.push(contactFields[header] || '');
+            });
+            
+            const addedRow = sheet.addRow(row);
+            
+            addedRow.eachCell((cell) => {
+                cell.alignment = { vertical: 'middle', horizontal: 'left' };
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                    left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                    bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                    right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+                };
+            });
+            
+            const phoneCell = addedRow.getCell(2);
+            phoneCell.numFmt = '@'; 
+        });
+
+        sheet.columns.forEach((column) => {
+            let maxLength = 0;
+            column.eachCell({ includeEmpty: true }, (cell) => {
+                const columnLength = cell.value ? cell.value.toString().length : 10;
+                if (columnLength > maxLength) {
+                    maxLength = columnLength;
+                }
+            });
+            column.width = Math.min(Math.max(maxLength + 2, 12), 50);
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `Contacts_Export_${format(new Date(), 'yyyyMMdd_HHmmss')}.xlsx`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     const resetFilters = () => {
         setSearchTerm('')
         setTagFilter('')
@@ -527,6 +627,14 @@ export default function Contacts() {
                         >
                             <Upload className="h-4 w-4" />
                             Import CSV
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleExportExcel}
+                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                        >
+                            <Download className="h-4 w-4" />
+                            Export Excel
                         </button>
                         <button
                             type="button"

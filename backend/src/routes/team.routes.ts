@@ -8,6 +8,7 @@ import {
     deleteMember, 
     getMyProfile, 
     updateMyProfile, 
+    updateMyStatus,
     getAgents 
 } from '../controllers/team.controller.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
@@ -25,6 +26,7 @@ router.delete('/members/:id', authMiddleware, deleteMember);
 
 router.get('/my-profile', authMiddleware, getMyProfile);
 router.patch('/my-profile', authMiddleware, updateMyProfile);
+router.post('/status', authMiddleware, updateMyStatus);
 
 router.get('/agents', authMiddleware, getAgents);
 
