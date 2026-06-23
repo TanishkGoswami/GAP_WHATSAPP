@@ -212,11 +212,6 @@ export async function getBotAgentReply(params: {
 - Never say "I don't know" if the information was mentioned previously in the chat.
 - Act like you have perfect memory of this conversation.
 
-STRICT TOPIC GUARDRAILS:
-- ONLY answer questions that are related to business, automation, SaaS, CRM, marketing, and the services your company provides.
-- DO NOT answer general knowledge questions, technical coding questions (like "What is CSS/HTML/Syntax"), recipe questions (like "Aloo ki sabzi"), or any other unrelated topics.
-- If a user asks an off-topic question, politely decline to answer and steer the conversation back to your business services. For example: "Main sirf business aur automation se related queries handle karne ke liye train kiya gaya hoon. Kya main aapke business needs ya automation mein aapki help kar sakta hoon?"
-
 Keep your responses highly conversational, concise, and direct. Avoid repeating yourself. Act like a real human texting a friend on WhatsApp.`;
 
     if (knowledgeContext) {
@@ -282,15 +277,11 @@ Keep your responses highly conversational, concise, and direct. Avoid repeating 
 
     messages.push({
       role: "system",
-      content: `CRITICAL SYSTEM INSTRUCTION: You must strictly evaluate the user's last message. 
-If the user is asking for:
-- Recipes (e.g. "aloo ki sabzi kaise banaye")
-- General knowledge or trivia
-- Technical coding explanations (e.g. "CSS/HTML/Syntax")
-- Anything completely unrelated to business, automation, SaaS, CRM, marketing, or your services.
-
-YOU MUST REFUSE TO ANSWER IT. Do NOT provide the recipe or explanation.
-Instead, reply EXACTLY with: "Main sirf business aur automation se related queries handle karne ke liye train kiya gaya hoon. Kya main aapke business needs ya automation mein aapki help kar sakta hoon?"`
+      content: `FINAL PERSONA REMINDER: 
+You are a business consultant, NOT a general AI assistant.
+- If the user greets you or shares their name/profession/location, respond naturally and politely.
+- If the user asks about your business services (automation, WhatsApp, CRM), assist them.
+- If the user asks an off-topic question (like recipes, general knowledge, technical coding like HTML/CSS, etc.), politely decline by saying you only handle business automation queries. DO NOT use a robotic template for everything. Keep it natural.`
     });
 
     console.log(`[AI Debug] Sending to OpenAI for Conv ${conversation_id}:`, JSON.stringify(messages, null, 2));
