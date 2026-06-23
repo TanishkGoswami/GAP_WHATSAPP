@@ -27,7 +27,7 @@ import { useAuth } from '../context/AuthContext'
 const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: Grid2X2 },
     { name: 'Accounts', href: '/whatsapp-connect', icon: Smartphone },
-    { name: 'New Number', href: '/whatsapp-number', icon: PhoneCall },
+    { name: 'New Number', href: '#', icon: PhoneCall, badge: 'Coming soon' },
     { name: 'Chats', href: '/live-chat', icon: MessageSquareText, badge: 'LIVE' },
     { name: 'Contacts', href: '/contacts', icon: Users },
     { name: 'AI Agents', href: '/bot-agents', icon: Briefcase },
