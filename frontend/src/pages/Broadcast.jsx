@@ -9,8 +9,9 @@ import TourButton from '../onboarding/TourButton'
 const STEPS = [
     { id: 1, name: 'Details', icon: LayoutGrid },
     { id: 2, name: 'Audience', icon: Users },
-    { id: 3, name: 'Content', icon: FileText },
-    { id: 4, name: 'Review', icon: Check },
+    { id: 3, name: 'Template', icon: LayoutGrid },
+    { id: 4, name: 'Content', icon: FileText },
+    { id: 5, name: 'Review', icon: Check },
 ]
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -469,6 +470,8 @@ export default function Broadcast() {
         }
         if (currentStep === 3) {
             if (!campaign.template_name) return alertDialog('Please select a template.', { title: 'Template required', tone: 'warning' });
+        }
+        if (currentStep === 4) {
             if (!(await validateHeaderMediaUrl())) return;
             for (const button of dynamicUrlButtons) {
                 const validation = validateDynamicUrlButtonValue(button, campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`])
@@ -483,7 +486,7 @@ export default function Broadcast() {
                 }
             }
         }
-        setCurrentStep(p => Math.min(4, p + 1))
+        setCurrentStep(p => Math.min(5, p + 1))
     };
     
     const handleBack = () => setCurrentStep(p => Math.max(1, p - 1));
@@ -573,6 +576,90 @@ export default function Broadcast() {
             variable_mapping: {}
         });
     }
+
+    const renderLivePreview = () => {
+        if (!selectedTemplate) return null;
+        return (
+            <div className="mt-6 space-y-3">
+                <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                    Live Preview
+                </h3>
+                
+                <div className="rounded-xl border border-gray-250/80 bg-[#efeae2] p-4 relative overflow-hidden flex flex-col justify-between shadow-[inset_0_2px_4px_rgba(0,0,0,0.03)] min-h-[220px]">
+                    {/* Chat pattern background simulation */}
+                    <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath fill-rule='evenodd' d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7z'/%3E%3C/g%3E%3C/svg%3E")`
+                    }} />
+
+                    {/* WhatsApp Bubble */}
+                    <div className="relative z-10 max-w-[85%] rounded-lg rounded-tl-none bg-white p-3.5 shadow-sm border border-gray-150 self-start">
+                        {/* Header text/media */}
+                        {selectedTemplate.components?.find(c => c.type === 'HEADER') && (() => {
+                            const header = selectedTemplate.components.find(c => c.type === 'HEADER');
+                            if (header.format === 'TEXT') {
+                                return <div className="font-bold text-gray-900 text-sm mb-1.5">{header.text}</div>;
+                            }
+                            if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(header.format)) {
+                                return (
+                                    <div className="mb-2 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center h-32 w-full text-gray-400 font-semibold text-xs overflow-hidden relative">
+                                        {headerMediaUrl ? (
+                                            header.format === 'IMAGE' ? (
+                                                <img src={headerMediaUrl} alt="Header media preview" className="w-full h-full object-cover" />
+                                            ) : header.format === 'VIDEO' ? (
+                                                <video src={headerMediaUrl} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="flex flex-col items-center gap-1.5 p-3">
+                                                    <FileText className="h-8 w-8 text-indigo-500" />
+                                                    <span className="truncate max-w-[150px] text-gray-600 font-mono text-[10px]">{headerMediaUrl.split('/').pop()}</span>
+                                                </div>
+                                            )
+                                        ) : (
+                                            <span className="flex flex-col items-center gap-1">
+                                                <span className="uppercase text-[10px] bg-gray-200 px-2 py-0.5 rounded text-gray-600 font-bold">{header.format} Header</span>
+                                                <span className="text-[10px] text-gray-400 font-normal">Pending media mapping</span>
+                                            </span>
+                                        )}
+                                    </div>
+                                );
+                            }
+                            return null;
+                        })()}
+
+                        {/* Body */}
+                        <div className="text-gray-900 text-sm break-words whitespace-pre-wrap leading-relaxed">
+                            {formatWhatsAppText(getPreviewText())}
+                        </div>
+
+                        {/* Footer */}
+                        {selectedTemplate.components?.find(c => c.type === 'FOOTER') && (
+                            <div className="text-[11px] text-gray-400 mt-1">
+                                {selectedTemplate.components.find(c => c.type === 'FOOTER').text}
+                            </div>
+                        )}
+
+                        {/* Time & status */}
+                        <div className="flex items-center justify-end gap-1 text-[9px] text-gray-400 mt-1 select-none">
+                            <span>12:00 PM</span>
+                            <span className="text-blue-500">✓✓</span>
+                        </div>
+                    </div>
+
+                    {/* Buttons */}
+                    {selectedTemplate.components?.find(c => c.type === 'BUTTONS') && (
+                        <div className="relative z-10 mt-2 space-y-1.5 self-start w-[85%]">
+                            {selectedTemplate.components.find(c => c.type === 'BUTTONS').buttons.map((btn, idx) => (
+                                <div key={idx} className="flex items-center justify-center gap-2 rounded-lg bg-white py-2 px-3 shadow-sm border border-gray-200 text-xs font-bold text-sky-600 cursor-default hover:bg-gray-50 transition-colors">
+                                    {btn.type === 'PHONE_NUMBER' ? '📞' : btn.type === 'URL' ? '🔗' : '↩️'}
+                                    <span className="truncate">{btn.text}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    };
 
     return (
         <div className="mx-auto max-w-7xl space-y-8 pb-16">
@@ -769,7 +856,7 @@ export default function Broadcast() {
                         <div className="relative">
                             <div className="absolute left-8 right-8 top-5 h-0.5 bg-gray-200"></div>
                             <div className="absolute left-8 top-5 h-0.5 bg-[#0070d1] transition-all duration-500 ease-in-out" style={{ width: `calc(${((currentStep - 1) / (STEPS.length - 1)) * 100}% - ${currentStep === 1 ? '0px' : '4rem'})` }}></div>
-                            <div className="relative z-10 grid grid-cols-4 gap-2">
+                            <div className="relative z-10 grid grid-cols-5 gap-2">
                             {STEPS.map((step) => {
                                 const isActive = step.id === currentStep
                                 const isCompleted = step.id < currentStep
@@ -1053,7 +1140,7 @@ export default function Broadcast() {
                                     {isLoading.templates ? (
                                         <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>
                                     ) : (
-                                        <div className="space-y-3 h-[400px] overflow-y-auto pr-2">
+                                        <div className="space-y-3 h-[600px] overflow-y-auto pr-2">
                                             {templates.filter(t => t.status === 'APPROVED').map((tpl) => (
                                                 <div
                                                     key={tpl.id || tpl.name}
@@ -1089,88 +1176,18 @@ export default function Broadcast() {
                                             )}
                                         </div>
                                     )}
+                                </div>
 
-                                    {/* Preview box */}
-                                    {selectedTemplate && (
-                                        <div className="mt-6 space-y-3">
-                                            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
-                                                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                                                Live Preview
-                                            </h3>
-                                            
-                                            <div className="rounded-xl border border-gray-250/80 bg-[#efeae2] p-4 relative overflow-hidden flex flex-col justify-between shadow-[inset_0_2px_4px_rgba(0,0,0,0.03)] min-h-[220px]">
-                                                {/* Chat pattern background simulation */}
-                                                <div className="absolute inset-0 opacity-[0.04] pointer-events-none" style={{
-                                                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath fill-rule='evenodd' d='M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7z'/%3E%3C/g%3E%3C/svg%3E")`
-                                                }} />
+                                <div>
+                                    {renderLivePreview()}
+                                </div>
+                            </div>
+                        )}
 
-                                                {/* WhatsApp Bubble */}
-                                                <div className="relative z-10 max-w-[85%] rounded-lg rounded-tl-none bg-white p-3.5 shadow-sm border border-gray-150 self-start">
-                                                    {/* Header text/media */}
-                                                    {selectedTemplate.components?.find(c => c.type === 'HEADER') && (() => {
-                                                        const header = selectedTemplate.components.find(c => c.type === 'HEADER');
-                                                        if (header.format === 'TEXT') {
-                                                            return <div className="font-bold text-gray-900 text-sm mb-1.5">{header.text}</div>;
-                                                        }
-                                                        if (['IMAGE', 'VIDEO', 'DOCUMENT'].includes(header.format)) {
-                                                            return (
-                                                                <div className="mb-2 rounded-md bg-gray-100 border border-gray-200 flex items-center justify-center h-32 w-full text-gray-400 font-semibold text-xs overflow-hidden relative">
-                                                                    {headerMediaUrl ? (
-                                                                        header.format === 'IMAGE' ? (
-                                                                            <img src={headerMediaUrl} alt="Header media preview" className="w-full h-full object-cover" />
-                                                                        ) : header.format === 'VIDEO' ? (
-                                                                            <video src={headerMediaUrl} className="w-full h-full object-cover" />
-                                                                        ) : (
-                                                                            <div className="flex flex-col items-center gap-1.5 p-3">
-                                                                                <FileText className="h-8 w-8 text-indigo-500" />
-                                                                                <span className="truncate max-w-[150px] text-gray-600 font-mono text-[10px]">{headerMediaUrl.split('/').pop()}</span>
-                                                                            </div>
-                                                                        )
-                                                                    ) : (
-                                                                        <span className="flex flex-col items-center gap-1">
-                                                                            <span className="uppercase text-[10px] bg-gray-200 px-2 py-0.5 rounded text-gray-600 font-bold">{header.format} Header</span>
-                                                                            <span className="text-[10px] text-gray-400 font-normal">Pending media mapping</span>
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        }
-                                                        return null;
-                                                    })()}
-
-                                                    {/* Body */}
-                                                    <div className="text-gray-900 text-sm break-words whitespace-pre-wrap leading-relaxed">
-                                                        {formatWhatsAppText(getPreviewText())}
-                                                    </div>
-
-                                                    {/* Footer */}
-                                                    {selectedTemplate.components?.find(c => c.type === 'FOOTER') && (
-                                                        <div className="text-[11px] text-gray-400 mt-1">
-                                                            {selectedTemplate.components.find(c => c.type === 'FOOTER').text}
-                                                        </div>
-                                                    )}
-
-                                                    {/* Time & status */}
-                                                    <div className="flex items-center justify-end gap-1 text-[9px] text-gray-400 mt-1 select-none">
-                                                        <span>12:00 PM</span>
-                                                        <span className="text-blue-500">✓✓</span>
-                                                    </div>
-                                                </div>
-
-                                                {/* Buttons */}
-                                                {selectedTemplate.components?.find(c => c.type === 'BUTTONS') && (
-                                                    <div className="relative z-10 mt-2 space-y-1.5 self-start w-[85%]">
-                                                        {selectedTemplate.components.find(c => c.type === 'BUTTONS').buttons.map((btn, idx) => (
-                                                            <div key={idx} className="flex items-center justify-center gap-2 rounded-lg bg-white py-2 px-3 shadow-sm border border-gray-200 text-xs font-bold text-sky-600 cursor-default hover:bg-gray-50 transition-colors">
-                                                                {btn.type === 'PHONE_NUMBER' ? '📞' : btn.type === 'URL' ? '🔗' : '↩️'}
-                                                                <span className="truncate">{btn.text}</span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
+                        {currentStep === 4 && (
+                            <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-6 md:grid-cols-2 lg:p-8">
+                                <div>
+                                    {renderLivePreview()}
                                 </div>
 
 
@@ -1227,7 +1244,7 @@ export default function Broadcast() {
                                                                 onChange={(e) => handleHeaderMediaUpload(e.target.files?.[0])}
                                                             />
                                                         </label>
-                                                        <div>
+                                                        <div className="hidden">
                                                             <label className="mb-1.5 block text-xs font-medium text-gray-700">Public media URL</label>
                                                             <div className="relative">
                                                                 <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -1319,7 +1336,7 @@ export default function Broadcast() {
                             </div>
                         )}
 
-                        {currentStep === 4 && (
+                        {currentStep === 5 && (
                             <div data-tour="broadcast-cost" className="mx-auto max-w-lg space-y-6 p-6 text-center lg:p-8">
                                 <div className="mx-auto h-16 w-16 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
                                     <Send className="h-8 w-8 ml-1" />
@@ -1447,7 +1464,7 @@ export default function Broadcast() {
                             Back
                         </button>
 
-                        {currentStep < 4 && (
+                        {currentStep < 5 && (
                             <button
                                 onClick={handleNext}
                                 className="flex items-center gap-2 px-6 py-2 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800"
