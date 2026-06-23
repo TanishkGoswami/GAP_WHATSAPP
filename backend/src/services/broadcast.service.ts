@@ -1,4 +1,4 @@
-import { supabase } from '../config/supabase.js';
+import { supabase, MEDIA_BUCKET } from '../config/supabase.js';
 import { getOrganizationPlanLimits } from './billing.service.js';
 import { getActiveWhatsappRate, normalizeWhatsappBillingCategory } from './messages.service.js';
 import { getMetaSendErrorMessage, inspectMetaTokenPermissions } from './meta.service.js';
@@ -9,7 +9,6 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
-const MEDIA_BUCKET = process.env.SUPABASE_MEDIA_BUCKET || 'media';
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || 'http://localhost:5000';
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
