@@ -50,6 +50,13 @@ function fmt(value) {
     return formatter.format(n(value))
 }
 
+function compact(value) {
+    return new Intl.NumberFormat('en-IN', {
+        notation: 'compact',
+        maximumFractionDigits: 1,
+    }).format(n(value))
+}
+
 function pct(value) {
     return `${Math.max(0, Math.min(100, Math.round(n(value))))}%`
 }
@@ -181,22 +188,14 @@ export default function Dashboard() {
                 </div>
 
                 <section data-tour="dashboard-overview" className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.55fr)]">
-                    <Panel
-                        title="Message performance"
-                        subtitle="Delivery, reads, and failures from real WhatsApp message rows."
-                        action={<StatusPill label={healthLabel} warning={model.failedRate > 5} />}
-                    >
-                        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_360px]">
-                            <TrendChart timeline={range === 'today' ? model.hourlyTimeline : model.timeline} loading={isLoading} range={range} />
-                            <QualityCard model={model} rangeLabel={rangeLabel} />
-                        </div>
-                        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                            <RateCard label="Delivery rate" value={model.deliveryRate} count={fmt(model.delivered)} color="bg-[#0070d1]" />
-                            <RateCard label="Read rate" value={model.readRate} count={fmt(model.read)} color="bg-emerald-500" />
-                            <RateCard label="Pending" value={model.totalMessages ? (model.pending / model.totalMessages) * 100 : 0} count={fmt(model.pending)} color="bg-amber-400" />
-                            <RateCard label="Failure risk" value={model.failedRate} count={`${model.failedRate.toFixed(1)}%`} color="bg-red-500" />
-                        </div>
-                    </Panel>
+                    <UsagePerformanceDashboard
+                        model={model}
+                        range={range}
+                        rangeLabel={rangeLabel}
+                        loading={isLoading}
+                        overview={billingOverview}
+                        healthLabel={healthLabel}
+                    />
 
                     <div data-tour="dashboard-health">
                         <Panel title="System health" subtitle="Current account, inbox, and automation state." action={<Gauge className="h-4 w-4 text-gray-400" />}>
@@ -542,6 +541,404 @@ function MetricCard({ icon, label, value, detail, warning, loading }) {
     )
 }
 
+function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview, healthLabel }) {
+    const isHourly = range === 'today'
+    const timeline = isHourly ? model.hourlyTimeline : model.timeline
+    const max = Math.max(1, ...timeline.map(point => n(point.total)))
+    const total = timeline.reduce((sum, point) => sum + n(point.total), 0)
+    const peak = timeline.reduce((best, point) => n(point.total) > n(best?.total) ? point : best, timeline[0] || null)
+    const visibleBars = timeline.length ? timeline : Array.from({ length: isHourly ? 24 : 7 }).map((_, index) => ({
+        hour: `${String(index).padStart(2, '0')}:00`,
+        date: `Day ${index + 1}`,
+        total: 0,
+        read: 0,
+        inbound: 0,
+        outbound: 0,
+        failed: 0,
+    }))
+    const monthSpendPaise = n(overview?.spend?.month_spend_paise)
+    const todaySpendPaise = n(overview?.spend?.today_spend_paise)
+    const walletPaise = n(overview?.wallet?.balance_paise)
+    const availablePaise = Math.max(1, walletPaise + monthSpendPaise)
+    const spendProgress = Math.min(100, Math.round((monthSpendPaise / availablePaise) * 100))
+    const primaryLine = timeline.map(point => n(point.read) || n(point.outbound))
+    const secondaryLine = timeline.map(point => n(point.inbound))
+    const readSeries = timeline.map(point => n(point.read))
+    const requestSeries = timeline.map(point => n(point.total))
+    const summaryCards = [
+        { label: 'Messages', value: fmt(model.totalMessages), detail: `${rangeLabel} volume`, color: 'text-[#6d5ce7]', accent: 'from-[#7b55de] to-[#a78bfa]', progress: 100 },
+        { label: 'Delivered', value: fmt(model.delivered), detail: `${pct(model.deliveryRate)} success`, color: 'text-[#0070d1]', accent: 'from-[#0070d1] to-[#53b1ff]', progress: model.deliveryRate },
+        { label: 'Read', value: fmt(model.read), detail: `${pct(model.readRate)} read rate`, color: 'text-emerald-600', accent: 'from-emerald-500 to-teal-400', progress: model.readRate },
+        { label: 'Failed', value: fmt(model.failed), detail: `${model.failedRate.toFixed(1)}% risk`, color: model.failedRate > 5 ? 'text-red-600' : 'text-gray-900', accent: 'from-red-500 to-rose-400', progress: Math.max(4, model.failedRate) },
+    ]
+    const capabilityCards = [
+        {
+            title: 'Replies handled',
+            value: `${fmt(n(model.metrics.aiAgent) + n(model.metrics.humanAgent))}`,
+            detail: `${fmt(model.metrics.aiAgent)} AI / ${fmt(model.metrics.humanAgent)} team`,
+            series: requestSeries,
+            color: '#6d5ce7',
+        },
+        {
+            title: 'Broadcast output',
+            value: fmt(model.campaigns.sent),
+            detail: `${fmt(model.campaigns.failed)} failed broadcast messages`,
+            series: readSeries,
+            color: '#0f766e',
+        },
+    ]
+
+    return (
+        <section className="overflow-hidden rounded-2xl border border-[#dbe6f5] bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
+            <div className="relative overflow-hidden border-b border-[#edf2f8] bg-gradient-to-br from-white via-[#fbfdff] to-[#f7f4ff] px-5 py-5 lg:px-6">
+                <div className="pointer-events-none absolute -right-24 -top-24 h-52 w-52 rounded-full bg-[#7b55de]/10 blur-3xl" />
+                <div className="pointer-events-none absolute left-1/2 top-0 h-32 w-64 -translate-x-1/2 rounded-full bg-[#53b1ff]/10 blur-3xl" />
+                <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#0070d1]">
+                        <BarChart3 className="h-4 w-4" />
+                        Usage analytics
+                    </div>
+                    <h2 className="mt-1 text-2xl font-semibold leading-tight tracking-normal text-black sm:text-[30px]">Message performance</h2>
+                    <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">
+                        Live WhatsApp delivery, read activity, failure risk, and billing movement in one clean view.
+                    </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex h-9 items-center rounded-full border border-gray-200 bg-white/80 px-3 text-sm font-medium text-gray-800 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                        Workspace
+                    </span>
+                    <span className="inline-flex h-9 items-center rounded-full border border-gray-200 bg-white/80 px-3 text-sm font-medium text-gray-500 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                        All WhatsApp numbers
+                    </span>
+                    <span className="inline-flex h-9 items-center rounded-full border border-gray-900 bg-black px-3 text-sm font-semibold text-white">
+                        {rangeLabel}
+                    </span>
+                    <StatusPill label={healthLabel} warning={model.failedRate > 5} />
+                </div>
+                </div>
+            </div>
+
+            <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_340px]">
+                <div className="space-y-4 border-b border-gray-100 bg-gradient-to-b from-white to-[#fbfcfd] p-5 xl:border-b-0 xl:border-r xl:p-6">
+                    <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+                        {summaryCards.map(card => (
+                            <div key={card.label} className="group relative overflow-hidden rounded-2xl border border-[#dfe8f6] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#c9ddff] hover:shadow-[0_18px_36px_rgba(15,23,42,0.09)]">
+                                <div className={`pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-gradient-to-br ${card.accent} opacity-10 blur-2xl`} />
+                                <div className="relative">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">{card.label}</p>
+                                    <p className={`mt-2 text-2xl font-semibold leading-none transition-transform duration-300 group-hover:translate-x-0.5 ${card.color}`}>{card.value}</p>
+                                    <p className="mt-2 text-xs text-gray-500">{card.detail}</p>
+                                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
+                                        <div className={`h-full rounded-full bg-gradient-to-r ${card.accent}`} style={{ width: pct(card.progress) }} />
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <p className="text-base font-semibold text-black">Message activity</p>
+                                <p className="mt-1 text-sm text-gray-500">{isHourly ? 'Hourly distribution for today.' : 'Daily trend for selected range.'}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-gray-500">Group by</span>
+                                <span className="inline-flex h-8 items-center rounded-full bg-gray-950 px-3 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(15,23,42,0.18)]">
+                                    {isHourly ? '1h' : '1d'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {loading ? (
+                            <div className="mt-4 h-[300px] animate-pulse rounded-lg bg-[#f5f7fa]" />
+                        ) : (
+                            <UsageBarChart
+                                bars={visibleBars}
+                                max={max}
+                                isHourly={isHourly}
+                                peak={peak}
+                                total={total}
+                            />
+                        )}
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+                        <div className="rounded-2xl border border-[#dbe6f5] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <p className="text-base font-semibold text-black">Delivery trend</p>
+                                    <p className="mt-1 text-sm text-gray-500">Read and inbound movement from synced rows.</p>
+                                </div>
+                                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{pct(model.readRate)} read</span>
+                            </div>
+                            <UsageTrendCard
+                                primary={primaryLine}
+                                secondary={secondaryLine}
+                                primaryLabel="Read"
+                                secondaryLabel="Inbound"
+                                primaryColor="#0f766e"
+                                secondaryColor="#db2777"
+                            />
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                            {capabilityCards.map(card => (
+                                <UsageCapabilityCard key={card.title} {...card} />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                <aside className="space-y-4 bg-gradient-to-b from-[#f8fbff] to-white p-5 xl:p-6">
+                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#050505] via-[#111827] to-[#050505] p-5 text-white shadow-[0_18px_45px_rgba(15,23,42,0.18)]">
+                        <div className="pointer-events-none absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#53b1ff]/20 blur-3xl" />
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <p className="text-sm text-white/65">Delivery quality</p>
+                                <p className="mt-2 text-[44px] font-light leading-none">{model.quality}<span className="text-xl text-white/45">/100</span></p>
+                            </div>
+                            <CheckCircle2 className="h-5 w-5 text-[#53b1ff]" />
+                        </div>
+                        <div className="mt-6 grid grid-cols-2 gap-x-5 gap-y-4">
+                            <QualityStat label="Delivered" value={compact(model.delivered)} />
+                            <QualityStat label="Read" value={compact(model.read)} />
+                            <QualityStat label="Pending" value={compact(model.pending)} />
+                            <QualityStat label="Failed" value={compact(model.failed)} />
+                        </div>
+                        <p className="mt-5 text-sm leading-5 text-white/70">
+                            {model.totalMessages
+                                ? `${pct(model.deliveryRate)} delivery with ${pct(model.readRate)} read rate.`
+                                : `No message activity found for ${rangeLabel.toLowerCase()}.`}
+                        </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+                        <div className="flex items-center justify-between gap-3">
+                            <h3 className="text-base font-semibold text-gray-900">Wallet spend</h3>
+                            <Gauge className="h-4 w-4 text-gray-400" />
+                        </div>
+                        <div className="mt-4 flex items-center justify-between text-sm">
+                            <span className="font-medium text-gray-600">This month</span>
+                            <span className="font-semibold text-gray-900">{formatINRFromPaise(monthSpendPaise)}</span>
+                        </div>
+                        <div className="mt-2 h-3 overflow-hidden rounded-full bg-gray-100">
+                            <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 shadow-[0_4px_12px_rgba(16,185,129,0.35)]" style={{ width: pct(spendProgress) }} />
+                        </div>
+                        <p className="mt-2 text-xs text-gray-500">Wallet available: {formatINRFromPaise(walletPaise)}</p>
+                    </div>
+
+                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+                        <UsageMiniBarsCard label="Request pattern" value={fmt(model.totalMessages)} series={requestSeries} />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                        <UsageRailStat label="Today spend" value={formatINRFromPaise(todaySpendPaise)} />
+                        <UsageRailStat label="AI replies" value={compact(model.metrics.aiAgent)} />
+                    </div>
+                </aside>
+            </div>
+
+            <div className="grid gap-3 border-t border-[#edf2f8] bg-gradient-to-r from-white via-[#fbfcfd] to-white p-5 sm:grid-cols-2 xl:grid-cols-4">
+                <RateCard label="Delivery rate" value={model.deliveryRate} count={fmt(model.delivered)} color="bg-gradient-to-r from-[#0070d1] to-[#53b1ff]" />
+                <RateCard label="Read rate" value={model.readRate} count={fmt(model.read)} color="bg-gradient-to-r from-emerald-500 to-teal-400" />
+                <RateCard label="Pending" value={model.totalMessages ? (model.pending / model.totalMessages) * 100 : 0} count={fmt(model.pending)} color="bg-gradient-to-r from-amber-400 to-orange-300" />
+                <RateCard label="Failure risk" value={model.failedRate} count={`${model.failedRate.toFixed(1)}%`} color="bg-gradient-to-r from-red-500 to-rose-400" />
+            </div>
+        </section>
+    )
+}
+
+function UsageBarChart({ bars, max, isHourly, peak, total }) {
+    return (
+        <div className="mt-4 rounded-2xl border border-[#dfe8f6] bg-gradient-to-br from-[#fbfdff] via-white to-[#f7f4ff] p-3 shadow-[0_12px_32px_rgba(109,92,231,0.08)] sm:p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+                <div>
+                    <p className="text-xs font-medium text-gray-500">Total volume</p>
+                    <p className="text-xl font-semibold text-gray-950">{fmt(total)}</p>
+                </div>
+                <div className="flex items-center gap-2 rounded-full border border-violet-100 bg-white/90 px-3 py-2 shadow-[0_8px_20px_rgba(109,92,231,0.12)]">
+                    <span className="h-2 w-2 rounded-full bg-[#7b55de] shadow-[0_0_0_4px_rgba(123,85,222,0.12)]" />
+                    <span className="text-xs font-semibold text-gray-600">Peak</span>
+                    <span className="text-sm font-semibold text-[#4c35b5]">{peak ? fmt(peak.total) : 0}</span>
+                </div>
+            </div>
+            <div className="relative h-[285px] overflow-hidden rounded-2xl border border-[#dbe6f5] bg-white px-3 pt-3 shadow-[inset_0_1px_8px_rgba(15,23,42,0.04)]">
+                <div className="pointer-events-none absolute left-1/2 top-0 h-48 w-64 -translate-x-1/2 rounded-full bg-[#7b55de]/10 blur-3xl" />
+                <div className="absolute inset-x-3 top-3 border-t border-dashed border-gray-200" />
+                <div className="absolute inset-x-0 top-1/3 border-t border-dashed border-gray-200" />
+                <div className="absolute inset-x-0 top-2/3 border-t border-dashed border-gray-200" />
+                <div className="absolute inset-x-3 bottom-10 border-t border-gray-200" />
+                <div className="absolute inset-x-3 bottom-11 top-5 flex items-end justify-between gap-1.5">
+                    {bars.map((point, index) => {
+                        const value = n(point.total)
+                        const height = value === 0 ? 3 : Math.max(10, (value / max) * 215)
+                        const key = isHourly ? point.hour : point.date
+                        const label = isHourly ? point.hour : point.date?.slice(5)
+                        const showLabel = isHourly ? index % 4 === 0 : index === 0 || index === bars.length - 1
+                        return (
+                            <div key={`${key}-${index}`} className="group relative flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                                <div className="pointer-events-none absolute bottom-[calc(100%+10px)] z-10 hidden min-w-[104px] rounded-xl border border-gray-200 bg-white px-3 py-2 text-center text-xs shadow-[0_16px_40px_rgba(15,23,42,0.14)] group-hover:block">
+                                    <p className="font-semibold text-gray-900">{label}</p>
+                                    <p className="mt-1 text-gray-600">{fmt(value)} messages</p>
+                                </div>
+                                <div
+                                    className="w-full max-w-8 rounded-t-xl bg-gradient-to-t from-[#5f49d8] via-[#7b55de] to-[#a78bfa] shadow-[0_10px_24px_rgba(123,85,222,0.22)] transition-all duration-300 group-hover:scale-x-110 group-hover:from-[#5138d3] group-hover:to-[#b39cff] group-hover:shadow-[0_16px_30px_rgba(123,85,222,0.32)]"
+                                    style={{ height }}
+                                    title={`${label}: ${fmt(value)} messages`}
+                                />
+                                <span className="h-4 w-12 truncate text-center text-[10px] font-medium text-gray-500">{showLabel ? label : ''}</span>
+                            </div>
+                        )
+                    })}
+                </div>
+            </div>
+            <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                <span>{isHourly ? '00:00' : bars[0]?.date?.slice(5) || 'Start'}</span>
+                <span className="hidden sm:inline">{isHourly ? 'Hourly WhatsApp message activity' : 'Daily WhatsApp message activity'}</span>
+                <span>{isHourly ? '23:00' : bars[bars.length - 1]?.date?.slice(5) || 'End'}</span>
+            </div>
+        </div>
+    )
+}
+
+function UsageTrendCard({ primary, secondary, primaryLabel, secondaryLabel, primaryColor, secondaryColor }) {
+    const chartWidth = 260
+    const chartHeight = 92
+    const maxValue = Math.max(1, ...primary.map(value => n(value)), ...secondary.map(value => n(value)))
+    const primaryPoints = getScaledLinePoints(primary, maxValue, chartWidth, chartHeight)
+    const secondaryPoints = getScaledLinePoints(secondary, maxValue, chartWidth, chartHeight)
+    const primaryPath = pointsToPath(primaryPoints)
+    const secondaryPath = pointsToPath(secondaryPoints)
+    const primaryLast = primaryPoints[primaryPoints.length - 1] || { x: chartWidth, y: chartHeight }
+    const secondaryLast = secondaryPoints[secondaryPoints.length - 1] || { x: chartWidth, y: chartHeight }
+
+    return (
+        <div className="mt-4 rounded-2xl border border-[#dfe8f6] bg-gradient-to-br from-[#fbfdff] via-white to-[#f7fffb] p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3 text-xs font-medium text-gray-600">
+                    <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: primaryColor }} />
+                        {primaryLabel}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: secondaryColor }} />
+                        {secondaryLabel}
+                    </span>
+                </div>
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 ring-1 ring-gray-200">
+                    Live synced rows
+                </span>
+            </div>
+            <div className="relative mt-4 h-[148px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-inner">
+                <div className="pointer-events-none absolute -left-16 bottom-0 h-28 w-48 rounded-full bg-emerald-400/10 blur-3xl" />
+                <div className="pointer-events-none absolute -right-16 top-0 h-28 w-48 rounded-full bg-pink-400/10 blur-3xl" />
+                <div className="absolute inset-x-0 top-1/4 border-t border-dashed border-gray-200" />
+                <div className="absolute inset-x-0 top-1/2 border-t border-dashed border-gray-200" />
+                <div className="absolute inset-x-0 top-3/4 border-t border-dashed border-gray-200" />
+                <svg className="absolute inset-0 h-full w-full overflow-visible px-3 py-4" viewBox="0 0 260 92" preserveAspectRatio="none" aria-hidden="true">
+                    <path d={`${primaryPath} L 260 92 L 0 92 Z`} fill="rgba(15,118,110,0.06)" />
+                    <path d={primaryPath} fill="none" stroke={primaryColor} strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d={secondaryPath} fill="none" stroke={secondaryColor} strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round" />
+                    <circle cx={primaryLast.x} cy={primaryLast.y} r="3" fill="white" stroke={primaryColor} strokeWidth="1.8" />
+                    <circle cx={secondaryLast.x} cy={secondaryLast.y} r="3" fill="white" stroke={secondaryColor} strokeWidth="1.8" />
+                </svg>
+            </div>
+        </div>
+    )
+}
+
+function createLinePath(series, width = 260, height = 66) {
+    const values = series.length ? series.map(value => n(value)) : [0, 0]
+    const max = Math.max(1, ...values)
+    const step = values.length > 1 ? width / (values.length - 1) : width
+    return values.map((value, index) => {
+        const x = index * step
+        const y = height - ((value / max) * (height - 10)) - 5
+        return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`
+    }).join(' ')
+}
+
+function getScaledLinePoints(series, maxValue, width = 260, height = 92) {
+    const values = series.length ? series.map(value => n(value)) : [0, 0]
+    const max = Math.max(1, n(maxValue))
+    const step = values.length > 1 ? width / (values.length - 1) : width
+
+    return values.map((value, index) => ({
+        x: index * step,
+        y: height - ((value / max) * (height - 14)) - 7,
+    }))
+}
+
+function pointsToPath(points) {
+    return points.map((point, index) => (
+        `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`
+    )).join(' ')
+}
+
+function UsageMiniLineCard({ label, value, primary, secondary, primaryColor, secondaryColor }) {
+    return (
+        <div>
+            {label ? <p className="text-sm text-gray-600">{label}</p> : null}
+            {value ? <p className="mt-1 text-xl font-semibold text-gray-950">{value}</p> : null}
+            <svg className={label || value ? 'mt-3 h-[76px] w-full overflow-visible' : 'mt-4 h-[92px] w-full overflow-visible'} viewBox="0 0 260 76" preserveAspectRatio="none" aria-hidden="true">
+                <path d={createLinePath(primary)} fill="none" stroke={primaryColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d={createLinePath(secondary)} fill="none" stroke={secondaryColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="258" cy="38" r="4" fill="white" stroke={primaryColor} strokeWidth="2.5" />
+                <circle cx="258" cy="66" r="4" fill="white" stroke={secondaryColor} strokeWidth="2.5" />
+            </svg>
+        </div>
+    )
+}
+
+function UsageMiniBarsCard({ label, value, series }) {
+    const values = series.length ? series : [0, 0, 0, 0, 0, 0, 0]
+    const max = Math.max(1, ...values.map(item => n(item)))
+    return (
+        <div>
+            <p className="text-sm text-gray-600">{label}</p>
+            <p className="mt-1 text-xl font-semibold text-gray-950">{value}</p>
+            <div className="mt-3 flex h-[76px] items-end gap-1 rounded-xl bg-gradient-to-b from-white to-[#f7f4ff] px-1 pb-1">
+                {values.map((value, index) => (
+                    <div
+                        key={`${value}-${index}`}
+                        className="flex-1 rounded-t-md bg-gradient-to-t from-[#5f49d8] to-[#a78bfa] shadow-[0_6px_14px_rgba(109,92,231,0.18)] transition-transform duration-300 hover:scale-y-105"
+                        style={{ height: `${Math.max(4, (n(value) / max) * 70)}px` }}
+                    />
+                ))}
+            </div>
+        </div>
+    )
+}
+
+function UsageCapabilityCard({ title, value, detail, series, color }) {
+    return (
+        <div className="group rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-[#fbfcfd] p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#c9ddff] hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+            <div className="flex items-start justify-between gap-3">
+                <div>
+                    <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+                    <p className="mt-2 text-2xl font-semibold leading-none text-gray-950">{value}</p>
+                    <p className="mt-1 text-xs text-gray-400">{detail}</p>
+                </div>
+                <div className="h-12 w-24 rounded-xl bg-white/70 p-1">
+                    <svg className="h-full w-full" viewBox="0 0 120 48" preserveAspectRatio="none" aria-hidden="true">
+                        <path d={createLinePath(series, 120, 48)} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+function UsageRailStat({ label, value }) {
+    return (
+        <div className="rounded-xl border border-gray-100 bg-gradient-to-br from-white to-[#f5f7fa] p-3 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
+            <p className="font-medium text-gray-500">{label}</p>
+            <p className="mt-1 text-sm font-semibold text-gray-950">{value}</p>
+        </div>
+    )
+}
+
 function TrendChart({ timeline, loading, range }) {
     const isHourly = range === 'today'
     const max = Math.max(1, ...timeline.map(point => n(point.total)))
@@ -649,13 +1046,13 @@ function QualityStat({ label, value }) {
 
 function RateCard({ label, value, count, color }) {
     return (
-        <div className="rounded-lg bg-[#f5f7fa] p-4">
+        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
             <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-medium text-gray-700">{label}</span>
                 <span className="text-sm font-semibold text-black">{count}</span>
             </div>
-            <div className="mt-4 h-1.5 rounded-full bg-white">
-                <div className={`h-1.5 rounded-full ${color}`} style={{ width: pct(value) }} />
+            <div className="mt-4 h-2 rounded-full bg-gray-100">
+                <div className={`h-2 rounded-full shadow-[0_4px_12px_rgba(15,23,42,0.12)] ${color}`} style={{ width: pct(value) }} />
             </div>
         </div>
     )
