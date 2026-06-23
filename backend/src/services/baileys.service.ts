@@ -991,11 +991,14 @@ io.on("connection", (socket) => {
     console.log("✅ Frontend connected:", socket.id);
 
     // Join organization-specific room for multi-tenancy
-    socket.on("join_org", (orgId: string) => {
+    socket.on("join_org", (orgId: string, userId?: string) => {
         if (orgId) {
             console.log(`👤 Client ${socket.id} joining room: org:${orgId}`);
             socket.join(`org:${orgId}`);
             socket.data.organization_id = orgId; // ✅ store so agent_typing can read it
+            if (userId) {
+                socket.data.user_id = userId; // ✅ store so disconnect can read it
+            }
         }
     });
 
@@ -1142,7 +1145,80 @@ io.on("connection", (socket) => {
 
 
 
-    socket.on("disconnect", () => console.log("❌ Frontend disconnected:", socket.id));
+    socket.on("disconnect", async () => {
+        console.log("❌ Frontend disconnected:", socket.id);
+        const orgId = socket.data?.organization_id;
+        const userId = socket.data?.user_id;
+
+        if (orgId && userId) {
+            console.log(`[Socket Disconnect] Auto-offline check for user ${userId} in org ${orgId}`);
+            
+            // Wait 3 seconds before marking offline, in case of a quick page reload or transient network drop.
+            setTimeout(async () => {
+                try {
+                    // Check if there are other active socket connections for this user in this org
+                    const activeSockets = await io.in(`org:${orgId}`).fetchSockets();
+                    const isStillConnected = activeSockets.some(s => s.data?.user_id === userId && s.id !== socket.id);
+
+                    if (isStillConnected) {
+                        console.log(`[Socket Disconnect] User ${userId} has other active connections. Skipping offline update.`);
+                        return;
+                    }
+
+                    // User has no other active socket connections. Check if they are online in DB.
+                    const { data: member } = await supabase
+                        .from('organization_members')
+                        .select('role, is_online, name, online_time_today, last_online_at, last_reset_date')
+                        .eq('user_id', userId)
+                        .eq('organization_id', orgId)
+                        .maybeSingle();
+
+                    if (member && member.is_online && member.role !== 'owner') {
+                        const now = new Date();
+                        const todayStr = now.toISOString().split('T')[0];
+                        let nextOnlineTime = member.online_time_today || 0;
+                        if (member.last_reset_date !== todayStr) {
+                            nextOnlineTime = 0;
+                        }
+
+                        const updatePayload: any = {
+                            is_online: false,
+                            last_reset_date: todayStr
+                        };
+
+                        if (member.last_online_at) {
+                            const lastOnline = new Date(member.last_online_at);
+                            const diffMs = now.getTime() - lastOnline.getTime();
+                            const diffSecs = Math.max(0, Math.floor(diffMs / 1000));
+                            updatePayload.online_time_today = nextOnlineTime + diffSecs;
+                        } else {
+                            updatePayload.online_time_today = nextOnlineTime;
+                        }
+                        updatePayload.last_online_at = null;
+
+                        const { error } = await supabase
+                            .from('organization_members')
+                            .update(updatePayload)
+                            .eq('user_id', userId)
+                            .eq('organization_id', orgId);
+
+                        if (!error) {
+                            console.log(`[Socket Disconnect] Marked user ${userId} offline.`);
+                            io.to(`org:${orgId}`).emit('agent_offline', {
+                                user_id: userId,
+                                organization_id: orgId,
+                                name: member.name
+                            });
+                        } else {
+                            console.error("[Socket Disconnect] Error updating status in DB:", error);
+                        }
+                    }
+                } catch (err) {
+                    console.error("[Socket Disconnect Exception]", err);
+                }
+            }, 3000);
+        }
+    });
 });
 
 // --- Auto-Initialize existing sessions ---

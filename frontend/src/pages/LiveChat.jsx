@@ -1234,7 +1234,7 @@ export default function LiveChat() {
             // Re-join org room on reconnect if profile is available
             if (memberProfile?.organization_id) {
                 console.log('[socket] joining org room:', memberProfile.organization_id)
-                socket.emit('join_org', memberProfile.organization_id)
+                socket.emit('join_org', memberProfile.organization_id, memberProfile.user_id)
                 if (user?.id) {
                     socket.emit('agent_connected', { organization_id: memberProfile.organization_id, user_id: user.id })
                 }
@@ -1257,7 +1257,7 @@ export default function LiveChat() {
         // Join org room immediately if connected and profile just loaded
         if (socket.connected && memberProfile?.organization_id) {
             console.log('[socket] joining org room (manual):', memberProfile.organization_id)
-            socket.emit('join_org', memberProfile.organization_id)
+            socket.emit('join_org', memberProfile.organization_id, memberProfile.user_id)
             if (user?.id) {
                 socket.emit('agent_connected', { organization_id: memberProfile.organization_id, user_id: user.id })
             }
