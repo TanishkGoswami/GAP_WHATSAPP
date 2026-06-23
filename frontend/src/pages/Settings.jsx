@@ -637,6 +637,20 @@ export default function Settings() {
         }
     }
 
+    const toggleOnlineStatus = async (currentStatus) => {
+        try {
+            const res = await apiCall(`${BACKEND_BASE}/api/team/status`, {
+                method: 'PATCH',
+                body: JSON.stringify({ is_online: !currentStatus })
+            })
+            if (res.ok) {
+                fetchMembers()
+            }
+        } catch (e) {
+            console.error("Failed to toggle online status", e)
+        }
+    }
+
     const isAdmin = userRole === 'admin' || userRole === 'owner'
 
     return (
@@ -648,9 +662,8 @@ export default function Settings() {
                     <TourButton compact />
                 </div>
                 <nav className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
-                    {['General', 'Notifications', 'Knowledge Base', 'Integrations', 'Team Members', 'Developer API'].map((tab) => {
+                    {['General', 'Notifications', 'Knowledge Base', 'Integrations', 'Developer API'].map((tab) => {
                         const id = tab.toLowerCase().replace(' ', '_')
-                        if (id === 'team_members' && !isAdmin) return null
                         return (
                             <button
                                 key={tab}
@@ -664,7 +677,6 @@ export default function Settings() {
                                 {id === 'notifications' && <Bell className="mr-3 h-5 w-5 text-gray-400" />}
                                 {id === 'knowledge_base' && <Database className="mr-3 h-5 w-5 text-gray-400" />}
                                 {id === 'integrations' && <ShoppingBag className="mr-3 h-5 w-5 text-gray-400" />}
-                                {id === 'team_members' && <Users className="mr-3 h-5 w-5 text-gray-400" />}
                                 {id === 'developer_api' && <Bot className="mr-3 h-5 w-5 text-gray-400" />}
                                 {tab}
                             </button>
@@ -1497,197 +1509,7 @@ export default function Settings() {
                             </div>
                         </div>
                     </div>
-                )}
-
-                {activeTab === 'team_members' && isAdmin && (
-                    <div data-tour="settings-team" className="p-8">
-                        <div className="flex justify-between items-center mb-8">
-                            <div>
-                                <h2 className="text-lg font-medium text-gray-900">Team Members</h2>
-                                <p className="text-sm text-gray-500">Manage your agents and their roles.</p>
-                            </div>
-                            <button
-                                onClick={() => setIsInviteOpen(true)}
-                                className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-sm"
-                            >
-                                <UserPlus className="h-4 w-4" />
-                                Invite Member
-                            </button>
-                        </div>
-
-                        {isLoadingMembers ? (
-                            <div className="py-12 text-center text-gray-500">Loading members...</div>
-                        ) : (
-                            <div className="overflow-hidden border border-gray-200 rounded-lg">
-                                <table className="min-w-full divide-y divide-gray-200">
-                                    <thead className="bg-gray-50">
-                                        <tr>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Member</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                            <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-gray-200">
-                                        {members.map((member) => {
-                                            const inviteStatus = getInviteStatus(member)
-                                            const statusStyles = inviteStatus === 'active'
-                                                ? 'bg-green-100 text-green-800'
-                                                : inviteStatus === 'expired'
-                                                    ? 'bg-red-100 text-red-800'
-                                                    : 'bg-amber-100 text-amber-800'
-                                            const dotStyles = inviteStatus === 'active'
-                                                ? 'bg-green-400'
-                                                : inviteStatus === 'expired'
-                                                    ? 'bg-red-400'
-                                                    : 'bg-amber-400'
-                                            return (
-                                                <tr key={member.id} className="hover:bg-gray-50 transition-colors">
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <div className="flex items-center">
-                                                            <div className="flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center text-white font-bold overflow-hidden"
-                                                                style={member.avatar_color?.startsWith('/images/avatars/') ? {} : { backgroundColor: member.avatar_color || '#6366f1' }}>
-                                                                {member.avatar_color?.startsWith('/images/avatars/') ? (
-                                                                    <img src={member.avatar_color} className="h-full w-full object-cover" alt={member.name} />
-                                                                ) : (
-                                                                    member.name?.charAt(0)?.toUpperCase()
-                                                                )}
-                                                            </div>
-                                                            <div className="ml-4">
-                                                                <div className="text-sm font-medium text-gray-900">{member.name}</div>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <div className="text-sm text-gray-500">{member.email}</div>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <select
-                                                            value={member.role}
-                                                            onChange={(e) => updateRole(member.id, e.target.value)}
-                                                            disabled={member.role === 'owner'}
-                                                            className="text-sm border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
-                                                        >
-                                                            <option value="owner">Owner</option>
-                                                            <option value="admin">Admin</option>
-                                                            <option value="agent">Agent</option>
-                                                        </select>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <div className="space-y-1">
-                                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyles}`}>
-                                                                <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${dotStyles}`} />
-                                                                {inviteStatus === 'active' ? 'Active' : inviteStatus === 'expired' ? 'Invite expired' : 'Invite pending'}
-                                                            </span>
-                                                            {inviteStatus !== 'active' && member.invite_expires_at ? (
-                                                                <div className="flex items-center gap-1 text-xs text-gray-400">
-                                                                    <Clock className="h-3 w-3" />
-                                                                    Expires {formatInviteExpiry(member.invite_expires_at)}
-                                                                </div>
-                                                            ) : null}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                        <div className="flex items-center justify-end gap-2">
-                                                            {inviteStatus !== 'active' && member.role !== 'owner' ? (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => resendInvite(member)}
-                                                                    disabled={resendingMemberId === member.id}
-                                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-                                                                >
-                                                                    {resendingMemberId === member.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                                                                    Resend
-                                                                </button>
-                                                            ) : null}
-                                                            <button
-                                                                onClick={() => removeMember(member.id)}
-                                                                disabled={member.role === 'owner'}
-                                                                className="text-red-600 hover:text-red-900 disabled:opacity-50"
-                                                            >
-                                                                <Trash className="h-4 w-4" />
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-
-                        {/* Invite Modal */}
-                        {isInviteOpen && (
-                            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                                <div className="bg-white rounded-xl max-w-md w-full shadow-2xl">
-                                    <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-                                        <h3 className="text-lg font-bold text-gray-900">Invite New Member</h3>
-                                        <button onClick={() => setIsInviteOpen(false)} className="text-gray-400 hover:text-gray-600">
-                                            <X className="h-6 w-6" />
-                                        </button>
-                                    </div>
-                                    <form onSubmit={handleInvite} className="p-6 space-y-4">
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                                            <input
-                                                type="text"
-                                                required
-                                                value={inviteForm.name}
-                                                onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })}
-                                                placeholder="John Doe"
-                                                className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                                            <input
-                                                type="email"
-                                                required
-                                                value={inviteForm.email}
-                                                onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
-                                                placeholder="john@example.com"
-                                                className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Login Password</label>
-                                            <input
-                                                type="text"
-                                                required
-                                                value={inviteForm.password || ''}
-                                                onChange={(e) => setInviteForm({ ...inviteForm, password: e.target.value })}
-                                                placeholder="Set a password for the agent"
-                                                className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                                            <select
-                                                value={inviteForm.role}
-                                                onChange={(e) => setInviteForm({ ...inviteForm, role: e.target.value })}
-                                                className="w-full rounded-lg border-gray-300 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                                            >
-                                                <option value="admin">Admin (Can manage settings)</option>
-                                                <option value="agent">Agent (Can manage chats)</option>
-                                            </select>
-                                        </div>
-                                        <div className="pt-4">
-                                            <button
-                                                type="submit"
-                                                disabled={isInviting}
-                                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2.5 rounded-lg font-bold transition-all shadow-lg disabled:opacity-50"
-                                            >
-                                                {isInviting ? 'Sending Invite...' : 'Send Invitation'}
-                                            </button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
+                     )}
 
                 {activeTab === 'integrations' && (
                     <div className="relative min-h-[600px] overflow-hidden">

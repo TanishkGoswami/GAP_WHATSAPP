@@ -104,7 +104,7 @@ export default function WhatsAppConnect() {
                             setHasIntegrationConsent(!!parsed.integrations)
                         }
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
         }
 
@@ -240,8 +240,8 @@ export default function WhatsAppConnect() {
                 const parsed = JSON.parse(stored)
                 Object.assign(consent, parsed, { integrations: true })
             }
-        } catch (e) {}
-        
+        } catch (e) { }
+
         localStorage.setItem('gap_cookie_consent', JSON.stringify(consent))
         setHasIntegrationConsent(true)
 
@@ -838,8 +838,8 @@ function getAccountStatus(account, diagnostics) {
         return 'failed';
     }
 
-    const isPending = 
-        account.status === 'pending' || 
+    const isPending =
+        account.status === 'pending' ||
         account.status === 'connecting' ||
         (!isMeta && !isReady) ||
         (isMeta && !account.whatsapp_business_account_id);
@@ -856,10 +856,10 @@ function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDi
     const issueCodes = diagnostics?.issue_codes || []
     const reconnectRequired = diagnostics?.reconnect_required || issueCodes.includes('token_expired') || issueCodes.includes('token_missing')
     const summary = getAccountSummary(account, diagnostics, reconnectRequired)
-    
+
     const currentStatus = getAccountStatus(account, diagnostics)
     const config = STATUS_CONFIG[currentStatus]
-    
+
     const statusLabel = config.label
     const messagingStatus = currentStatus === 'connected' ? 'Send Ready' : currentStatus === 'failed' ? 'Paused' : 'Pending'
     const templateStatus = currentStatus === 'connected' ? 'Unlocked' : currentStatus === 'failed' ? 'Reconnect' : 'Needs Check'

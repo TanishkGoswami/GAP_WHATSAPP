@@ -1,15 +1,16 @@
 import { Router } from 'express';
-import { 
-    getMembers, 
-    inviteMember, 
-    acceptInvite, 
-    resendInvite, 
-    updateMember, 
-    deleteMember, 
-    getMyProfile, 
-    updateMyProfile, 
+import {
+    getMembers,
+    inviteMember,
+    acceptInvite,
+    resendInvite,
+    updateMember,
+    deleteMember,
+    getMyProfile,
+    updateMyProfile,
     updateMyStatus,
-    getAgents 
+    getAgents,
+    updateMyOnlineStatus
 } from '../controllers/team.controller.js';
 import { authMiddleware } from '../middlewares/auth.middleware.js';
 
@@ -26,7 +27,7 @@ router.delete('/members/:id', authMiddleware, deleteMember);
 
 router.get('/my-profile', authMiddleware, getMyProfile);
 router.patch('/my-profile', authMiddleware, updateMyProfile);
-router.post('/status', authMiddleware, updateMyStatus);
+router.patch('/status', authMiddleware, updateMyOnlineStatus);
 
 router.get('/agents', authMiddleware, getAgents);
 

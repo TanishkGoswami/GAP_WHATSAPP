@@ -17,6 +17,8 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import { upsertContact, sanitizeContactDisplayName, normalizeContactWaIdForStorage, pickBestBaileysContactName } from './contacts.service.js';
 import { getBotAgentReply } from './ai.service.js';
+import { performAutoAssignment } from './assignment.service.js';
+
 
 const botDebounceMap = new Map<string, NodeJS.Timeout>();
 const botLockMap = new Map<string, Promise<void>>();
@@ -734,6 +736,13 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
                                 console.error('Bot auto-reply error (Baileys):', botErr.message || botErr);
                             }
                         }
+
+                        // Trigger auto-assignment for inbound messages
+                        if (!isOutbound) {
+                            performAutoAssignment(orgId, conv.id).catch(err => {
+                                console.error("Error running auto assignment for Baileys message:", err);
+                            });
+                        }
                     }
                 } catch (err) {
                     console.error("Error processing message:", err);
@@ -741,7 +750,9 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
             }
         });
 
-        // âœ… NEW: Listen for status updates (Read Receipts / Delivery)
+
+
+        // ✅ NEW: Listen for status updates (Read Receipts / Delivery)
         sock.ev.on("messages.update", async (updates) => {
             for (const update of updates) {
                 // update.update.status: 3=delivered, 4=read/played
@@ -929,6 +940,25 @@ async function setupBaileys(sessionId: string, socket: any, orgIdFromRequest: st
     }
 }
 
+
+
+// Resolve the real active Baileys sessionId for an org (phone_number_id stored in DB)
+async function getSessionIdForOrg(orgId: string): Promise<string | null> {
+    try {
+        const { data } = await supabase
+            .from('w_wa_accounts')
+            .select('phone_number_id')
+            .eq('organization_id', orgId)
+            .eq('status', 'connected')
+            .maybeSingle();
+        const phoneId = data?.phone_number_id;
+        if (phoneId && sessions.has(phoneId)) return phoneId;
+    } catch (err) {
+        console.error('[getSessionIdForOrg] Error:', err);
+    }
+    return null;
+}
+
 // Global Error Handlers to prevent crash
 process.on('uncaughtException', (err: any) => {
     console.error('âŒ Uncaught Exception:', err);
@@ -965,6 +995,7 @@ io.on("connection", (socket) => {
         if (orgId) {
             console.log(`👤 Client ${socket.id} joining room: org:${orgId}`);
             socket.join(`org:${orgId}`);
+            socket.data.organization_id = orgId; // ✅ store so agent_typing can read it
         }
     });
 
@@ -975,6 +1006,7 @@ io.on("connection", (socket) => {
     // Frontend requests to join/init a session
     socket.on("join_session", async (sessionId: string, orgId?: string) => {
         console.log(`Client ${socket.id} checking session ${sessionId}`);
+        socket.data.sessionId = sessionId;
         if (orgId) socket.data.organization_id = orgId;
 
         // Check if session exists in memory; if not, try restoring from disk.
@@ -1107,6 +1139,8 @@ io.on("connection", (socket) => {
 
         socket.emit("status", "ready");
     });
+
+
 
     socket.on("disconnect", () => console.log("❌ Frontend disconnected:", socket.id));
 });

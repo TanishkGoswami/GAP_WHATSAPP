@@ -16,7 +16,7 @@ import {
   fetchMetaBusinessProfile,
   uploadMetaProfilePicture,
   updateMetaBusinessProfile,
-} from "../services/meta.service.js";
+} from '../services/meta.service.js';
 
 const GRAPH_API_VERSION = process.env.META_API_VERSION || "v20.0";
 
@@ -558,7 +558,7 @@ export async function getTemplates(req: any, res: Response) {
     } catch (err: any) {
         console.error('Error fetching templates:', err);
         res.status(500).json({ error: err.message });
-  }
+    }
 }
 
 export async function validateTemplate(req: any, res: Response) {

@@ -31,7 +31,7 @@ const navigation = [
     { name: 'Chats', href: '/live-chat', icon: MessageSquareText, badge: 'LIVE' },
     { name: 'Contacts', href: '/contacts', icon: Users },
     { name: 'AI Agents', href: '/bot-agents', icon: Briefcase },
-    { name: 'Team Members', href: '/settings?tab=team_members', icon: Users },
+    { name: 'Team Members', href: '/team-members', icon: Users },
     { name: 'Flows', href: '/flow-builder', icon: GitFork },
     {
         name: 'Templates',
