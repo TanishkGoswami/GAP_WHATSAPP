@@ -16,6 +16,9 @@ const APP_SECRET = process.env.META_APP_SECRET;
 const ACCESS_TOKEN = process.env.WA_ACCESS_TOKEN;
 const WEBHOOK_DEBUG = String(process.env.WEBHOOK_DEBUG || "true").toLowerCase() !== "false";
 
+const botDebounceMap = new Map<string, NodeJS.Timeout>();
+const botLockMap = new Map<string, Promise<void>>();
+
 function webhookLog(step: string, details: Record<string, any> = {}) {
   if (!WEBHOOK_DEBUG) return;
   console.log(
@@ -1069,84 +1072,108 @@ export async function handleWebhook(req: any, res: Response) {
 
         // AI Agent fallback — sirf tab jab flow ne consume nahi kiya aur type text hai
         if (!flowConsumedMessage && type === "text" && text) {
-          webhookLog("bot_agent.process.start", {
+          webhookLog("bot_agent.process.queue", {
             requestId,
             conversation_id: conv.id,
             textPreview: text.slice(0, 120),
           });
-          const botResult = await getBotAgentReply({
-            organization_id,
-            conversation_id: conv.id,
-            text,
-          });
-          webhookLog("bot_agent.process.done", {
-            requestId,
-            hasReply: !!botResult?.reply,
-            agentId: botResult?.agent?.id || null,
-            agentName: botResult?.agent?.name || null,
-          });
-          if (botResult?.reply) {
-            console.log(`🤖 Bot "${botResult.agent?.name}" replying`);
-            const sendResult = await sendTextMessage(
-              from,
-              botResult.reply,
-              phone_number_id,
-            );
-            const botWaMessageId = sendResult?.messages?.[0]?.id || null;
-            const storedBotReply = await storeMessage({
-              organization_id,
-              contact_id: contact.id,
-              conversation_id: conv.id,
-              wa_message_id: botWaMessageId,
-              direction: "outbound",
-              type: "text",
-              content: {
-                text: botResult.reply,
-                bot_agent_id: botResult.agent?.id,
-                bot_agent_name: botResult.agent?.name,
-              },
-              status: "sent",
-              is_bot_reply: true,
-              bot_agent_id: botResult.agent?.id || null,
-              sender_type: "ai_agent",
-              automation_source: "ai_agent",
-            } as any);
-            io.emit("new_message", {
-              from: metadata?.display_phone_number || phone_number_id,
-              phone: from,
-              text: botResult.reply,
-              sender: "agent",
-              conversation_id: conv.id,
-              contact_id: contact.id,
-              message_id: storedBotReply?.id || null,
-              wa_message_id: botWaMessageId,
-              created_at:
-                storedBotReply?.created_at || new Date().toISOString(),
-              connectedAccount: metadata?.display_phone_number,
-              type: "text",
-              is_bot_reply: true,
-              bot_agent_name: botResult.agent?.name,
-            });
-            webhookLog("bot_agent.reply.sent", {
-              requestId,
-              botWaMessageId,
-              storedMessageId: storedBotReply?.id || null,
-              agentId: botResult.agent?.id || null,
-            });
-
-            // Update conversation preview
-            await supabase
-              .from("w_conversations")
-              .update({
-                last_message_at: new Date().toISOString(),
-                last_message_preview: botResult.reply.substring(0, 100),
-              })
-              .eq("id", conv.id);
-            webhookLog("bot_agent.conversation_preview.updated", {
-              requestId,
-              conversation_id: conv.id,
-            });
+          
+          const debounceKey = conv.id;
+          if (botDebounceMap.has(debounceKey)) {
+              clearTimeout(botDebounceMap.get(debounceKey)!);
           }
+          
+          botDebounceMap.set(debounceKey, setTimeout(async () => {
+              botDebounceMap.delete(debounceKey);
+              
+              // Ensure sequential processing per conversation
+              const previousPromise = botLockMap.get(conv.id) || Promise.resolve();
+              const currentPromise = previousPromise.then(async () => {
+                  try {
+                      const botResult = await getBotAgentReply({
+                        organization_id,
+                        conversation_id: conv.id,
+                        text, // This will be the text of the LAST message sent within the 5 seconds
+                      });
+                      
+                      webhookLog("bot_agent.process.done", {
+                        requestId,
+                        hasReply: !!botResult?.reply,
+                        agentId: botResult?.agent?.id || null,
+                        agentName: botResult?.agent?.name || null,
+                      });
+                      
+                      if (botResult?.reply) {
+                        console.log(`🤖 Bot "${botResult.agent?.name}" replying`);
+                        const sendResult = await sendTextMessage(
+                          from,
+                          botResult.reply,
+                          phone_number_id,
+                        );
+                        const botWaMessageId = sendResult?.messages?.[0]?.id || null;
+                        const storedBotReply = await storeMessage({
+                          organization_id,
+                          contact_id: contact.id,
+                          conversation_id: conv.id,
+                          wa_message_id: botWaMessageId,
+                          direction: "outbound",
+                          type: "text",
+                          content: {
+                            text: botResult.reply,
+                            bot_agent_id: botResult.agent?.id,
+                            bot_agent_name: botResult.agent?.name,
+                          },
+                          status: "sent",
+                          is_bot_reply: true,
+                          bot_agent_id: botResult.agent?.id || null,
+                          sender_type: "ai_agent",
+                          automation_source: "ai_agent",
+                        } as any);
+                        io.emit("new_message", {
+                          from: metadata?.display_phone_number || phone_number_id,
+                          phone: from,
+                          text: botResult.reply,
+                          sender: "agent",
+                          conversation_id: conv.id,
+                          contact_id: contact.id,
+                          message_id: storedBotReply?.id || null,
+                          wa_message_id: botWaMessageId,
+                          created_at:
+                            storedBotReply?.created_at || new Date().toISOString(),
+                          connectedAccount: metadata?.display_phone_number,
+                          type: "text",
+                          is_bot_reply: true,
+                          bot_agent_name: botResult.agent?.name,
+                        });
+                        webhookLog("bot_agent.reply.sent", {
+                          requestId,
+                          botWaMessageId,
+                          storedMessageId: storedBotReply?.id || null,
+                          agentId: botResult.agent?.id || null,
+                        });
+
+                        // Update conversation preview
+                        await supabase
+                          .from("w_conversations")
+                          .update({
+                            last_message_at: new Date().toISOString(),
+                            last_message_preview: botResult.reply.substring(0, 100),
+                          })
+                          .eq("id", conv.id);
+                        webhookLog("bot_agent.conversation_preview.updated", {
+                          requestId,
+                          conversation_id: conv.id,
+                        });
+                      }
+                  } catch (err) {
+                      console.error("[Bot Lock] Error generating reply for conversation:", conv.id, err);
+                  }
+              });
+              
+              botLockMap.set(conv.id, currentPromise);
+              
+          }, 5000));
+
         } else if (!flowConsumedMessage) {
           webhookLog("bot_agent.process.skipped", {
             requestId,

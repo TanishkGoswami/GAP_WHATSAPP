@@ -202,12 +202,11 @@ export async function getBotAgentReply(params: {
         .slice(0, KNOWLEDGE_MAX_CONTEXT_CHARS);
     }
 
-    let systemPrompt =
-      targetAgent.system_prompt ||
-      `You are a highly capable AI assistant representing "${targetAgent.name}".
-Your goal is to assist the user effectively and naturally.
+    let systemPrompt = targetAgent.system_prompt 
+      ? targetAgent.system_prompt 
+      : `You are a highly capable AI assistant representing "${targetAgent.name}". Your goal is to assist the user effectively and naturally.`;
 
-IMPORTANT MEMORY RULES:
+    systemPrompt += `\n\nIMPORTANT MEMORY RULES:
 - Always remember information the user provides about themselves (Name, City, Profession, Company, Interests, etc.) and treat it as core memory.
 - If the user asks "what is my name?", "where do I live?", or "what do I do?", immediately fetch the answer from the conversation history and reply confidently.
 - Never say "I don't know" if the information was mentioned previously in the chat.

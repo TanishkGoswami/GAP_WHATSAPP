@@ -180,7 +180,9 @@ export function enrichTemplateExamplesWithRealisticSamples(components: any[]) {
         if (comp.type === 'BODY' && typeof comp.text === 'string') {
             const matches = comp.text.match(/\{\{(\d+)\}\}/g);
             if (matches) {
-                const varIndices = Array.from(new Set(matches.map((m: any) => parseInt(m.replace(/[^0-9]/g, ''), 10)))).sort((a, b) => a - b);
+                const varIndices: number[] = Array.from(
+                    new Set<number>(matches.map((m: string) => parseInt(m.replace(/[^0-9]/g, ''), 10)))
+                ).sort((a: number, b: number) => a - b);
                 const maxVar = varIndices.length > 0 ? Math.max(...varIndices) : 0;
                 if (maxVar > 0) {
                     const segments = comp.text.split(/\{\{\s*\d+\s*\}\}/);
@@ -228,7 +230,9 @@ export function enrichTemplateExamplesWithRealisticSamples(components: any[]) {
         } else if (comp.type === 'HEADER' && comp.format === 'TEXT' && typeof comp.text === 'string') {
             const matches = comp.text.match(/\{\{(\d+)\}\}/g);
             if (matches) {
-                const varIndices = Array.from(new Set(matches.map((m: any) => parseInt(m.replace(/[^0-9]/g, ''), 10)))).sort((a, b) => a - b);
+                const varIndices: number[] = Array.from(
+                    new Set<number>(matches.map((m: string) => parseInt(m.replace(/[^0-9]/g, ''), 10)))
+                ).sort((a: number, b: number) => a - b);
                 const maxVar = varIndices.length > 0 ? Math.max(...varIndices) : 0;
                 if (maxVar > 0) {
                     const segments = comp.text.split(/\{\{\s*\d+\s*\}\}/);

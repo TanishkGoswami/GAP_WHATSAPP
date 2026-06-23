@@ -1,17 +1,9 @@
-<<<<<<< Updated upstream
-import { Response } from 'express';
-import { supabase } from '../config/supabase.js';
-import { encryptToken, decryptToken } from '../utils/crypto.js';
-import { cleanText, cleanNullableText, isValidEmail } from '../utils/format.js';
-import { validateWhatsappTemplatePayload, TemplateValidationIssue, enrichTemplateExamplesWithRealisticSamples } from '../utils/whatsapp.js';
-import { enforceWhatsAppCloudNumberLimit } from '../services/billing.service.js';
-=======
 import { Response } from "express";
 import { supabase } from "../config/supabase.js";
 import { encryptToken, decryptToken } from "../utils/crypto.js";
 import { cleanText, cleanNullableText, isValidEmail } from "../utils/format.js";
->>>>>>> Stashed changes
 import {
+  enrichTemplateExamplesWithRealisticSamples,
   validateWhatsappTemplatePayload,
   TemplateValidationIssue,
 } from "../utils/whatsapp.js";
@@ -535,7 +527,6 @@ export async function getTemplates(req: any, res: Response) {
       .not("whatsapp_business_account_id", "is", null)
       .order("created_at", { ascending: false });
 
-<<<<<<< Updated upstream
         if (!accounts || accounts.length === 0) {
             return res.json([]);
         }
@@ -567,65 +558,6 @@ export async function getTemplates(req: any, res: Response) {
     } catch (err: any) {
         console.error('Error fetching templates:', err);
         res.status(500).json({ error: err.message });
-=======
-    if (!accounts || accounts.length === 0) {
-      return res.json([]);
->>>>>>> Stashed changes
-    }
-
-    const account = accounts[0];
-    const token = decryptToken(account.access_token_encrypted);
-    const waba_id = account.whatsapp_business_account_id;
-
-    const response = await fetch(
-      `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?fields=id,name,language,status,category,components,quality_score,rejected_reason&limit=250`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    const json = await response.json();
-
-    if (!response.ok) {
-      console.error("Meta API Error:", json);
-      return res
-        .status(response.status)
-        .json({
-          error: json.error?.message || "Failed to fetch templates from Meta",
-        });
-    }
-    const metaTemplates = json.data || [];
-    await Promise.all(
-      metaTemplates.map((template: any) =>
-        upsertLocalTemplateSubmission({
-          organization_id: orgId,
-          wa_account_id: account.id,
-          waba_id,
-          template_id: template.id || null,
-          name: template.name,
-          language: template.language || "en_US",
-          category: template.category || "MARKETING",
-          status: template.status || "PENDING",
-          quality_score: template.quality_score || null,
-          rejection_reason: template.rejected_reason || template.reason || null,
-          components: template.components || [],
-          normalized_payload: template,
-          meta_response: template,
-        }),
-      ),
-    );
-
-    const { data: localRows, error: localErr } = await supabase
-      .from("w_template_submissions")
-      .select("*")
-      .eq("organization_id", orgId)
-      .eq("wa_account_id", account.id);
-    if (localErr)
-      console.warn("[Templates] Local cache read failed:", localErr.message);
-
-    res.json(mergeTemplateRows(metaTemplates, localRows || []));
-  } catch (err: any) {
-    console.error("Error fetching templates:", err);
-    res.status(500).json({ error: err.message });
   }
 }
 
@@ -657,7 +589,6 @@ export async function createTemplate(req: any, res: Response) {
       .not("whatsapp_business_account_id", "is", null)
       .order("created_at", { ascending: false });
 
-<<<<<<< Updated upstream
         if (!accounts || accounts.length === 0) {
             return res.status(400).json({ error: 'No connected Meta account found' });
         }
@@ -673,7 +604,7 @@ export async function createTemplate(req: any, res: Response) {
             return res.status(400).json({ error: 'Invalid components format' });
         }
 
-        // Auto-enrich template variables with realistic sample values to bypass manual review and get instant 10s Meta approval
+        // Enrich template variables with realistic sample values before Meta validation.
         parsedComponents = enrichTemplateExamplesWithRealisticSamples(parsedComponents);
 
         if (file) {
@@ -843,176 +774,7 @@ export async function createTemplate(req: any, res: Response) {
     } catch (err: any) {
         console.error('Create Template Error:', err);
         res.status(500).json({ error: err.message });
-=======
-    if (!accounts || accounts.length === 0) {
-      return res.status(400).json({ error: "No connected Meta account found" });
->>>>>>> Stashed changes
     }
-
-    const account = accounts[0];
-    const token = decryptToken(account.access_token_encrypted);
-    const waba_id = account.whatsapp_business_account_id;
-
-    let parsedComponents = [];
-    try {
-      parsedComponents = JSON.parse(components || "[]");
-    } catch (e) {
-      return res.status(400).json({ error: "Invalid components format" });
-    }
-
-    if (file) {
-      const appId = process.env.META_APP_ID;
-      if (!appId)
-        throw new Error(
-          "META_APP_ID is not configured. Cannot upload media for templates.",
-        );
-
-      const initUrl = new URL(
-        `https://graph.facebook.com/v20.0/${appId}/uploads`,
-      );
-      initUrl.searchParams.set("file_length", String(file.size));
-      initUrl.searchParams.set("file_type", file.mimetype);
-      initUrl.searchParams.set("access_token", token);
-
-      const initRes = await fetch(initUrl, { method: "POST" });
-      const initJson = await initRes.json();
-      if (!initRes.ok)
-        throw new Error(
-          initJson.error?.message || "Upload initialization failed",
-        );
-
-      const uploadSessionId = initJson.id;
-
-      const uploadRes = await fetch(
-        `https://graph.facebook.com/v20.0/${uploadSessionId}`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `OAuth ${token}`,
-            file_offset: "0",
-            "Content-Type": file.mimetype || "application/octet-stream",
-          },
-          body: file.buffer as any,
-        },
-      );
-      const uploadJson = await uploadRes.json();
-      if (!uploadRes.ok)
-        throw new Error(uploadJson.error?.message || "File upload failed");
-
-      const handle = uploadJson.h;
-
-      const headerObj = parsedComponents.find((c: any) => c.type === "HEADER");
-      if (
-        headerObj &&
-        ["IMAGE", "VIDEO", "DOCUMENT"].includes(headerObj.format)
-      ) {
-        headerObj.example = { header_handle: [handle] };
-      }
-    }
-
-    const payload = { name, category, language, components: parsedComponents };
-    const validation = validateWhatsappTemplatePayload(payload);
-    if (!validation.canSubmit) {
-      return res.status(400).json({
-        error:
-          "Template has approval-risk issues. Fix the highlighted fields before submitting to Meta.",
-        validation,
-      });
-    }
-
-    const existingRes = await fetch(
-      `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?name=${encodeURIComponent(validation.normalized.name)}&fields=id,name,language,status&limit=50`,
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
-    const existingJson = await existingRes.json().catch(() => ({}));
-    if (
-      existingRes.ok &&
-      Array.isArray(existingJson.data) &&
-      existingJson.data.some(
-        (tpl: any) =>
-          tpl.name === validation.normalized.name &&
-          tpl.language === validation.normalized.language,
-      )
-    ) {
-      return res.status(409).json({
-        error: `Template "${validation.normalized.name}" already exists for ${validation.normalized.language}. Use a new template name before submitting.`,
-        code: "DUPLICATE_TEMPLATE_NAME",
-        suggested_name: `${validation.normalized.name}_${Date.now().toString().slice(-6)}`,
-      });
-    }
-
-    const response = await fetch(
-      `https://graph.facebook.com/v20.0/${waba_id}/message_templates`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      },
-    );
-    const json = await response.json();
-
-    if (!response.ok) {
-      const errMsg =
-        json.error?.error_user_msg ||
-        json.error?.message ||
-        "Template creation failed";
-      const errSubcode = json.error?.error_subcode || json.error?.code || null;
-      const errData = json.error?.error_data || null;
-      await upsertLocalTemplateSubmission({
-        organization_id: orgId,
-        wa_account_id: account.id,
-        waba_id,
-        name: validation.normalized.name,
-        language: validation.normalized.language,
-        category: validation.normalized.category,
-        status: "REJECTED",
-        rejection_reason: errMsg,
-        components: validation.normalized.components,
-        normalized_payload: validation.normalized,
-        validation_issues: validation.issues,
-        risk_score: validation.riskScore,
-        meta_response: json,
-        submitted_by: req.user?.id || null,
-      });
-      return res.status(response.status).json({
-        error: errMsg,
-        code: /already exists|duplicate/i.test(errMsg)
-          ? "DUPLICATE_TEMPLATE_NAME"
-          : "META_TEMPLATE_CREATE_FAILED",
-        suggested_name: /already exists|duplicate/i.test(errMsg)
-          ? `${validation.normalized.name}_${Date.now().toString().slice(-6)}`
-          : undefined,
-        error_subcode: errSubcode,
-        error_data: errData,
-        validation,
-        meta_error: json.error,
-      });
-    }
-    await upsertLocalTemplateSubmission({
-      organization_id: orgId,
-      wa_account_id: account.id,
-      waba_id,
-      template_id: json.id || json.data?.id || null,
-      name: validation.normalized.name,
-      language: validation.normalized.language,
-      category: validation.normalized.category,
-      status: json.status || "PENDING",
-      components: validation.normalized.components,
-      normalized_payload: validation.normalized,
-      validation_issues: validation.issues,
-      risk_score: validation.riskScore,
-      meta_response: json,
-      submitted_by: req.user?.id || null,
-      submitted_at: new Date().toISOString(),
-    });
-    res.json({ success: true, data: json });
-  } catch (err: any) {
-    console.error("Create Template Error:", err);
-    res.status(500).json({ error: err.message });
-  }
 }
 
 export async function deleteTemplate(req: any, res: Response) {

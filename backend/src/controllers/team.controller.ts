@@ -388,6 +388,36 @@ export async function updateMyProfile(req: any, res: Response) {
     }
 }
 
+export async function updateMyStatus(req: any, res: Response) {
+    const orgId = req.organization_id;
+    const userId = req.user?.id;
+    const isOnline = Boolean(req.body?.is_online);
+
+    if (!userId || !orgId) {
+        return res.status(400).json({ error: 'User or organization context is missing' });
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('organization_members')
+            .update({
+                is_online: isOnline,
+                last_seen_at: new Date().toISOString()
+            })
+            .eq('user_id', userId)
+            .eq('organization_id', orgId)
+            .select('user_id, name, email, role, is_active, is_online, last_seen_at')
+            .maybeSingle();
+
+        if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Team profile not found' });
+
+        res.json(data);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || 'Failed to update team status' });
+    }
+}
+
 export async function getAgents(req: any, res: Response) {
     const organization_id = req.organization_id;
 
