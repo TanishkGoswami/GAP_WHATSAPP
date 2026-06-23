@@ -214,7 +214,7 @@ export function AuthProvider({ children }) {
     }
 
     useEffect(() => {
-        if (session?.access_token && ['agent', 'admin', 'owner'].includes(loginType)) {
+        if (session?.access_token && memberProfile && memberProfile.role !== 'owner') {
             let sent = false;
             const handleUnload = () => {
                 if (sent) return;
@@ -226,7 +226,7 @@ export function AuthProvider({ children }) {
                     headers: {
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`,
-                        'X-Auth-Portal': 'agent'
+                        'X-Auth-Portal': loginType || 'owner'
                     },
                     body: JSON.stringify({ is_online: false }),
                     keepalive: true
@@ -240,7 +240,7 @@ export function AuthProvider({ children }) {
                 window.removeEventListener('pagehide', handleUnload);
             };
         }
-    }, [session?.access_token, loginType]);
+    }, [session?.access_token, memberProfile, loginType]);
 
     const updateMyProfile = async ({ name, avatar_color }) => {
         const token = session?.access_token
@@ -288,14 +288,14 @@ export function AuthProvider({ children }) {
             }
         }),
         signOut: async () => {
-            if (session?.access_token && loginType === 'agent') {
+            if (session?.access_token && memberProfile && memberProfile.role !== 'owner') {
                 try {
                     await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/status`, {
                         method: 'PATCH',
                         headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${session.access_token}`,
-                            'X-Auth-Portal': 'agent'
+                            'X-Auth-Portal': loginType || 'owner'
                         },
                         body: JSON.stringify({ is_online: false })
                     });
