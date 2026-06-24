@@ -123,6 +123,7 @@ export default function LiveChat() {
     const [isChatFilterMenuOpen, setIsChatFilterMenuOpen] = useState(false)
     const [isAssignMenuOpen, setIsAssignMenuOpen] = useState(false)
     const [timeRemainingStr, setTimeRemainingStr] = useState('')
+    const [showTimeTooltip, setShowTimeTooltip] = useState(false)
     const [isUrgentTime, setIsUrgentTime] = useState(false)
     const [selectedChat, setSelectedChat] = useState(null)
     const selectedChatRef = useRef(null)
@@ -390,10 +391,13 @@ export default function LiveChat() {
             if (activeChatMenuId && !e.target.closest('[data-chat-row-menu]')) {
                 setActiveChatMenuId(null)
             }
+            if (showTimeTooltip && !e.target.closest('[data-time-tooltip]')) {
+                setShowTimeTooltip(false)
+            }
         }
         document.addEventListener('click', handleClickOutside)
         return () => document.removeEventListener('click', handleClickOutside)
-    }, [showBotMenu, isAssignMenuOpen, isChatFilterMenuOpen, isAutoAssignMenuOpen, activeMessageMenuId, activeChatMenuId])
+    }, [showBotMenu, isAssignMenuOpen, isChatFilterMenuOpen, isAutoAssignMenuOpen, activeMessageMenuId, activeChatMenuId, showTimeTooltip])
 
     const isNearBottom = () => {
         const el = messagesListRef.current
@@ -3184,54 +3188,104 @@ export default function LiveChat() {
                     ) : (
                         <>
                             {/* Chat Header */}
-                            <div data-tour="chat-header" className="z-10 flex h-16 shrink-0 items-center justify-between gap-2 border-b border-gray-200 bg-[#f0f2f5] px-3 sm:px-4">
-                                <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-                                    <button onClick={() => setSelectedChat(null)} className="lg:hidden p-1 -ml-1 text-gray-600">
-                                        <ChevronLeft className="h-6 w-6" />
+                            <div data-tour="chat-header" className="z-10 flex h-14 sm:h-16 shrink-0 items-center justify-between gap-1 sm:gap-2 border-b border-gray-200 bg-[#f0f2f5] px-1.5 sm:px-4">
+                                <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
+                                    <button onClick={() => setSelectedChat(null)} className="lg:hidden p-0.5 -ml-1 text-gray-600 hover:bg-gray-200 rounded-lg">
+                                        <ChevronLeft className="h-5 w-5 sm:h-6 sm:w-6" />
                                     </button>
                                     {selectedChat?.profilePhotoUrl ? (
                                         <img
                                             src={selectedChat.profilePhotoUrl}
                                             alt={selectedChat?.name || 'Contact'}
-                                            className="h-9 w-9 rounded-full object-cover"
+                                            className="h-8 w-8 sm:h-9 sm:w-9 rounded-full object-cover shrink-0"
                                             onError={() => clearBrokenProfilePhoto(selectedChat.contactId, selectedChat.profilePhotoUrl)}
                                         />
                                     ) : (
-                                        <div className="h-9 w-9 rounded-full bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center">
-                                            <User className="h-5 w-5" />
+                                        <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0">
+                                            <User className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                                         </div>
                                     )}
                                     <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <h3 className="truncate text-sm font-bold leading-tight text-gray-900">{selectedChat?.name}</h3>
+                                        <div className="flex items-center gap-1 sm:gap-2">
+                                            <h3 className="truncate text-xs sm:text-sm font-bold leading-tight text-gray-900">{selectedChat?.name}</h3>
                                             <button
                                                 type="button"
                                                 onClick={() => {
                                                     setFocusAliasOnOpen(true)
                                                     setIsContactDrawerOpen(true)
                                                 }}
-                                                className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                                                className="p-1 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
                                                 title="Set custom name"
                                             >
-                                                <Pencil className="h-4 w-4" />
+                                                <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                             </button>
                                         </div>
-                                        <p className="flex items-center gap-2 truncate text-xs text-gray-500">
-                                            <span>{formatPhoneForDisplay(selectedChat?.phone || selectedChat?.waId || '')}</span>
+                                        <p className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-gray-500">
+                                            <span className="truncate">{formatPhoneForDisplay(selectedChat?.phone || selectedChat?.waId || '')}</span>
                                             {timeRemainingStr && (
-                                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border leading-none tracking-wide uppercase transition-all duration-300 ${timeRemainingStr === 'Closed' || isCustomerWindowExpired || isUrgentTime
-                                                        ? 'bg-rose-50 text-rose-600 border-rose-200/50'
-                                                        : 'bg-emerald-50 text-emerald-600 border-emerald-200/50'
-                                                    }`}>
-                                                    <Clock className="h-3 w-3 shrink-0" />
-                                                    {timeRemainingStr}
-                                                </span>
+                                                <div className="relative inline-flex" data-time-tooltip>
+                                                    <button
+                                                        type="button"
+                                                        onMouseEnter={() => setShowTimeTooltip(true)}
+                                                        onMouseLeave={() => setShowTimeTooltip(false)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation()
+                                                            setShowTimeTooltip(prev => !prev)
+                                                        }}
+                                                        className={`inline-flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold border leading-none tracking-wide uppercase transition-all duration-300 select-none outline-none ${timeRemainingStr === 'Closed' || isCustomerWindowExpired || isUrgentTime
+                                                                ? 'bg-rose-50 text-rose-600 border-rose-200/50 hover:bg-rose-100/70'
+                                                                : 'bg-emerald-50 text-emerald-600 border-emerald-200/50 hover:bg-emerald-100/70'
+                                                            }`}
+                                                    >
+                                                        <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
+                                                        <span className="sm:hidden">
+                                                            {timeRemainingStr.includes('h') ? `${timeRemainingStr.split('h')[0].trim()}h left` : timeRemainingStr}
+                                                        </span>
+                                                        <span className="hidden sm:inline">
+                                                            {timeRemainingStr}
+                                                        </span>
+                                                    </button>
+
+                                                    {/* META Level Tooltip Popup */}
+                                                    {showTimeTooltip && (
+                                                        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2.5 z-[9999] w-72 rounded-2xl border border-white bg-white/95 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md transition-all duration-300 ease-out animate-in fade-in slide-in-from-top-2">
+                                                            {/* Tiny arrow pointing up */}
+                                                            <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 h-3 w-3 rotate-45 border-t border-l border-white bg-white/95" />
+                                                            <div className="flex items-start gap-3">
+                                                                <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${timeRemainingStr === 'Closed' || isCustomerWindowExpired || isUrgentTime ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
+                                                                    <Clock className="h-4.5 w-4.5" />
+                                                                </div>
+                                                                <div className="space-y-1 text-left">
+                                                                    <h4 className="text-xs font-bold text-gray-900 leading-tight">WhatsApp 24h Window</h4>
+                                                                    <p className={`text-[13px] font-bold tracking-tight ${timeRemainingStr === 'Closed' || isCustomerWindowExpired || isUrgentTime ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                                                        {(() => {
+                                                                            if (timeRemainingStr === 'Closed' || isCustomerWindowExpired) return 'Window Closed';
+                                                                            const latestAt = customerWindowState.latestCustomerMessageAt;
+                                                                            if (!latestAt) return 'No customer message yet';
+                                                                            const diff = CUSTOMER_SERVICE_WINDOW_MS - (Date.now() - latestAt);
+                                                                            if (diff <= 0) return 'Window Closed';
+                                                                            const totalMinutes = Math.floor(diff / (60 * 1000));
+                                                                            const hrs = Math.floor(totalMinutes / 60);
+                                                                            const mins = totalMinutes % 60;
+                                                                            return `${hrs} ${hrs === 1 ? 'Hour' : 'Hours'} ${mins} ${mins === 1 ? 'Minute' : 'Minutes'} Left`;
+                                                                        })()}
+                                                                    </p>
+                                                                    <p className="text-[11px] font-medium leading-relaxed text-gray-500 normal-case">
+                                                                        {timeRemainingStr === 'Closed' || isCustomerWindowExpired
+                                                                            ? "This user's 24-hour reply window has closed. You can only send template messages now."
+                                                                            : "After this time, you won't be able to send normal messages to this user. You can only reply with approved templates."}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             )}
                                         </p>
                                     </div>
                                 </div>
-                                <div className="flex shrink-0 items-center gap-1.5 sm:gap-2.5">
-                                    <TourButton compact />
+                                <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+                                    <TourButton compact className="hidden sm:block" />
                                     {/* Assign Agent Dropdown */}
                                     <div className="relative hidden sm:block" data-assign-menu>
                                         <button
@@ -3318,26 +3372,26 @@ export default function LiveChat() {
 
 
                                     {/* Bot Toggle Button */}
-                                    <div className="relative ml-2" data-bot-menu>
+                                    <div className="relative shrink-0" data-bot-menu>
                                         <button
                                             onClick={() => setShowBotMenu(!showBotMenu)}
-                                            className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold tracking-tight transition-all duration-150 outline-none ${effectiveBotEnabled
+                                            className={`inline-flex h-8 sm:h-10 items-center justify-center gap-1 sm:gap-2 rounded-xl border px-2 sm:px-3 text-[10px] sm:text-xs font-semibold tracking-tight transition-all duration-150 outline-none ${effectiveBotEnabled
                                                 ? 'border-neutral-900 bg-neutral-900 text-white shadow-sm hover:bg-neutral-800'
                                                 : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:text-gray-800'
                                                 }`}
                                             title={effectiveBotEnabled ? 'AI agent automation is active' : 'Enable AI agent'}
                                         >
                                             {effectiveBotEnabled ? (
-                                                <span className="relative flex h-1.5 w-1.5">
+                                                <span className="relative flex h-1.5 w-1.5 shrink-0">
                                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                                                     <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
                                                 </span>
                                             ) : (
-                                                <span className="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
+                                                <span className="h-1.5 w-1.5 rounded-full bg-gray-400 shrink-0"></span>
                                             )}
                                             <span>AI Agent</span>
                                             {effectiveBotEnabled && (
-                                                <span className="px-1.5 py-0.5 text-[9px] font-bold rounded uppercase bg-white/20 text-white">
+                                                <span className="px-1 py-0.5 text-[8px] sm:text-[9px] font-bold rounded uppercase bg-white/20 text-white shrink-0">
                                                     {botEnabled ? 'On' : 'Auto'}
                                                 </span>
                                             )}
@@ -3400,7 +3454,7 @@ export default function LiveChat() {
                                                         >
                                                             <Bot className="h-4 w-4 shrink-0" />
                                                             <div className="flex-1 min-w-0">
-                                                                <div className="font-medium truncate">Auto (Workspace Rules)</div>
+                                                                 <div className="font-medium truncate">Auto (Workspace Rules)</div>
                                                                 <div className="text-xs text-gray-500 truncate">Keyword/default/unknown rules</div>
                                                             </div>
                                                             {effectiveBotEnabled && !selectedBotId && (
@@ -3430,18 +3484,18 @@ export default function LiveChat() {
                                             setFocusAliasOnOpen(false)
                                             setIsContactDrawerOpen(true)
                                         }}
-                                        className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
+                                        className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100 shrink-0"
                                         title="Contact info"
                                     >
-                                        <Info className="h-5 w-5" />
+                                        <Info className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                                     </button>
                                     {isAdmin && (
-                                        <div className="relative" data-auto-assign-menu>
+                                        <div className="relative shrink-0" data-auto-assign-menu>
                                             <button
                                                 onClick={() => setIsAutoAssignMenuOpen(!isAutoAssignMenuOpen)}
-                                                className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
+                                                className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100"
                                             >
-                                                <MoreVertical className="h-5 w-5" />
+                                                <MoreVertical className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                                             </button>
                                             {isAutoAssignMenuOpen && (
                                                 <div className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl z-50">
@@ -3757,7 +3811,7 @@ export default function LiveChat() {
                             )}
 
                             {/* Input Area */}
-                            <div data-tour="chat-composer" className={`px-4 py-2.5 lg:px-5 ${isInternalNote ? 'border-t border-amber-200 bg-amber-50' : 'bg-[#f0f2f5]'}`}>
+                            <div data-tour="chat-composer" className={`px-2 py-1.5 sm:px-4 sm:py-2.5 lg:px-5 ${isInternalNote ? 'border-t border-amber-200 bg-amber-50' : 'bg-[#f0f2f5]'}`}>
                                 {isCustomerWindowExpired && !isInternalNote && (
                                     <div className="mx-auto mb-2 flex w-full max-w-[1180px] flex-col gap-3 rounded-lg bg-[#fff0d8] px-4 py-3 shadow-sm ring-1 ring-amber-100 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                                         <div className="flex min-w-0 items-start gap-3">
@@ -3778,17 +3832,17 @@ export default function LiveChat() {
                                         </button>
                                     </div>
                                 )}
-                                <form onSubmit={handleSendMessage} className={`mx-auto flex w-full max-w-[1180px] items-end gap-2 ${isCustomerWindowExpired && !isInternalNote ? 'justify-end' : ''}`}>
+                                <form onSubmit={handleSendMessage} className={`mx-auto flex w-full max-w-[1180px] items-end gap-1 sm:gap-2 ${isCustomerWindowExpired && !isInternalNote ? 'justify-end' : ''}`}>
                                     {!isCustomerWindowExpired && (
-                                        <div className="flex items-center gap-1 pb-0.5">
+                                        <div className="flex items-center gap-0.5 sm:gap-1 pb-0.5 shrink-0">
                                             <div className="relative">
                                                 <button
                                                     type="button"
                                                     onClick={() => setIsEmojiOpen(v => !v)}
-                                                    className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
+                                                    className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
                                                     title="Emoji"
                                                 >
-                                                    <Smile className="h-6 w-6" />
+                                                    <Smile className="h-5 w-5 sm:h-6 sm:w-6" />
                                                 </button>
 
                                                 {isEmojiOpen && (
@@ -3812,10 +3866,10 @@ export default function LiveChat() {
                                             <button
                                                 type="button"
                                                 onClick={() => fileInputRef.current?.click()}
-                                                className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
+                                                className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full text-[#54656f] transition-colors hover:bg-black/5 hover:text-[#111b21]"
                                                 title="Attach file"
                                             >
-                                                <Paperclip className="h-6 w-6" />
+                                                <Paperclip className="h-5 w-5 sm:h-6 sm:w-6" />
                                             </button>
                                         </div>
                                     )}
@@ -3886,7 +3940,7 @@ export default function LiveChat() {
                                                 onChange={handleTextChange}
                                                 placeholder={isInternalNote ? "Type an internal note..." : "Type a message..."}
                                                 rows={1}
-                                                className="max-h-42 min-h-[42px] w-full resize-none border-0 bg-transparent px-4 py-[11px] text-[15px] leading-5 text-[#111b21] outline-none placeholder:text-[#8696a0] focus:border-transparent focus:outline-none focus:ring-0"
+                                                className="max-h-42 min-h-[36px] sm:min-h-[42px] w-full resize-none border-0 bg-transparent px-2 sm:px-4 py-[7px] sm:py-[11px] text-sm sm:text-[15px] leading-5 text-[#111b21] outline-none placeholder:text-[#8696a0] focus:border-transparent focus:outline-none focus:ring-0"
                                                 onKeyDown={(e) => {
                                                     if (e.key === 'Enter' && !e.shiftKey) {
                                                         e.preventDefault();
@@ -3896,7 +3950,7 @@ export default function LiveChat() {
                                             />
                                         </div>
                                     )}
-                                    <div className="flex items-center gap-1 pb-0.5">
+                                    <div className="flex items-center gap-0.5 sm:gap-1 pb-0.5 shrink-0">
                                         <button
                                             type="button"
                                             onClick={() => {
@@ -3904,15 +3958,15 @@ export default function LiveChat() {
                                                 setIsAudioPanelOpen(false)
                                                 setPendingAudio(null)
                                             }}
-                                            className={`flex h-10 w-10 items-center justify-center rounded-full transition-all ${isInternalNote ? 'bg-amber-200 text-amber-800' : 'text-[#54656f] hover:bg-black/5 hover:text-[#111b21]'}`}
+                                            className={`flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full transition-all ${isInternalNote ? 'bg-amber-200 text-amber-800' : 'text-[#54656f] hover:bg-black/5 hover:text-[#111b21]'}`}
                                             title="Internal note"
                                         >
-                                            <FileText className="h-5 w-5" />
+                                            <FileText className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                                         </button>
 
                                         {(messageText.trim() || selectedFile || pendingAudio?.file) && (!isCustomerWindowExpired || isInternalNote) ? (
-                                            <button type="submit" className="flex h-10 w-10 scale-100 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm transition-all duration-200 hover:bg-[#029977] active:scale-95">
-                                                <WhatsAppSendIcon className="h-5 w-5" />
+                                            <button type="submit" className="flex h-8 w-8 sm:h-10 sm:w-10 scale-100 items-center justify-center rounded-full bg-[#00a884] text-white shadow-sm transition-all duration-200 hover:bg-[#029977] active:scale-95">
+                                                <WhatsAppSendIcon className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                                             </button>
                                         ) : (!isCustomerWindowExpired && (
                                             <button
@@ -3921,10 +3975,10 @@ export default function LiveChat() {
                                                     if (isInternalNote) return
                                                     setIsAudioPanelOpen(v => !v)
                                                 }}
-                                                className="flex h-10 w-10 items-center justify-center rounded-full text-[#54656f] transition-all hover:bg-black/5 hover:text-[#111b21]"
+                                                className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full text-[#54656f] transition-all hover:bg-black/5 hover:text-[#111b21]"
                                                 title="Audio message"
                                             >
-                                                <Mic className="h-5 w-5" />
+                                                <Mic className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                                             </button>
                                         ))}
                                     </div>

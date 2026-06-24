@@ -29,11 +29,11 @@ export default function TourButton({ className = '', compact = false }) {
                 disabled={isRunning}
                 className={clsx(
                     "inline-flex items-center justify-center gap-2 rounded-full border border-gray-200/80 bg-white/70 text-[14px] font-medium text-gray-800 shadow-[0_2px_8px_rgba(0,0,0,0.04)] backdrop-blur-md ring-1 ring-black/5 transition-all duration-300 hover:border-gray-300 hover:bg-white hover:shadow-[0_4px_12px_rgba(0,0,0,0.06)] hover:ring-black/10 active:scale-[0.98] disabled:opacity-50",
-                    compact ? "h-9 w-9 px-0" : "h-[48px] px-5"
+                    compact ? "h-8 w-8 sm:h-9 sm:w-9 px-0" : "h-[48px] px-5"
                 )}
                 aria-label="Show Tour"
             >
-                <HelpCircle className="h-[18px] w-[18px] text-gray-500 transition-colors group-hover:text-gray-800" />
+                <HelpCircle className="h-4 w-4 sm:h-[18px] sm:w-[18px] text-gray-500 transition-colors group-hover:text-gray-800" />
                 {!compact ? <span className="hidden sm:inline">Show Tour</span> : null}
             </button>
             {compact ? (
