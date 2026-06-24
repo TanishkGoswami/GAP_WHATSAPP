@@ -466,7 +466,6 @@ export default function Layout() {
                                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-gray-200">
                                     <img src="/logo.png" alt="GetAiPilot" className="h-5 w-5 object-contain" />
                                 </span>
-                                <span className="truncate text-sm font-semibold text-gray-900">GetAiPilot</span>
                             </div>
                         </div>
 
@@ -533,7 +532,7 @@ export default function Layout() {
                                     </div>
                                 </button>
                             )}
-                            <div className="relative">
+                            <div className="relative hidden md:block">
                                 <button
                                     type="button"
                                     onClick={() => setIsNightLight(prev => !prev)}
