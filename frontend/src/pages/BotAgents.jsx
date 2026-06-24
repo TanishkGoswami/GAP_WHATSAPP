@@ -361,27 +361,29 @@ export default function BotAgents() {
                             <h1 className="mt-3 text-2xl font-semibold leading-tight text-gray-950 sm:text-3xl">Bot Agents</h1>
                             <p className="mt-2 text-sm leading-6 text-gray-600">Aapke WhatsApp ke liye trained assistant. Pehle docs add karo, phir ek agent create karo, aur auto replies on kar do.</p>
                         </div>
-                        <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-                            <TourButton />
-                            <button onClick={refreshAll} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                        <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:items-center sm:w-auto">
+                            <span className="hidden sm:inline-block"><TourButton /></span>
+                            <button onClick={refreshAll} className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all active:scale-[0.98]">
                                 <Database size={18} weight="duotone" />
                                 Sync
                             </button>
-                            <button data-tour="agents-api" onClick={() => setShowApiSettings(true)} className={`inline-flex items-center justify-center gap-2 rounded-lg border px-3.5 py-2 text-sm font-semibold ${apiKeyConfigured ? 'border-green-200 bg-green-50 text-green-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                            <button data-tour="agents-api" onClick={() => setShowApiSettings(true)} className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition-all active:scale-[0.98] ${apiKeyConfigured ? 'border-green-200 bg-green-50 text-green-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
                                 <Key size={18} weight="duotone" />
                                 API Settings
                                 {apiKeyConfigured ? <Check size={16} weight="bold" /> : null}
                             </button>
-                            <button
-                                onClick={openCreate}
-                                data-tour="agents-create"
-                                disabled={isLimitReached}
-                                title={isLimitReached ? `AI agent limit reached for ${currentPlanName} plan (${agents.length}/${aiAgentLimit}). Upgrade your plan to add more.` : 'Click here to create your first agent'}
-                                className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition ${isLimitReached ? 'cursor-not-allowed bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}
-                            >
-                                <Plus size={18} weight="bold" />
-                                {hasAgents ? 'Create Agent' : 'Create first agent'}
-                            </button>
+                            <div className="col-span-2 sm:col-span-1">
+                                <button
+                                    onClick={openCreate}
+                                    data-tour="agents-create"
+                                    disabled={isLimitReached}
+                                    title={isLimitReached ? `AI agent limit reached for ${currentPlanName} plan (${agents.length}/${aiAgentLimit}). Upgrade your plan to add more.` : 'Click here to create your first agent'}
+                                    className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition-all active:scale-[0.98] ${isLimitReached ? 'cursor-not-allowed bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}
+                                >
+                                    <Plus size={18} weight="bold" />
+                                    {hasAgents ? 'Create Agent' : 'Create first agent'}
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -407,7 +409,7 @@ export default function BotAgents() {
                     </div>
                 ) : null}
 
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
                     <StatCard icon={Robot} label="Agents" value={stats.total} helper="Total trained bots" />
                     <StatCard icon={Check} label="Active" value={stats.active} helper="Replying now" />
                     <StatCard icon={ShieldCheck} label="Auto reply ready" value={stats.unknown} helper="New chats covered" />

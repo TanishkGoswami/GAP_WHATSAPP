@@ -316,8 +316,8 @@ export default function FlowBuilder() {
                         Create automated message flows for your WhatsApp automation
                     </p>
                 </div>
-                <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center sm:gap-3">
-                    <TourButton />
+                <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto sm:items-center sm:gap-3">
+                    <TourButton className="hidden sm:block" />
                     <button
                         onClick={() => setShowTemplatesModal(true)}
                         data-tour="flows-templates"
@@ -446,39 +446,39 @@ export default function FlowBuilder() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 overflow-x-auto pb-2.5 sm:pb-0 custom-scrollbar">
                 {/* Total Flows */}
-                <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                        <TrendingUp className="h-6 w-6" />
+                <div className="bg-white p-3 sm:p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-2 sm:gap-4 hover:shadow-md transition-shadow shrink-0 min-w-[120px] sm:min-w-0 flex-1">
+                    <div className="h-9 w-9 sm:h-12 sm:w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+                        <TrendingUp className="h-4.5 w-4.5 sm:h-6 sm:w-6" />
                     </div>
-                    <div>
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Flows</p>
-                        <p className="text-2xl font-bold text-gray-900 mt-0.5">{flows.length}</p>
+                    <div className="min-w-0">
+                        <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider truncate">Total Flows</p>
+                        <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-0.5 truncate">{flows.length}</p>
                     </div>
                 </div>
 
                 {/* Active Flows */}
-                <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="h-12 w-12 rounded-xl bg-green-50 flex items-center justify-center text-green-600 shrink-0">
-                        <Play className="h-5 w-5 fill-green-600 text-green-600" />
+                <div className="bg-white p-3 sm:p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-2 sm:gap-4 hover:shadow-md transition-shadow shrink-0 min-w-[120px] sm:min-w-0 flex-1">
+                    <div className="h-9 w-9 sm:h-12 sm:w-12 rounded-xl bg-green-50 flex items-center justify-center text-green-600 shrink-0">
+                        <Play className="h-4.5 w-4.5 sm:h-5 sm:w-5 fill-green-600 text-green-600" />
                     </div>
-                    <div>
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Active Flows</p>
-                        <p className="text-2xl font-bold text-gray-900 mt-0.5">
+                    <div className="min-w-0">
+                        <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider truncate">Active Flows</p>
+                        <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-0.5 truncate">
                             {flows.filter(f => f.status === 'active').length}
                         </p>
                     </div>
                 </div>
 
                 {/* Messages Sent */}
-                <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
-                    <div className="h-12 w-12 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0">
-                        <Send className="h-5 w-5 text-purple-600 fill-purple-600/10" />
+                <div className="bg-white p-3 sm:p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-2 sm:gap-4 hover:shadow-md transition-shadow shrink-0 min-w-[120px] sm:min-w-0 flex-1">
+                    <div className="h-9 w-9 sm:h-12 sm:w-12 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0">
+                        <Send className="h-4.5 w-4.5 sm:h-5 sm:w-5 text-purple-600 fill-purple-600/10" />
                     </div>
-                    <div>
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Messages Sent</p>
-                        <p className="text-2xl font-bold text-gray-900 mt-0.5">
+                    <div className="min-w-0">
+                        <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider truncate">Messages Sent</p>
+                        <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-0.5 truncate">
                             {flows.reduce((sum, f) => sum + (f.messagesSent || 0), 0).toLocaleString()}
                         </p>
                     </div>

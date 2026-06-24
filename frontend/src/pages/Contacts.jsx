@@ -606,12 +606,16 @@ export default function Contacts() {
         <div className="min-h-full bg-gray-50/70">
             <div className="space-y-5 px-4 py-5 lg:px-7">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-950">Contacts</h1>
-                        <p className="mt-1 text-sm text-gray-500">Manage customer profiles, account ownership, and tags.</p>
+                    <div className="flex items-start justify-between w-full lg:w-auto">
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-950 flex items-center gap-2">
+                                Contacts
+                            </h1>
+                            <p className="mt-1 text-sm text-gray-500">Manage customer profiles, account ownership, and tags.</p>
+                        </div>
                     </div>
-                    <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center">
-                        <TourButton />
+                    <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:items-center sm:w-auto">
+                        <span className="hidden sm:inline-block"><TourButton /></span>
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -619,47 +623,49 @@ export default function Contacts() {
                             className="hidden"
                             onChange={handleImportCsv}
                         />
+                        <div className="col-span-2 sm:col-span-1">
+                            <button
+                                type="button"
+                                onClick={openNewContact}
+                                data-tour="contacts-add"
+                                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-2.5 sm:py-2 text-sm font-bold text-white shadow-sm shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-[0.98]"
+                            >
+                                <Plus className="h-4.5 w-4.5 sm:h-4 sm:w-4" />
+                                Add Contact
+                            </button>
+                        </div>
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
                             data-tour="contacts-import"
-                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 sm:py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-all active:scale-[0.98]"
                         >
-                            <Upload className="h-4 w-4" />
+                            <Upload className="h-4.5 w-4.5 sm:h-4 sm:w-4 text-gray-500" />
                             Import CSV
                         </button>
                         <button
                             type="button"
                             onClick={handleExportExcel}
-                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 sm:py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-all active:scale-[0.98]"
                         >
-                            <Download className="h-4 w-4" />
+                            <Download className="h-4.5 w-4.5 sm:h-4 sm:w-4 text-gray-505" />
                             Export Excel
-                        </button>
-                        <button
-                            type="button"
-                            onClick={openNewContact}
-                            data-tour="contacts-add"
-                            className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm shadow-indigo-100 hover:bg-indigo-700"
-                        >
-                            <Plus className="h-4 w-4" />
-                            Add Contact
                         </button>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:grid-cols-4">
                     {[
                         { label: 'Total contacts', value: stats.total, icon: UserRound },
                         { label: 'With account', value: stats.assigned, icon: Building2 },
                         { label: 'Tagged', value: stats.withTags, icon: Tag },
                     ].map(item => (
-                        <div key={item.label} className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <div className="text-xs font-medium text-gray-500">{item.label}</div>
-                                <item.icon className="h-4 w-4 text-gray-400" />
+                        <div key={item.label} className="rounded-xl border border-gray-200 bg-white p-2.5 sm:px-4 sm:py-3 shadow-sm flex flex-col justify-between">
+                            <div className="flex items-center justify-between gap-1">
+                                <div className="text-[10px] sm:text-xs font-medium text-gray-500 truncate leading-tight">{item.label}</div>
+                                <item.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 shrink-0" />
                             </div>
-                            <div className="mt-2 text-2xl font-bold text-gray-950">{item.value}</div>
+                            <div className="mt-1.5 sm:mt-2 text-xl sm:text-2xl font-bold text-gray-950 leading-none">{item.value}</div>
                         </div>
                     ))}
                 </div>
@@ -677,23 +683,25 @@ export default function Contacts() {
                     </div>
                 ) : null}
 
-                <div data-tour="contacts-filters" className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <div className="grid grid-cols-1 gap-3 xl:flex xl:flex-row">
+                <div data-tour="contacts-filters" className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 shadow-sm">
+                    <div className="flex flex-col gap-2.5 xl:flex-row xl:gap-3">
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
                             <input
                                 value={searchTerm}
                                 onChange={(event) => setSearchTerm(event.target.value)}
-                                placeholder="Search name, phone, tag, account, invoice, address, amount..."
-                                className="w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/20"
+                                placeholder="Search name, phone, tag..."
+                                className="w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/20"
                             />
                         </div>
-                        <CustomSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} className="xl:w-44" />
-                        <CustomSelect value={tagFilter} onChange={setTagFilter} options={tagOptions} className="xl:w-40" />
-                        <button type="button" onClick={resetFilters} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
-                            <Filter className="h-4 w-4" />
-                            Reset
-                        </button>
+                        <div className="grid grid-cols-2 gap-2 xl:flex xl:flex-row xl:gap-3">
+                            <CustomSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} className="xl:w-44" />
+                            <CustomSelect value={tagFilter} onChange={setTagFilter} options={tagOptions} className="xl:w-40" />
+                            <button type="button" onClick={resetFilters} className="col-span-2 xl:col-span-1 inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-3.5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all active:scale-[0.98]">
+                                <Filter className="h-4 w-4" />
+                                Reset
+                            </button>
+                        </div>
                     </div>
                 </div>
 
