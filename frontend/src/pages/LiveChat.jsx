@@ -122,6 +122,8 @@ export default function LiveChat() {
     const [chatFilter, setChatFilter] = useState('all')
     const [isChatFilterMenuOpen, setIsChatFilterMenuOpen] = useState(false)
     const [isAssignMenuOpen, setIsAssignMenuOpen] = useState(false)
+    const [timeRemainingStr, setTimeRemainingStr] = useState('')
+    const [isUrgentTime, setIsUrgentTime] = useState(false)
     const [selectedChat, setSelectedChat] = useState(null)
     const selectedChatRef = useRef(null)
     const [messageText, setMessageText] = useState('')
@@ -143,7 +145,12 @@ export default function LiveChat() {
     const lastSelectedChatIdRef = useRef(null)
     const lastMessageIdRef = useRef(null)
     const isNearBottomRef = useRef(true)
+    const chatMessagesCacheRef = useRef({})
+    const chatHasMoreCacheRef = useRef({})
+    const lastOpenTimeRef = useRef(0)
+    const loadedMessagesChatIdRef = useRef(null)
 
+    const [isThreadLoading, setIsThreadLoading] = useState(false)
     const [hasMoreMessages, setHasMoreMessages] = useState(true)
     const [isLoadingOlder, setIsLoadingOlder] = useState(false)
     const [newMessagesPending, setNewMessagesPending] = useState(0)
@@ -221,6 +228,13 @@ export default function LiveChat() {
             document.body.style.userSelect = ''
         }
     }, [isResizing])
+
+    // Keep memory cache in sync with messages state changes, verifying loadedMessagesChatIdRef match
+    useEffect(() => {
+        if (selectedChat?.id && messages.length > 0 && loadedMessagesChatIdRef.current === selectedChat.id) {
+            chatMessagesCacheRef.current[selectedChat.id] = messages
+        }
+    }, [messages, selectedChat?.id])
 
     const fileInputRef = useRef(null)
     const [selectedFile, setSelectedFile] = useState(null)
@@ -332,23 +346,21 @@ export default function LiveChat() {
         if (isNewChat) {
             isNearBottomRef.current = true;
             setNewMessagesPending(0);
-            setTimeout(() => {
-                scrollToBottom('auto');
-            }, 50);
-            setTimeout(() => {
-                scrollToBottom('auto');
-            }, 150);
+            // Initial load scroll positioning is handled inside fetchMessages to prevent jumps.
             return;
         }
 
         if (isNewMessageAdded) {
             const isOutbound = lastMsg?.sender === 'agent';
             if (isOutbound || isNearBottomRef.current) {
+                // If the user just opened this chat (within last 2.5s), use instant scroll ('auto')
+                // to prevent background updates from causing visible smooth-scroll jumps.
+                const behavior = (Date.now() - lastOpenTimeRef.current < 2500) ? 'auto' : 'smooth';
                 setTimeout(() => {
-                    scrollToBottom('smooth');
+                    scrollToBottom(behavior);
                 }, 50);
                 setTimeout(() => {
-                    scrollToBottom('smooth');
+                    scrollToBottom(behavior);
                 }, 150);
             } else {
                 setNewMessagesPending(n => n + 1);
@@ -1012,11 +1024,12 @@ export default function LiveChat() {
 
     const fetchMessages = async (chat, opts = {}) => {
         if (!chat || !session?.access_token) return
+        const targetChatId = chat.id
         const requestKey = `${chat.id}:${opts.mode || 'replace'}:${opts.before || 'latest'}`
         if (fetchMessagesInFlightRef.current.has(requestKey)) return
         fetchMessagesInFlightRef.current.add(requestKey)
         try {
-            const limit = opts.limit || 50
+            const limit = opts.limit || 40
             const before = opts.before || null
             const url = new URL(`${API_BASE}/messages/${chat.id}`)
             url.searchParams.set('limit', String(limit))
@@ -1028,17 +1041,38 @@ export default function LiveChat() {
             if (!res.ok) {
                 const body = await res.text().catch(() => '')
                 console.error('Failed to fetch messages:', res.status, body)
+                if (selectedChatRef.current?.id === targetChatId) {
+                    setIsThreadLoading(false)
+                }
                 return
             }
 
             const data = await res.json().catch(() => [])
             const formatted = (Array.isArray(data) ? data : []).map(formatMessageFromDb).filter(Boolean)
 
+            const hasMore = formatted.length >= limit
+
+            // If the user has switched chats, only update background cache, discard React state updates
+            if (selectedChatRef.current?.id !== targetChatId) {
+                const currentCache = chatMessagesCacheRef.current[targetChatId] || []
+                chatMessagesCacheRef.current[targetChatId] = mergeMessages(currentCache, formatted)
+                chatHasMoreCacheRef.current[targetChatId] = hasMore
+                return
+            }
+
+            setHasMoreMessages(hasMore)
+            chatHasMoreCacheRef.current[chat.id] = hasMore
+
             if (opts.mode === 'prepend') {
                 const el = messagesListRef.current
                 const prevScrollHeight = el ? el.scrollHeight : 0
 
-                setMessages(prev => mergeMessages(prev, formatted))
+                setMessages(prev => {
+                    const merged = mergeMessages(prev, formatted)
+                    loadedMessagesChatIdRef.current = chat.id
+                    chatMessagesCacheRef.current[chat.id] = merged
+                    return merged
+                })
 
                 requestAnimationFrame(() => {
                     if (!el) return
@@ -1047,16 +1081,32 @@ export default function LiveChat() {
                     el.scrollTop = el.scrollTop + delta
                 })
             } else {
-                setMessages(prev => mergeMessages(prev, formatted, { replace: !opts.silent }))
+                setMessages(prev => {
+                    const merged = mergeMessages(prev, formatted, { replace: !opts.silent })
+                    loadedMessagesChatIdRef.current = chat.id
+                    chatMessagesCacheRef.current[chat.id] = merged
+                    return merged
+                })
+
                 if (!opts.silent) {
                     setNewMessagesPending(0)
                     setShowJumpToLatest(false)
+                    requestAnimationFrame(() => {
+                        const el = messagesListRef.current
+                        if (el) {
+                            el.scrollTop = el.scrollHeight
+                        }
+                        setIsThreadLoading(false)
+                    })
+                } else {
+                    setIsThreadLoading(false)
                 }
             }
-
-            setHasMoreMessages(formatted.length >= limit)
         } catch (e) {
             console.error('Failed to fetch messages', e)
+            if (selectedChatRef.current?.id === targetChatId) {
+                setIsThreadLoading(false)
+            }
         } finally {
             fetchMessagesInFlightRef.current.delete(requestKey)
             if (!opts.mode || opts.mode === 'replace') lastActiveSyncRef.current = Date.now()
@@ -1127,15 +1177,42 @@ export default function LiveChat() {
             setNewMessagesPending(0);
             setShowJumpToLatest(false);
             setMessages([]);
+            loadedMessagesChatIdRef.current = null;
             setHiddenMessageKeys(new Set());
             return;
         }
 
-        setMessages([]);
+        lastOpenTimeRef.current = Date.now()
         setHiddenMessageKeys(new Set());
         setNewMessagesPending(0)
         setShowJumpToLatest(false)
-        fetchMessages(selectedChat, { limit: 50 })
+
+        const cached = chatMessagesCacheRef.current[selectedChat.id]
+        if (cached && Array.isArray(cached) && cached.length > 0) {
+            // Load cached messages instantly
+            setMessages(cached)
+            loadedMessagesChatIdRef.current = selectedChat.id
+            setHasMoreMessages(chatHasMoreCacheRef.current[selectedChat.id] ?? false)
+            setIsThreadLoading(false)
+
+            // Instantly position scrollbar to bottom
+            requestAnimationFrame(() => {
+                const el = messagesListRef.current
+                if (el) {
+                    el.scrollTop = el.scrollHeight
+                }
+            })
+
+            // Silent background update to keep cache fresh
+            fetchMessages(selectedChat, { limit: 40, silent: true })
+        } else {
+            // Fetch from scratch
+            setIsThreadLoading(true)
+            setMessages([])
+            loadedMessagesChatIdRef.current = null
+            fetchMessages(selectedChat, { limit: 40 })
+        }
+
         fetchConversationBotStatus(selectedChat.id) // Fetch bot status for this conversation
 
         // Optimistically clear unread badge immediately when opening a chat.
@@ -2487,6 +2564,7 @@ export default function LiveChat() {
             setChats(prev => prev.map(item => idsEqual(item.id, chat.id) ? { ...item, lastMessage: 'No messages', unread: 0, userHasRead: true } : item))
             if (selectedChat?.id && idsEqual(selectedChat.id, chat.id)) {
                 setMessages([])
+                loadedMessagesChatIdRef.current = null
             }
         } catch (err) {
             console.error('Failed to clear chat', err)
@@ -2514,6 +2592,7 @@ export default function LiveChat() {
             if (selectedChat?.id && idsEqual(selectedChat.id, chat.id)) {
                 setSelectedChat(null)
                 setMessages([])
+                loadedMessagesChatIdRef.current = null
             }
         } catch (err) {
             console.error('Failed to delete chat', err)
@@ -2689,6 +2768,54 @@ export default function LiveChat() {
         })
     }
 
+    useEffect(() => {
+        if (!selectedChat) {
+            setTimeRemainingStr('')
+            setIsUrgentTime(false)
+            return
+        }
+
+        const updateTimer = () => {
+            if (isCustomerWindowExpired) {
+                setTimeRemainingStr('Closed')
+                setIsUrgentTime(true)
+                return
+            }
+
+            const latestAt = customerWindowState.latestCustomerMessageAt
+            if (!latestAt) {
+                setTimeRemainingStr('')
+                setIsUrgentTime(false)
+                return
+            }
+
+            const diff = CUSTOMER_SERVICE_WINDOW_MS - (Date.now() - latestAt)
+            if (diff <= 0) {
+                setTimeRemainingStr('Closed')
+                setIsUrgentTime(true)
+                return
+            }
+
+            // Mark as urgent if <= 12 hours remaining
+            const urgentLimit = 12 * 60 * 60 * 1000
+            setIsUrgentTime(diff <= urgentLimit)
+
+            const totalMinutes = Math.floor(diff / (60 * 1000))
+            const hours = Math.floor(totalMinutes / 60)
+            const minutes = totalMinutes % 60
+
+            if (hours > 0) {
+                setTimeRemainingStr(`${hours}h ${minutes}m left`)
+            } else {
+                setTimeRemainingStr(`${minutes}m left`)
+            }
+        }
+
+        updateTimer()
+        const interval = setInterval(updateTimer, 15000)
+        return () => clearInterval(interval)
+    }, [selectedChat, customerWindowState, isCustomerWindowExpired])
+
     const openTemplateSender = () => {
         if (!selectedChat) return
         navigate('/broadcast', {
@@ -2774,50 +2901,15 @@ export default function LiveChat() {
                                 className="w-full rounded-full border-0 bg-gray-100 py-2.5 pl-11 pr-4 text-sm text-gray-700 placeholder:text-gray-500 outline-none transition-colors focus:bg-white focus:ring-1 focus:ring-green-500/40"
                             />
                         </div>
-                        <div data-tour="chat-filters" className="relative mt-2 flex items-center gap-2 overflow-x-auto pb-1" data-chat-filter-menu>
-                            {[
-                                { id: 'all', label: 'All' },
-                                { id: 'read', label: 'Read' },
-                                { id: 'unread', label: 'Unread' },
-                            ].map(filter => {
-                                const active = chatFilter === filter.id
-                                return (
-                                    <button
-                                        key={filter.id}
-                                        type="button"
-                                        onClick={() => {
-                                            setChatFilter(filter.id)
-                                            setIsChatFilterMenuOpen(false)
-                                        }}
-                                        className={`h-8 shrink-0 rounded-full border px-3 text-sm font-medium shadow-sm transition-colors ${active
-                                            ? 'border-green-500 bg-green-100 text-green-800'
-                                            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                                            }`}
-                                    >
-                                        {filter.label} {chatFilterCounts[filter.id] > 0 ? chatFilterCounts[filter.id] : ''}
-                                    </button>
-                                )
-                            })}
-                            <button
-                                type="button"
-                                onClick={() => setIsChatFilterMenuOpen(v => !v)}
-                                className={`flex h-8 w-10 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors ${['favorites', 'archived', 'assigned', 'unassigned'].includes(chatFilter)
-                                    ? 'border-green-500 bg-green-100 text-green-800'
-                                    : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                                    }`}
-                                title="More filters"
-                            >
-                                <ChevronDown className="h-4 w-4" />
-                            </button>
-
-                            {isChatFilterMenuOpen && (
-                                <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1.5 shadow-xl">
-                                    {[
-                                        { id: 'favorites', label: 'Favourites' },
-                                        { id: 'archived', label: 'Archived' },
-                                        { id: 'assigned', label: 'Assigned' },
-                                        { id: 'unassigned', label: 'Unassigned' },
-                                    ].map(filter => (
+                        <div className="relative mt-2 flex items-center justify-between gap-1.5" data-chat-filter-menu>
+                            <div data-tour="chat-filters" className="flex-1 flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar pr-8">
+                                {[
+                                    { id: 'all', label: 'All' },
+                                    { id: 'read', label: 'Read' },
+                                    { id: 'unread', label: 'Unread' },
+                                ].map(filter => {
+                                    const active = chatFilter === filter.id
+                                    return (
                                         <button
                                             key={filter.id}
                                             type="button"
@@ -2825,17 +2917,65 @@ export default function LiveChat() {
                                                 setChatFilter(filter.id)
                                                 setIsChatFilterMenuOpen(false)
                                             }}
-                                            className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${chatFilter === filter.id
-                                                ? 'bg-green-50 text-green-800'
-                                                : 'text-gray-700 hover:bg-gray-50'
+                                            className={`h-7 shrink-0 rounded-full border px-3 text-xs font-semibold transition-all duration-150 ${active
+                                                ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-sm'
+                                                : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                                                 }`}
                                         >
-                                            <span>{filter.label}</span>
-                                            <span className="text-xs text-gray-500">{chatFilterCounts[filter.id]}</span>
+                                            {filter.label} {chatFilterCounts[filter.id] > 0 ? chatFilterCounts[filter.id] : ''}
                                         </button>
-                                    ))}
-                                </div>
-                            )}
+                                    )
+                                })}
+                            </div>
+
+                            {/* Apple/Meta style more filters button and dropdown */}
+                            <div className="relative shrink-0 pb-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsChatFilterMenuOpen(v => !v)}
+                                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border shadow-sm transition-all duration-120 ${['favorites', 'archived', 'assigned', 'unassigned'].includes(chatFilter)
+                                        ? 'border-emerald-500 bg-emerald-50 text-emerald-800'
+                                        : 'border-gray-200 bg-white text-gray-500 hover:bg-gray-100 hover:text-gray-800 hover:scale-105 active:scale-95'
+                                        }`}
+                                    title="More filters"
+                                >
+                                    <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${isChatFilterMenuOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {isChatFilterMenuOpen && (
+                                    <div className="apple-select-dropdown absolute right-0 top-8 w-44 z-50">
+                                        {[
+                                            { id: 'favorites', label: 'Favourites' },
+                                            { id: 'archived', label: 'Archived' },
+                                            { id: 'assigned', label: 'Assigned' },
+                                            { id: 'unassigned', label: 'Unassigned' },
+                                        ].map(filter => {
+                                            const active = chatFilter === filter.id
+                                            return (
+                                                <button
+                                                    key={filter.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setChatFilter(filter.id)
+                                                        setIsChatFilterMenuOpen(false)
+                                                    }}
+                                                    className={`apple-select-option ${active ? 'apple-select-option-selected' : ''}`}
+                                                >
+                                                    <span>{filter.label}</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {chatFilterCounts[filter.id] > 0 && (
+                                                            <span className="text-xs text-gray-400 bg-gray-100/50 px-1.5 py-0.5 rounded-full font-normal">
+                                                                {chatFilterCounts[filter.id]}
+                                                            </span>
+                                                        )}
+                                                        {active && <Check className="h-3.5 w-3.5 text-emerald-500" />}
+                                                    </div>
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -3076,8 +3216,17 @@ export default function LiveChat() {
                                                 <Pencil className="h-4 w-4" />
                                             </button>
                                         </div>
-                                        <p className="flex items-center gap-1 truncate text-xs text-gray-500">
-                                            {formatPhoneForDisplay(selectedChat?.phone || selectedChat?.waId || '')}
+                                        <p className="flex items-center gap-2 truncate text-xs text-gray-500">
+                                            <span>{formatPhoneForDisplay(selectedChat?.phone || selectedChat?.waId || '')}</span>
+                                            {timeRemainingStr && (
+                                                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border leading-none tracking-wide uppercase transition-all duration-300 ${timeRemainingStr === 'Closed' || isCustomerWindowExpired || isUrgentTime
+                                                        ? 'bg-rose-50 text-rose-600 border-rose-200/50'
+                                                        : 'bg-emerald-50 text-emerald-600 border-emerald-200/50'
+                                                    }`}>
+                                                    <Clock className="h-3 w-3 shrink-0" />
+                                                    {timeRemainingStr}
+                                                </span>
+                                            )}
                                         </p>
                                     </div>
                                 </div>
@@ -3326,67 +3475,100 @@ export default function LiveChat() {
                             </div>
 
                             {/* Messages Display */}
-                            <div
-                                ref={messagesListRef}
-                                className="wa-chat-scroll flex-1 overflow-y-auto bg-[#efeae2] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat bg-[length:410px] px-5 py-3 sm:px-8 lg:px-14 xl:px-20 2xl:px-28"
-                                onScroll={() => {
-                                    const el = messagesListRef.current
-                                    if (!el) return
-                                    if (activeMessageMenuId) closeMessageMenu()
-                                    if (el.scrollTop < 80) loadOlder()
-                                    const nearBottom = isNearBottom()
-                                    isNearBottomRef.current = nearBottom
-                                    setShowJumpToLatest(!nearBottom)
-                                    if (nearBottom) setNewMessagesPending(0)
-                                }}
-                            >
-                                {isLoadingOlder && (
-                                    <div className="text-center text-xs text-gray-500 mb-3">Loading older…</div>
-                                )}
+                            <div className="relative flex-1 flex flex-col overflow-hidden bg-[#efeae2] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat bg-[length:410px]">
+                                <div
+                                    ref={messagesListRef}
+                                    className={`wa-chat-scroll flex-1 overflow-y-auto px-5 py-3 sm:px-8 lg:px-14 xl:px-20 2xl:px-28 transition-opacity duration-200 ${isThreadLoading ? 'opacity-0' : 'opacity-100'}`}
+                                    onScroll={() => {
+                                        const el = messagesListRef.current
+                                        if (!el) return
+                                        if (activeMessageMenuId) closeMessageMenu()
+                                        if (el.scrollTop === 0 && hasMoreMessages && !isLoadingOlder) {
+                                            loadOlder()
+                                        }
+                                        const nearBottom = isNearBottom()
+                                        isNearBottomRef.current = nearBottom
+                                        setShowJumpToLatest(!nearBottom)
+                                        if (nearBottom) setNewMessagesPending(0)
+                                    }}
+                                >
+                                    {hasMoreMessages && (
+                                        <div className="flex justify-center my-4">
+                                            <button
+                                                type="button"
+                                                onClick={loadOlder}
+                                                disabled={isLoadingOlder}
+                                                className="px-5 py-1.5 rounded-full bg-white/95 backdrop-blur text-indigo-600 hover:text-indigo-700 hover:bg-white text-xs font-semibold shadow-sm border border-gray-200/50 hover:scale-105 active:scale-95 disabled:opacity-55 transition-all flex items-center gap-2"
+                                            >
+                                                {isLoadingOlder ? (
+                                                    <>
+                                                        <svg className="animate-spin h-3 w-3 text-indigo-600" viewBox="0 0 24 24" fill="none">
+                                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                                        </svg>
+                                                        Loading older...
+                                                    </>
+                                                ) : (
+                                                    'Load older messages'
+                                                )}
+                                            </button>
+                                        </div>
+                                    )}
 
-                                {renderedThread.map((row) => (
-                                    row.kind === 'separator' ? (
-                                        <div key={row.key} className="flex justify-center my-3">
-                                            <div className="px-3 py-1 rounded-full bg-white/70 text-gray-600 text-xs shadow-sm border border-gray-100">
-                                                {row.label}
+                                    {renderedThread.map((row) => (
+                                        row.kind === 'separator' ? (
+                                            <div key={row.key} className="flex justify-center my-3">
+                                                <div className="px-3 py-1 rounded-full bg-white/70 text-gray-600 text-xs shadow-sm border border-gray-100">
+                                                    {row.label}
+                                                </div>
                                             </div>
-                                        </div>
-                                    ) : (
-                                        <div key={row.key} className={`flex ${row.msg.sender === 'user' ? 'justify-start' : 'justify-end'} ${row.grouped ? 'mt-0.5' : 'mt-2'} ${Array.isArray(row.msg.reactions) && row.msg.reactions.some(r => r?.emoji) ? 'mb-3' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                                            {row.msg.type === 'note' ? (
-                                                <div className="w-full flex justify-center my-2">
-                                                    <div className="bg-amber-50 border border-amber-100 text-amber-800 text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
-                                                        <AlertCircle className="h-3.5 w-3.5" />
-                                                        <span className="font-bold">{row.msg.agentName}:</span>
-                                                        {row.msg.text.replace('Internal Note: ', '')}
+                                        ) : (
+                                            <div key={row.key} className={`flex ${row.msg.sender === 'user' ? 'justify-start' : 'justify-end'} ${row.grouped ? 'mt-0.5' : 'mt-2'} ${Array.isArray(row.msg.reactions) && row.msg.reactions.some(r => r?.emoji) ? 'mb-3' : ''} animate-in fade-in slide-in-from-bottom-2 duration-300 message-row-virtualized`}>
+                                                {row.msg.type === 'note' ? (
+                                                    <div className="w-full flex justify-center my-2">
+                                                        <div className="bg-amber-50 border border-amber-100 text-amber-800 text-xs px-3 py-1.5 rounded-full flex items-center gap-2 shadow-sm">
+                                                            <AlertCircle className="h-3.5 w-3.5" />
+                                                            <span className="font-bold">{row.msg.agentName}:</span>
+                                                            {row.msg.text.replace('Internal Note: ', '')}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            ) : (
-                                                <div className={`group relative w-fit max-w-[86%] sm:max-w-[76%] lg:max-w-[64%] xl:max-w-[58%] ${row.msg.content?.template ? 'bg-transparent p-0 shadow-none border-0' : `wa-bubble px-2.5 py-1.5 text-[#111b21] ${row.msg.sender === 'user'
-                                                    ? 'wa-bubble-in'
-                                                    : 'wa-bubble-out'
-                                                    }`
-                                                    }`}>
-                                                    <div className={`absolute top-1 ${row.msg.sender === 'user' ? '-right-9' : '-left-9'} opacity-0 transition-opacity group-hover:opacity-100 ${activeMessageMenuId === row.msg.id ? 'opacity-100' : ''}`} data-message-menu>
-                                                        <button
-                                                            type="button"
-                                                            onClick={(e) => openMessageMenu(e, row.msg)}
-                                                            className={`flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-gray-600 shadow-sm ring-1 transition hover:text-gray-900 ${activeMessageMenuId === row.msg.id ? 'ring-gray-900' : 'ring-gray-200'}`}
-                                                            title="Message actions"
-                                                        >
-                                                            <ChevronDown className="h-4 w-4" />
-                                                        </button>
+                                                ) : (
+                                                    <div className={`group relative w-fit max-w-[86%] sm:max-w-[76%] lg:max-w-[64%] xl:max-w-[58%] ${row.msg.content?.template ? 'bg-transparent p-0 shadow-none border-0' : `wa-bubble px-2.5 py-1.5 text-[#111b21] ${row.msg.sender === 'user'
+                                                        ? 'wa-bubble-in'
+                                                        : 'wa-bubble-out'
+                                                        }`
+                                                        }`}>
+                                                        <div className={`absolute top-1 ${row.msg.sender === 'user' ? '-right-9' : '-left-9'} opacity-0 transition-opacity group-hover:opacity-100 ${activeMessageMenuId === row.msg.id ? 'opacity-100' : ''}`} data-message-menu>
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => openMessageMenu(e, row.msg)}
+                                                                className={`flex h-7 w-7 items-center justify-center rounded-full bg-white/95 text-gray-600 shadow-sm ring-1 transition hover:text-gray-900 ${activeMessageMenuId === row.msg.id ? 'ring-gray-900' : 'ring-gray-200'}`}
+                                                                title="Message actions"
+                                                            >
+                                                                <ChevronDown className="h-4 w-4" />
+                                                            </button>
+                                                        </div>
+                                                        {renderMessageSourceBadge(row.msg)}
+                                                        {renderMessageBody(row.msg)}
+                                                        {renderReactionsPill(row.msg)}
+                                                        {!row.msg.content?.template && renderMessageMeta(row.msg)}
                                                     </div>
-                                                    {renderMessageSourceBadge(row.msg)}
-                                                    {renderMessageBody(row.msg)}
-                                                    {renderReactionsPill(row.msg)}
-                                                    {!row.msg.content?.template && renderMessageMeta(row.msg)}
-                                                </div>
-                                            )}
+                                                )}
+                                            </div>
+                                        )
+                                    ))}
+                                    <div ref={messagesEndRef} />
+                                </div>
+                                {isThreadLoading && (
+                                    <div className="absolute inset-0 flex items-center justify-center bg-[#efeae2] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat bg-[length:410px] z-10">
+                                        <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white/85 backdrop-blur-md border border-white/60 shadow-lg animate-in fade-in duration-300">
+                                            <svg className="animate-spin h-8 w-8 text-emerald-600" viewBox="0 0 24 24" fill="none">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                            </svg>
                                         </div>
-                                    )
-                                ))}
-                                <div ref={messagesEndRef} />
+                                    </div>
+                                )}
                             </div>
 
                             {activeMenuMessage && messageMenuAnchor && (

@@ -495,4 +495,17 @@
   .apple-select-option-selected:hover {
     background-color: rgba(0, 0, 0, 0.05) !important;
   }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .message-row-virtualized {
+    content-visibility: auto;
+    contain-intrinsic-size: 70px;
+  }
 }
