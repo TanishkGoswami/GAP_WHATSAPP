@@ -158,7 +158,7 @@ export default function Dashboard() {
     const hasConnectedAccount = n(model.accounts.active) > 0
 
     return (
-        <div className="min-h-full bg-[#f5f7fa]">
+        <div className="min-h-full bg-[#f5f7fa] px-4 py-5 sm:px-6 lg:px-8">
             <div className="mx-auto max-w-[1680px] space-y-5">
                 <Header
                     range={range}
@@ -431,35 +431,41 @@ function Header({ range, setRange, isFetching, refetch, freshness }) {
                     <Grid2X2 className="h-4 w-4" />
                     Command center
                 </div>
-                <h1 className="mt-1 text-[34px] font-light leading-tight tracking-normal text-black">Dashboard</h1>
-                <p className="mt-1 text-sm leading-5 text-gray-600">Real WhatsApp performance, customer readiness, and automation health.</p>
+                <h1 className="mt-1 text-2xl sm:text-[34px] font-bold sm:font-light leading-tight tracking-normal text-black">Dashboard</h1>
+                <p className="mt-1 text-xs sm:text-sm leading-5 text-gray-600">Real WhatsApp performance, customer readiness, and automation health.</p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-                <TourButton />
-                <div data-tour="dashboard-range" className="inline-flex rounded-full border border-gray-200 bg-white p-1">
-                    {ranges.map(item => (
-                        <button
-                            key={item.value}
-                            type="button"
-                            onClick={() => setRange(item.value)}
-                            className={`h-9 rounded-full px-4 text-sm font-semibold transition-colors ${range === item.value ? 'bg-[#0070d1] text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-black'}`}
-                        >
-                            {item.label}
-                        </button>
-                    ))}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
+                <div className="flex items-center justify-between gap-2 w-full sm:w-auto">
+                    <div data-tour="dashboard-range" className="inline-flex rounded-full border border-gray-200 bg-white p-1 flex-1 sm:flex-initial">
+                        {ranges.map(item => (
+                            <button
+                                key={item.value}
+                                type="button"
+                                onClick={() => setRange(item.value)}
+                                className={`h-9 flex-1 sm:flex-initial rounded-full px-3 sm:px-4 text-xs sm:text-sm font-semibold transition-colors ${range === item.value ? 'bg-[#0070d1] text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-black'}`}
+                            >
+                                {item.label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="hidden md:block">
+                        <TourButton />
+                    </div>
                 </div>
-                <button
-                    type="button"
-                    onClick={() => refetch()}
-                    className="inline-flex h-10 items-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100"
-                >
-                    <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                    Refresh
-                </button>
-                <span className="inline-flex h-10 items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 text-sm font-medium text-emerald-700">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                    {freshness}
-                </span>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                        type="button"
+                        onClick={() => refetch()}
+                        className="flex-1 sm:flex-initial inline-flex h-10 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-xs sm:text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100"
+                    >
+                        <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                        Refresh
+                    </button>
+                    <span className="flex-1 sm:flex-initial inline-flex h-10 items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 text-xs sm:text-sm font-medium text-emerald-700 truncate">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                        {freshness}
+                    </span>
+                </div>
             </div>
         </div>
     )
@@ -522,21 +528,21 @@ function Panel({ title, subtitle, action, children }) {
 
 function MetricCard({ icon, label, value, detail, warning, loading }) {
     return (
-        <div className="rounded-lg border border-gray-200 bg-white p-5">
-            <div className="flex items-start justify-between gap-4">
+        <div className="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
+            <div className="flex items-center justify-between gap-4">
                 <div>
-                    <p className="text-sm font-medium text-gray-600">{label}</p>
+                    <p className="text-xs sm:text-sm font-medium text-gray-600">{label}</p>
                     {loading ? (
-                        <div className="mt-3 h-8 w-20 animate-pulse rounded bg-gray-100" />
+                        <div className="mt-2 h-7 w-20 animate-pulse rounded bg-gray-100" />
                     ) : (
-                        <p className="mt-2 text-[32px] font-light leading-none text-black">{value}</p>
+                        <p className="mt-1 text-2xl sm:text-[32px] font-bold sm:font-light leading-none text-black">{value}</p>
                     )}
                 </div>
-                <div className={`rounded-lg p-2.5 ${warning ? 'bg-red-50 text-red-600' : 'bg-[#f5f7fa] text-[#0064b7]'}`}>
-                    {createElement(icon, { className: 'h-5 w-5' })}
+                <div className={`rounded-lg p-2 sm:p-2.5 shrink-0 ${warning ? 'bg-red-50 text-red-600' : 'bg-[#f5f7fa] text-[#0064b7]'}`}>
+                    {createElement(icon, { className: 'h-4 w-4 sm:h-5 sm:w-5' })}
                 </div>
             </div>
-            <p className="mt-5 text-sm text-gray-600">{detail}</p>
+            <p className="mt-3 sm:mt-5 text-xs sm:text-sm text-gray-600">{detail}</p>
         </div>
     )
 }
