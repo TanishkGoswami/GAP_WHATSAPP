@@ -175,3 +175,26 @@
 .backdrop-blur {
     backdrop-filter: blur(4px);
 }
+
+/* Mobile bottom sheet slide-up animation */
+@keyframes slide-up {
+    from {
+        transform: translateY(100%);
+        opacity: 0.6;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.animate-slide-up {
+    animation: slide-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Mobile FAB smooth press */
+@media (max-width: 767px) {
+    .flow-canvas .react-flow__controls {
+        bottom: 70px; /* lift above the FAB */
+    }
+}

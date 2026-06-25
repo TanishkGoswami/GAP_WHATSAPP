@@ -11,6 +11,7 @@ import {
     HelpCircle,
     LogOut,
     Megaphone,
+    MessageCircle,
     Plus,
     Settings,
     MessageSquareText,
@@ -44,6 +45,7 @@ const navigation = [
     },
     { name: 'Broadcasts', href: '/broadcast', icon: Megaphone },
     { name: 'Billing', href: '/billing', icon: CreditCard },
+    { name: 'WA Link Generator', href: '/wa-link-generator', icon: MessageCircle },
 ]
 
 const SELECTED_WA_ACCOUNT_KEY = 'selected_wa_account_id'

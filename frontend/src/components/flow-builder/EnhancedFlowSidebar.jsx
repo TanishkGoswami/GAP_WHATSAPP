@@ -1,7 +1,7 @@
 import {
     Bot, Calendar, ChevronDown, FileSpreadsheet, FileText, GitBranch, Globe,
     Handshake, Image, Link2, MapPin, MessageSquare, Music, PackageSearch,
-    Rocket, Search, Square, UserCircle, Video, Workflow, File
+    Rocket, Search, Square, UserCircle, Video, Workflow, File, X
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -204,7 +204,7 @@ const nodeCategories = [
 
 const allNodes = nodeCategories.flatMap(category => category.nodes);
 
-export default function EnhancedFlowSidebar({ onDragStart }) {
+export default function EnhancedFlowSidebar({ onDragStart, mobileMode = false, onMobileTap }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [collapsedCategories, setCollapsedCategories] = useState(new Set());
     const [activeNode, setActiveNode] = useState(allNodes[0]);
@@ -232,14 +232,22 @@ export default function EnhancedFlowSidebar({ onDragStart }) {
     }, [searchQuery]);
 
     return (
-        <div className="w-[316px] bg-white border-r border-gray-200 flex flex-col h-full">
+        <div className={`bg-white flex flex-col h-full ${mobileMode ? 'w-full' : 'w-[316px] border-r border-gray-200'}`}>
+            {/* Header */}
             <div className="border-b border-gray-200 px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                    <div>
-                        <h3 className="text-sm font-semibold text-black">Nodes</h3>
-                        <p className="text-[11px] text-gray-500">Drag blocks to build WhatsApp automation.</p>
+                <div className="flex items-center justify-between gap-3">
+                    <div className={mobileMode ? 'flex items-center gap-2' : ''}>
+                        {!mobileMode && (
+                            <>
+                                <h3 className="text-sm font-semibold text-black">Nodes</h3>
+                                <p className="text-[11px] text-gray-500">Drag blocks to build WhatsApp automation.</p>
+                            </>
+                        )}
+                        {mobileMode && (
+                            <h3 className="text-sm font-semibold text-black">Add Node</h3>
+                        )}
                     </div>
-                    <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-600">
+                    <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-semibold text-gray-600 shrink-0">
                         {allNodes.length} blocks
                     </span>
                 </div>
@@ -250,11 +258,12 @@ export default function EnhancedFlowSidebar({ onDragStart }) {
                         placeholder="Search nodes..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="fp-input h-10 pl-9"
+                        className="fp-input h-9 pl-9 text-xs"
                     />
                 </div>
             </div>
 
+            {/* Node List */}
             <div className="flex-1 overflow-y-auto px-3 py-3">
                 {filteredCategories.map((category) => {
                     const isCollapsed = collapsedCategories.has(category.title);
@@ -271,11 +280,42 @@ export default function EnhancedFlowSidebar({ onDragStart }) {
                             </button>
 
                             {!isCollapsed && (
-                                <div className="space-y-1">
+                                <div className={`${mobileMode ? 'grid grid-cols-2 gap-1.5' : 'space-y-1'}`}>
                                     {category.nodes.map((node) => {
                                         const Icon = node.icon;
                                         const isActive = activeNode?.type === node.type;
 
+                                        if (mobileMode) {
+                                            // Mobile: compact grid card — tap to add
+                                            return (
+                                                <button
+                                                    key={node.type}
+                                                    type="button"
+                                                    onClick={() => onMobileTap?.(node.type, node)}
+                                                    className={`flex flex-col items-center gap-1.5 rounded-xl border p-2.5 w-full text-center transition-colors active:scale-95 ${
+                                                        isActive
+                                                            ? 'border-[#25D366] bg-[#25D366]/[0.06]'
+                                                            : 'border-gray-200 bg-white hover:border-gray-300'
+                                                    }`}
+                                                >
+                                                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                                                        isActive
+                                                            ? 'border-[#25D366]/40 bg-white text-[#128C7E]'
+                                                            : 'border-gray-200 bg-[#f5f7fa] text-gray-600'
+                                                    }`}>
+                                                        <Icon className="h-4 w-4 stroke-[1.8]" />
+                                                    </span>
+                                                    <span className="text-[10px] font-semibold text-gray-800 leading-tight line-clamp-2">{node.label}</span>
+                                                    {node.badge && (
+                                                        <span className="rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[8px] font-semibold uppercase text-gray-500">
+                                                            {node.badge}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            );
+                                        }
+
+                                        // Desktop: existing drag-and-drop card
                                         return (
                                             <div
                                                 key={node.type}
@@ -323,7 +363,8 @@ export default function EnhancedFlowSidebar({ onDragStart }) {
                 })}
             </div>
 
-            <NodeHelp node={activeNode} />
+            {/* NodeHelp — desktop only */}
+            {!mobileMode && <NodeHelp node={activeNode} />}
         </div>
     );
 }
