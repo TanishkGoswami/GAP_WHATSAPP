@@ -376,7 +376,7 @@ export default function WhatsAppConnect() {
                                 onClick={hasIntegrationConsent ? handleEmbeddedSignup : handleEnableAndConnect}
                                 data-tour="connect-primary"
                                 disabled={embedStatus === 'loading' || embedStatus === 'saving' || isSdkLoading}
-                                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#0070d1] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#0064b7] disabled:cursor-not-allowed disabled:bg-[#79b8ef]"
+                                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#25D366] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#128C7E] disabled:cursor-not-allowed disabled:bg-green-300"
                             >
                                 {embedStatus === 'loading' || embedStatus === 'saving' || isSdkLoading ? (
                                     <>
@@ -618,7 +618,7 @@ export default function WhatsAppConnect() {
                                         type="button"
                                         onClick={hasIntegrationConsent ? handleEmbeddedSignup : handleEnableAndConnect}
                                         disabled={embedStatus === 'loading' || embedStatus === 'saving' || isSdkLoading}
-                                        className="inline-flex items-center justify-center gap-2 rounded-full bg-[#0070d1] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0064b7] disabled:bg-[#79b8ef]"
+                                        className="inline-flex items-center justify-center gap-2 rounded-full bg-[#25D366] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#128C7E] disabled:bg-green-300"
                                     >
                                         <Smartphone className="h-4 w-4" />
                                         {isSdkLoading ? 'Enabling...' : hasIntegrationConsent ? 'Connect now' : 'Enable & Connect'}
