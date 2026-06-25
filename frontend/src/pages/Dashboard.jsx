@@ -158,8 +158,8 @@ export default function Dashboard() {
     const hasConnectedAccount = n(model.accounts.active) > 0
 
     return (
-        <div className="min-h-full bg-[#f5f7fa] px-4 py-5 sm:px-6 lg:px-8">
-            <div className="mx-auto max-w-[1680px] space-y-5">
+        <div className="min-h-full bg-[#f5f7fa] p-1 sm:px-6 sm:py-5 lg:px-8">
+            <div className="mx-auto max-w-[1680px] space-y-3 sm:space-y-5">
                 <Header
                     range={range}
                     setRange={setRange}
@@ -176,7 +176,7 @@ export default function Dashboard() {
 
                 {!isLoading && !hasConnectedAccount ? <FirstRunOnboarding /> : null}
 
-                <section data-tour="dashboard-metrics" className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                <section data-tour="dashboard-metrics" className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <MetricCard icon={MessageSquareText} label="Messages" value={fmt(model.totalMessages)} detail={`${rangeLabel} synced`} loading={isLoading} />
                     <MetricCard icon={Users} label="Customer messages" value={fmt(model.metrics.inbound)} detail="Inbound activity" loading={isLoading} />
                     <MetricCard icon={Bot} label="AI + team replies" value={fmt(n(model.metrics.aiAgent) + n(model.metrics.humanAgent))} detail={`${fmt(model.metrics.aiAgent)} AI / ${fmt(model.metrics.humanAgent)} human`} loading={isLoading} />
@@ -187,7 +187,7 @@ export default function Dashboard() {
                     <BillingOverviewStrip overview={billingOverview} />
                 </div>
 
-                <section data-tour="dashboard-overview" className="grid grid-cols-1 gap-5 2xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.55fr)]">
+                <section data-tour="dashboard-overview" className="grid grid-cols-1 gap-3.5 sm:gap-5 2xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.55fr)]">
                     <UsagePerformanceDashboard
                         model={model}
                         range={range}
@@ -205,16 +205,16 @@ export default function Dashboard() {
                                     <button
                                         type="button"
                                         onClick={() => setIsAccountsOpen(prev => !prev)}
-                                        className="flex items-center justify-between gap-4 px-4 py-3 text-left focus:outline-none w-full"
+                                        className="flex items-center justify-between gap-3 px-3 py-2.5 sm:px-4 sm:py-3 text-left focus:outline-none w-full"
                                     >
-                                        <div className="flex min-w-0 items-center gap-3">
-                                            <span className={`rounded-lg p-2 ${n(model.accounts.active) > 0 ? 'bg-white text-[#0064b7]' : 'bg-amber-50 text-amber-600'}`}>
+                                        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+                                            <span className={`rounded-lg p-1.5 sm:p-2 ${n(model.accounts.active) > 0 ? 'bg-white text-[#0064b7]' : 'bg-amber-50 text-amber-600'}`}>
                                                 <Smartphone className="h-4 w-4" />
                                             </span>
-                                            <span className="truncate text-sm font-medium text-gray-700">WhatsApp accounts</span>
+                                            <span className="truncate text-xs sm:text-sm font-medium text-gray-700">WhatsApp accounts</span>
                                         </div>
                                         <div className="flex items-center gap-1.5 shrink-0">
-                                            <span className="text-sm font-semibold text-black">
+                                            <span className="text-xs sm:text-sm font-semibold text-black">
                                                 {`${fmt(model.accounts.active)} active / ${fmt(model.accounts.total)} total`}
                                             </span>
                                             <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isAccountsOpen ? 'rotate-180' : ''}`} />
@@ -283,9 +283,9 @@ export default function Dashboard() {
                     </div>
                 </section>
 
-                <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+                <section className="grid grid-cols-1 gap-3.5 sm:gap-5 xl:grid-cols-3">
                     <Panel title="Contact readiness" subtitle="Customer data and saved-contact coverage.">
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-2 gap-2 sm:gap-3">
                             <MiniStat icon={Users} label="Contacts" value={fmt(model.contacts.total)} />
                             <MiniStat icon={UserRoundCheck} label="Saved" value={fmt(model.contacts.saved)} />
                             <MiniStat icon={TrendingUp} label="AI notes" value={fmt(model.automation.notesGenerated)} />
@@ -294,7 +294,7 @@ export default function Dashboard() {
                     </Panel>
 
                     <Panel title="Automation" subtitle="Flows, bot coverage, and broadcast output.">
-                        <div className="space-y-2.5">
+                        <div className="space-y-2 sm:space-y-2.5">
                             <InfoLine icon={Workflow} label="Flows" value={`${fmt(model.automation.publishedFlows)} published / ${fmt(model.automation.flows)} total`} />
                             <InfoLine icon={Bot} label="Bot-enabled chats" value={fmt(model.automation.activeFlowSessions)} />
                             <InfoLine icon={Send} label="Broadcast messages" value={`${fmt(model.campaigns.sent)} sent / ${fmt(model.campaigns.failed)} failed`} />
@@ -302,7 +302,7 @@ export default function Dashboard() {
                     </Panel>
 
                     <Panel title="Quick actions" subtitle="Shortcuts for daily operations." action={<Zap className="h-4 w-4 text-[#0070d1]" />}>
-                        <div className="space-y-2.5">
+                        <div className="space-y-2 sm:space-y-2.5">
                             {!hasConnectedAccount ? (
                                 <QuickAction
                                     to="/whatsapp-connect"
@@ -319,7 +319,7 @@ export default function Dashboard() {
                     </Panel>
                 </section>
 
-                <section className="grid grid-cols-1 gap-5 xl:grid-cols-[1.3fr_0.7fr]">
+                <section className="grid grid-cols-1 gap-3.5 sm:gap-5 xl:grid-cols-[1.3fr_0.7fr]">
                     <Panel title="Recent activity" subtitle="Latest real messages synced from WhatsApp.">
                         <div className="space-y-2">
                             {isLoading ? (
@@ -374,19 +374,19 @@ function FirstRunOnboarding() {
     return (
         <section className="overflow-hidden rounded-lg border border-[#b9dcfb] bg-white">
             <div className="grid gap-0 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-                <div className="relative border-b border-[#d9ecfd] bg-[#eef7ff] p-5 sm:p-6 lg:min-h-[260px] xl:border-b-0 xl:border-r">
+                <div className="relative border-b border-[#d9ecfd] bg-[#eef7ff] p-4 sm:p-6 lg:min-h-[260px] xl:border-b-0 xl:border-r">
                     <div className="inline-flex items-center gap-2 rounded-full border border-[#b9dcfb] bg-white px-3 py-1 text-xs font-semibold text-[#0064b7]">
                         <Sparkles className="h-3.5 w-3.5" />
                         First-time setup
                     </div>
-                    <h2 className="mt-4 text-2xl font-semibold leading-tight text-black lg:max-w-[560px]">Dashboard empty hai because WhatsApp account abhi connected nahi hai.</h2>
-                    <p className="mt-3 max-w-3xl text-sm leading-6 text-gray-700 lg:max-w-[560px]">
+                    <h2 className="mt-2.5 sm:mt-4 text-xl sm:text-2xl font-semibold leading-tight text-black lg:max-w-[560px]">Dashboard empty hai because WhatsApp account abhi connected nahi hai.</h2>
+                    <p className="mt-2 sm:mt-3 max-w-3xl text-xs sm:text-sm leading-5 sm:leading-6 text-gray-700 lg:max-w-[560px]">
                         Non-tech flow simple hai: pehle WhatsApp business number connect karo, phir wallet/templates setup karo. Uske baad chats, delivery reports, broadcasts and AI automation yahin real data ke saath show honge.
                     </p>
-                    <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                    <div className="mt-3.5 sm:mt-5 flex flex-col gap-2 sm:flex-row">
                         <Link
                             to="/whatsapp-connect"
-                            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[#0070d1] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#0064b7]"
+                            className="inline-flex min-h-9 sm:min-h-11 items-center justify-center gap-2 rounded-full bg-[#0070d1] px-4 sm:px-5 text-xs sm:text-sm font-semibold text-white transition-colors hover:bg-[#0064b7]"
                         >
                             <Smartphone className="h-4 w-4" />
                             Connect WhatsApp account
@@ -394,7 +394,7 @@ function FirstRunOnboarding() {
                         </Link>
                         <Link
                             to="/whatsapp-number"
-                            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-5 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50"
+                            className="inline-flex min-h-9 sm:min-h-11 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-4 sm:px-5 text-xs sm:text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-50"
                         >
                             <PhoneCall className="h-4 w-4" />
                             Need a new number?
@@ -407,14 +407,14 @@ function FirstRunOnboarding() {
                         loading="lazy"
                     />
                 </div>
-                <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">
+                <div className="grid gap-2 p-3 sm:grid-cols-2 sm:p-6">
                     {steps.map(step => (
-                        <div key={step.title} className="rounded-lg border border-gray-200 bg-[#fbfcfd] p-4">
+                        <div key={step.title} className="rounded-lg border border-gray-200 bg-[#fbfcfd] p-3 sm:p-4">
                             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-[#0064b7] ring-1 ring-gray-200">
                                 {createElement(step.icon, { className: 'h-4 w-4' })}
                             </span>
-                            <h3 className="mt-3 text-sm font-semibold text-black">{step.title}</h3>
-                            <p className="mt-1 text-xs leading-5 text-gray-600">{step.text}</p>
+                            <h3 className="mt-2 sm:mt-3 text-xs sm:text-sm font-semibold text-black">{step.title}</h3>
+                            <p className="mt-0.5 sm:mt-1 text-[11px] sm:text-xs leading-5 text-gray-600">{step.text}</p>
                         </div>
                     ))}
                 </div>
@@ -425,24 +425,24 @@ function FirstRunOnboarding() {
 
 function Header({ range, setRange, isFetching, refetch, freshness }) {
     return (
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex flex-col gap-2.5 sm:gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
                 <div className="flex items-center gap-2 text-sm font-medium text-[#0064b7]">
                     <Grid2X2 className="h-4 w-4" />
                     Command center
                 </div>
-                <h1 className="mt-1 text-2xl sm:text-[34px] font-bold sm:font-light leading-tight tracking-normal text-black">Dashboard</h1>
-                <p className="mt-1 text-xs sm:text-sm leading-5 text-gray-600">Real WhatsApp performance, customer readiness, and automation health.</p>
+                <h1 className="mt-0.5 sm:mt-1 text-xl sm:text-[34px] font-bold sm:font-light leading-tight tracking-normal text-black">Dashboard</h1>
+                <p className="mt-0.5 sm:mt-1 text-[11px] sm:text-sm leading-5 text-gray-600">Real WhatsApp performance, customer readiness, and automation health.</p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
-                <div className="flex items-center justify-between gap-2 w-full sm:w-auto">
-                    <div data-tour="dashboard-range" className="inline-flex rounded-full border border-gray-200 bg-white p-1 flex-1 sm:flex-initial">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+                <div className="flex items-center justify-between gap-1.5 sm:gap-2 w-full sm:w-auto">
+                    <div data-tour="dashboard-range" className="inline-flex rounded-full border border-gray-200 bg-white p-0.5 sm:p-1 flex-1 sm:flex-initial">
                         {ranges.map(item => (
                             <button
                                 key={item.value}
                                 type="button"
                                 onClick={() => setRange(item.value)}
-                                className={`h-9 flex-1 sm:flex-initial rounded-full px-3 sm:px-4 text-xs sm:text-sm font-semibold transition-colors ${range === item.value ? 'bg-[#0070d1] text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-black'}`}
+                                className={`h-8 sm:h-9 flex-1 sm:flex-initial rounded-full px-2.5 sm:px-4 text-xs sm:text-sm font-semibold transition-colors ${range === item.value ? 'bg-[#0070d1] text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-black'}`}
                             >
                                 {item.label}
                             </button>
@@ -452,17 +452,17 @@ function Header({ range, setRange, isFetching, refetch, freshness }) {
                         <TourButton />
                     </div>
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
                     <button
                         type="button"
                         onClick={() => refetch()}
-                        className="flex-1 sm:flex-initial inline-flex h-10 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-4 text-xs sm:text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-100"
+                        className="flex-1 sm:flex-initial inline-flex h-7 sm:h-10 items-center justify-center gap-1 sm:gap-2 rounded-full border border-gray-200/80 bg-white px-2.5 sm:px-4 text-[10px] sm:text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100"
                     >
-                        <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${isFetching ? 'animate-spin' : ''}`} />
                         Refresh
                     </button>
-                    <span className="flex-1 sm:flex-initial inline-flex h-10 items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 text-xs sm:text-sm font-medium text-emerald-700 truncate">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                    <span className="flex-1 sm:flex-initial inline-flex h-7 sm:h-10 items-center justify-center gap-1 sm:gap-2 rounded-full border border-emerald-200/80 bg-emerald-50 px-2.5 sm:px-4 text-[10px] sm:text-sm font-medium text-emerald-700 truncate">
+                        <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-emerald-500 shrink-0" />
                         {freshness}
                     </span>
                 </div>
@@ -477,32 +477,32 @@ function BillingOverviewStrip({ overview }) {
     const utility = categories.find(item => item.category === 'utility')
 
     return (
-        <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1fr_1fr_auto]">
-            <div className="rounded-lg border border-gray-200 bg-white p-5">
+        <section className="grid grid-cols-1 gap-2.5 sm:gap-4 lg:grid-cols-[1fr_1fr_1fr_auto]">
+            <div className="rounded-lg border border-gray-200 bg-white p-3.5 sm:p-5">
                 <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-medium text-gray-600">Wallet balance</p>
                     <Wallet className="h-5 w-5 text-emerald-600" />
                 </div>
-                <p className="mt-2 text-[28px] font-light leading-none text-black">{formatINRFromPaise(overview?.wallet?.balance_paise)}</p>
-                <p className="mt-3 text-sm text-gray-600">Message charges yahin se deduct honge.</p>
+                <p className="mt-2 text-xl sm:text-[28px] font-bold sm:font-light leading-none text-black">{formatINRFromPaise(overview?.wallet?.balance_paise)}</p>
+                <p className="mt-2 sm:mt-3 text-xs sm:text-sm text-gray-600">Message charges yahin se deduct honge.</p>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-5">
+            <div className="rounded-lg border border-gray-200 bg-white p-3.5 sm:p-5">
                 <p className="text-sm font-medium text-gray-600">This month message spend</p>
-                <p className="mt-2 text-[28px] font-light leading-none text-black">{formatINRFromPaise(overview?.spend?.month_spend_paise)}</p>
-                <p className="mt-3 text-sm text-gray-600">Marketing, utility, auth, and service usage.</p>
+                <p className="mt-2 text-xl sm:text-[28px] font-bold sm:font-light leading-none text-black">{formatINRFromPaise(overview?.spend?.month_spend_paise)}</p>
+                <p className="mt-2 sm:mt-3 text-xs sm:text-sm text-gray-600">Marketing, utility, auth, and service usage.</p>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-5">
+            <div className="rounded-lg border border-gray-200 bg-white p-3.5 sm:p-5">
                 <p className="text-sm font-medium text-gray-600">Marketing / Utility</p>
-                <p className="mt-2 text-[28px] font-light leading-none text-black">
+                <p className="mt-2 text-xl sm:text-[28px] font-bold sm:font-light leading-none text-black">
                     {formatINRFromPaise(marketing?.charged_amount_paise)} / {formatINRFromPaise(utility?.charged_amount_paise)}
                 </p>
-                <p className="mt-3 text-sm text-gray-600">
+                <p className="mt-2 sm:mt-3 text-xs sm:text-sm text-gray-600">
                     {fmt(marketing?.message_count)} marketing, {fmt(utility?.message_count)} utility messages.
                 </p>
             </div>
             <Link
                 to="/billing"
-                className="flex items-center justify-center gap-2 rounded-lg border border-gray-900 bg-black px-5 py-4 text-sm font-semibold text-white transition-colors hover:bg-gray-800"
+                className="flex items-center justify-center gap-2 rounded-lg border border-gray-900 bg-black px-4 py-2.5 sm:py-4 text-xs sm:text-sm font-semibold text-white transition-colors hover:bg-gray-800"
             >
                 Billing details
                 <ArrowRight className="h-4 w-4" />
@@ -514,35 +514,35 @@ function BillingOverviewStrip({ overview }) {
 function Panel({ title, subtitle, action, children }) {
     return (
         <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-3.5 py-3 sm:px-5 sm:py-4">
                 <div>
-                    <h2 className="text-base font-semibold text-black">{title}</h2>
-                    {subtitle ? <p className="mt-1 text-sm leading-5 text-gray-600">{subtitle}</p> : null}
+                    <h2 className="text-sm sm:text-base font-semibold text-black">{title}</h2>
+                    {subtitle ? <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm leading-5 text-gray-600">{subtitle}</p> : null}
                 </div>
                 {action}
             </div>
-            <div className="p-5">{children}</div>
+            <div className="p-3.5 sm:p-5">{children}</div>
         </section>
     )
 }
 
 function MetricCard({ icon, label, value, detail, warning, loading }) {
     return (
-        <div className="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
+        <div className="rounded-lg border border-gray-200 bg-white p-3 sm:p-5">
             <div className="flex items-center justify-between gap-4">
                 <div>
                     <p className="text-xs sm:text-sm font-medium text-gray-600">{label}</p>
                     {loading ? (
                         <div className="mt-2 h-7 w-20 animate-pulse rounded bg-gray-100" />
                     ) : (
-                        <p className="mt-1 text-2xl sm:text-[32px] font-bold sm:font-light leading-none text-black">{value}</p>
+                        <p className="mt-1 text-xl sm:text-[32px] font-bold sm:font-light leading-none text-black">{value}</p>
                     )}
                 </div>
-                <div className={`rounded-lg p-2 sm:p-2.5 shrink-0 ${warning ? 'bg-red-50 text-red-600' : 'bg-[#f5f7fa] text-[#0064b7]'}`}>
+                <div className={`rounded-lg p-1.5 sm:p-2.5 shrink-0 ${warning ? 'bg-red-50 text-red-600' : 'bg-[#f5f7fa] text-[#0064b7]'}`}>
                     {createElement(icon, { className: 'h-4 w-4 sm:h-5 sm:w-5' })}
                 </div>
             </div>
-            <p className="mt-3 sm:mt-5 text-xs sm:text-sm text-gray-600">{detail}</p>
+            <p className="mt-2 sm:mt-5 text-xs sm:text-sm text-gray-600">{detail}</p>
         </div>
     )
 }
@@ -596,28 +596,28 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
 
     return (
         <section className="overflow-hidden rounded-2xl border border-[#dbe6f5] bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
-            <div className="relative overflow-hidden border-b border-[#edf2f8] bg-gradient-to-br from-white via-[#fbfdff] to-[#f7f4ff] px-5 py-5 lg:px-6">
+            <div className="relative overflow-hidden border-b border-[#edf2f8] bg-gradient-to-br from-white via-[#fbfdff] to-[#f7f4ff] px-3.5 py-3.5 sm:px-5 sm:py-5 lg:px-6">
                 <div className="pointer-events-none absolute -right-24 -top-24 h-52 w-52 rounded-full bg-[#7b55de]/10 blur-3xl" />
                 <div className="pointer-events-none absolute left-1/2 top-0 h-32 w-64 -translate-x-1/2 rounded-full bg-[#53b1ff]/10 blur-3xl" />
-                <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="relative flex flex-col gap-3 lg:gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                     <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#0070d1]">
                         <BarChart3 className="h-4 w-4" />
                         Usage analytics
                     </div>
-                    <h2 className="mt-1 text-2xl font-semibold leading-tight tracking-normal text-black sm:text-[30px]">Message performance</h2>
-                    <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">
+                    <h2 className="mt-1 text-xl sm:text-[30px] font-semibold leading-tight tracking-normal text-black">Message performance</h2>
+                    <p className="mt-1 max-w-2xl text-xs sm:text-sm leading-4 sm:leading-5 text-gray-600">
                         Live WhatsApp delivery, read activity, failure risk, and billing movement in one clean view.
                     </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex h-9 items-center rounded-full border border-gray-200 bg-white/80 px-3 text-sm font-medium text-gray-800 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <span className="inline-flex h-8 sm:h-9 items-center rounded-full border border-gray-200 bg-white/80 px-2.5 sm:px-3 text-xs sm:text-sm font-medium text-gray-800 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
                         Workspace
                     </span>
-                    <span className="inline-flex h-9 items-center rounded-full border border-gray-200 bg-white/80 px-3 text-sm font-medium text-gray-500 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+                    <span className="inline-flex h-8 sm:h-9 items-center rounded-full border border-gray-200 bg-white/80 px-2.5 sm:px-3 text-xs sm:text-sm font-medium text-gray-500 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
                         All WhatsApp numbers
                     </span>
-                    <span className="inline-flex h-9 items-center rounded-full border border-gray-900 bg-black px-3 text-sm font-semibold text-white">
+                    <span className="inline-flex h-8 sm:h-9 items-center rounded-full border border-gray-900 bg-black px-2.5 sm:px-3 text-xs sm:text-sm font-semibold text-white">
                         {rangeLabel}
                     </span>
                     <StatusPill label={healthLabel} warning={model.failedRate > 5} />
@@ -626,15 +626,15 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
             </div>
 
             <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_340px]">
-                <div className="space-y-4 border-b border-gray-100 bg-gradient-to-b from-white to-[#fbfcfd] p-5 xl:border-b-0 xl:border-r xl:p-6">
-                    <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+                <div className="space-y-3 sm:space-y-4 border-b border-gray-100 bg-gradient-to-b from-white to-[#fbfcfd] p-3.5 sm:p-5 xl:border-b-0 xl:border-r xl:p-6">
+                    <div className="grid gap-2.5 sm:gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                         {summaryCards.map(card => (
-                            <div key={card.label} className="group relative overflow-hidden rounded-2xl border border-[#dfe8f6] bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#c9ddff] hover:shadow-[0_18px_36px_rgba(15,23,42,0.09)]">
+                            <div key={card.label} className="group relative overflow-hidden rounded-2xl border border-[#dfe8f6] bg-white p-3 sm:p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#c9ddff] hover:shadow-[0_18px_36px_rgba(15,23,42,0.09)]">
                                 <div className={`pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-gradient-to-br ${card.accent} opacity-10 blur-2xl`} />
                                 <div className="relative">
-                                    <p className="text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">{card.label}</p>
-                                    <p className={`mt-2 text-2xl font-semibold leading-none transition-transform duration-300 group-hover:translate-x-0.5 ${card.color}`}>{card.value}</p>
-                                    <p className="mt-2 text-xs text-gray-500">{card.detail}</p>
+                                    <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">{card.label}</p>
+                                    <p className={`mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold leading-none transition-transform duration-300 group-hover:translate-x-0.5 ${card.color}`}>{card.value}</p>
+                                    <p className="mt-1 sm:mt-2 text-xs text-gray-500">{card.detail}</p>
                                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
                                         <div className={`h-full rounded-full bg-gradient-to-r ${card.accent}`} style={{ width: pct(card.progress) }} />
                                     </div>
@@ -643,11 +643,11 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                         ))}
                     </div>
 
-                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-4 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
+                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-3.5 sm:p-4 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
-                                <p className="text-base font-semibold text-black">Message activity</p>
-                                <p className="mt-1 text-sm text-gray-500">{isHourly ? 'Hourly distribution for today.' : 'Daily trend for selected range.'}</p>
+                                <p className="text-sm sm:text-base font-semibold text-black">Message activity</p>
+                                <p className="mt-1 text-xs sm:text-sm text-gray-500">{isHourly ? 'Hourly distribution for today.' : 'Daily trend for selected range.'}</p>
                             </div>
                             <div className="flex items-center gap-2">
                                 <span className="text-xs font-medium text-gray-500">Group by</span>
@@ -658,7 +658,7 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                         </div>
 
                         {loading ? (
-                            <div className="mt-4 h-[300px] animate-pulse rounded-lg bg-[#f5f7fa]" />
+                            <div className="mt-4 h-[200px] sm:h-[300px] animate-pulse rounded-lg bg-[#f5f7fa]" />
                         ) : (
                             <UsageBarChart
                                 bars={visibleBars}
@@ -670,12 +670,12 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                         )}
                     </div>
 
-                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
-                        <div className="rounded-2xl border border-[#dbe6f5] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+                    <div className="grid gap-2.5 sm:gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+                        <div className="rounded-2xl border border-[#dbe6f5] bg-white p-3.5 sm:p-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
                             <div className="flex items-center justify-between gap-3">
                                 <div>
-                                    <p className="text-base font-semibold text-black">Delivery trend</p>
-                                    <p className="mt-1 text-sm text-gray-500">Read and inbound movement from synced rows.</p>
+                                    <p className="text-sm sm:text-base font-semibold text-black">Delivery trend</p>
+                                    <p className="mt-1 text-xs sm:text-sm text-gray-500">Read and inbound movement from synced rows.</p>
                                 </div>
                                 <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{pct(model.readRate)} read</span>
                             </div>
@@ -688,7 +688,7 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                                 secondaryColor="#db2777"
                             />
                         </div>
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                        <div className="grid gap-2.5 sm:gap-3 sm:grid-cols-2 lg:grid-cols-1">
                             {capabilityCards.map(card => (
                                 <UsageCapabilityCard key={card.title} {...card} />
                             ))}
@@ -696,17 +696,17 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                     </div>
                 </div>
 
-                <aside className="space-y-4 bg-gradient-to-b from-[#f8fbff] to-white p-5 xl:p-6">
-                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#050505] via-[#111827] to-[#050505] p-5 text-white shadow-[0_18px_45px_rgba(15,23,42,0.18)]">
+                <aside className="space-y-3 sm:space-y-4 bg-gradient-to-b from-[#f8fbff] to-white p-3.5 sm:p-5 xl:p-6">
+                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#050505] via-[#111827] to-[#050505] p-3.5 sm:p-5 text-white shadow-[0_18px_45px_rgba(15,23,42,0.18)]">
                         <div className="pointer-events-none absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#53b1ff]/20 blur-3xl" />
                         <div className="flex items-start justify-between gap-3">
                             <div>
                                 <p className="text-sm text-white/65">Delivery quality</p>
-                                <p className="mt-2 text-[44px] font-light leading-none">{model.quality}<span className="text-xl text-white/45">/100</span></p>
+                                <p className="mt-2 text-3xl sm:text-[44px] font-bold sm:font-light leading-none">{model.quality}<span className="text-xl text-white/45">/100</span></p>
                             </div>
                             <CheckCircle2 className="h-5 w-5 text-[#53b1ff]" />
                         </div>
-                        <div className="mt-6 grid grid-cols-2 gap-x-5 gap-y-4">
+                        <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-x-4 gap-y-3 sm:gap-x-5 sm:gap-y-4">
                             <QualityStat label="Delivered" value={compact(model.delivered)} />
                             <QualityStat label="Read" value={compact(model.read)} />
                             <QualityStat label="Pending" value={compact(model.pending)} />
@@ -719,7 +719,7 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                         </p>
                     </div>
 
-                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-3.5 sm:p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
                         <div className="flex items-center justify-between gap-3">
                             <h3 className="text-base font-semibold text-gray-900">Wallet spend</h3>
                             <Gauge className="h-4 w-4 text-gray-400" />
@@ -734,7 +734,7 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                         <p className="mt-2 text-xs text-gray-500">Wallet available: {formatINRFromPaise(walletPaise)}</p>
                     </div>
 
-                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-3.5 sm:p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
                         <UsageMiniBarsCard label="Request pattern" value={fmt(model.totalMessages)} series={requestSeries} />
                     </div>
 
@@ -745,7 +745,7 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                 </aside>
             </div>
 
-            <div className="grid gap-3 border-t border-[#edf2f8] bg-gradient-to-r from-white via-[#fbfcfd] to-white p-5 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-2.5 sm:gap-3 border-t border-[#edf2f8] bg-gradient-to-r from-white via-[#fbfcfd] to-white p-3.5 sm:p-5 sm:grid-cols-2 xl:grid-cols-4">
                 <RateCard label="Delivery rate" value={model.deliveryRate} count={fmt(model.delivered)} color="bg-gradient-to-r from-[#0070d1] to-[#53b1ff]" />
                 <RateCard label="Read rate" value={model.readRate} count={fmt(model.read)} color="bg-gradient-to-r from-emerald-500 to-teal-400" />
                 <RateCard label="Pending" value={model.totalMessages ? (model.pending / model.totalMessages) * 100 : 0} count={fmt(model.pending)} color="bg-gradient-to-r from-amber-400 to-orange-300" />
@@ -757,19 +757,19 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
 
 function UsageBarChart({ bars, max, isHourly, peak, total }) {
     return (
-        <div className="mt-4 rounded-2xl border border-[#dfe8f6] bg-gradient-to-br from-[#fbfdff] via-white to-[#f7f4ff] p-3 shadow-[0_12px_32px_rgba(109,92,231,0.08)] sm:p-4">
-            <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="mt-2.5 sm:mt-4 rounded-2xl border border-[#dfe8f6] bg-gradient-to-br from-[#fbfdff] via-white to-[#f7f4ff] p-2.5 sm:p-4 shadow-[0_12px_32px_rgba(109,92,231,0.08)]">
+            <div className="mb-2 sm:mb-4 flex items-center justify-between gap-2 sm:gap-3">
                 <div>
                     <p className="text-xs font-medium text-gray-500">Total volume</p>
-                    <p className="text-xl font-semibold text-gray-950">{fmt(total)}</p>
+                    <p className="text-lg sm:text-xl font-semibold text-gray-950">{fmt(total)}</p>
                 </div>
-                <div className="flex items-center gap-2 rounded-full border border-violet-100 bg-white/90 px-3 py-2 shadow-[0_8px_20px_rgba(109,92,231,0.12)]">
+                <div className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-violet-100 bg-white/90 px-2.5 py-1 sm:py-2 shadow-[0_8px_20px_rgba(109,92,231,0.12)]">
                     <span className="h-2 w-2 rounded-full bg-[#7b55de] shadow-[0_0_0_4px_rgba(123,85,222,0.12)]" />
                     <span className="text-xs font-semibold text-gray-600">Peak</span>
                     <span className="text-sm font-semibold text-[#4c35b5]">{peak ? fmt(peak.total) : 0}</span>
                 </div>
             </div>
-            <div className="relative h-[285px] overflow-hidden rounded-2xl border border-[#dbe6f5] bg-white px-3 pt-3 shadow-[inset_0_1px_8px_rgba(15,23,42,0.04)]">
+            <div className="relative h-[180px] sm:h-[285px] overflow-hidden rounded-2xl border border-[#dbe6f5] bg-white px-2 sm:px-3 pt-2.5 sm:pt-3 shadow-[inset_0_1px_8px_rgba(15,23,42,0.04)]">
                 <div className="pointer-events-none absolute left-1/2 top-0 h-48 w-64 -translate-x-1/2 rounded-full bg-[#7b55de]/10 blur-3xl" />
                 <div className="absolute inset-x-3 top-3 border-t border-dashed border-gray-200" />
                 <div className="absolute inset-x-0 top-1/3 border-t border-dashed border-gray-200" />
@@ -778,12 +778,12 @@ function UsageBarChart({ bars, max, isHourly, peak, total }) {
                 <div className="absolute inset-x-3 bottom-11 top-5 flex items-end justify-between gap-1.5">
                     {bars.map((point, index) => {
                         const value = n(point.total)
-                        const height = value === 0 ? 3 : Math.max(10, (value / max) * 215)
+                        const height = value === 0 ? '3px' : `${Math.max(5, (value / max) * 100)}%`
                         const key = isHourly ? point.hour : point.date
                         const label = isHourly ? point.hour : point.date?.slice(5)
                         const showLabel = isHourly ? index % 4 === 0 : index === 0 || index === bars.length - 1
                         return (
-                            <div key={`${key}-${index}`} className="group relative flex min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                            <div key={`${key}-${index}`} className="group relative flex min-w-0 flex-1 flex-col items-center justify-end gap-2 h-full">
                                 <div className="pointer-events-none absolute bottom-[calc(100%+10px)] z-10 hidden min-w-[104px] rounded-xl border border-gray-200 bg-white px-3 py-2 text-center text-xs shadow-[0_16px_40px_rgba(15,23,42,0.14)] group-hover:block">
                                     <p className="font-semibold text-gray-900">{label}</p>
                                     <p className="mt-1 text-gray-600">{fmt(value)} messages</p>
@@ -799,7 +799,7 @@ function UsageBarChart({ bars, max, isHourly, peak, total }) {
                     })}
                 </div>
             </div>
-            <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+            <div className="mt-2.5 sm:mt-3 flex items-center justify-between text-[11px] sm:text-xs text-gray-500">
                 <span>{isHourly ? '00:00' : bars[0]?.date?.slice(5) || 'Start'}</span>
                 <span className="hidden sm:inline">{isHourly ? 'Hourly WhatsApp message activity' : 'Daily WhatsApp message activity'}</span>
                 <span>{isHourly ? '23:00' : bars[bars.length - 1]?.date?.slice(5) || 'End'}</span>
@@ -820,7 +820,7 @@ function UsageTrendCard({ primary, secondary, primaryLabel, secondaryLabel, prim
     const secondaryLast = secondaryPoints[secondaryPoints.length - 1] || { x: chartWidth, y: chartHeight }
 
     return (
-        <div className="mt-4 rounded-2xl border border-[#dfe8f6] bg-gradient-to-br from-[#fbfdff] via-white to-[#f7fffb] p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+        <div className="mt-2.5 sm:mt-4 rounded-2xl border border-[#dfe8f6] bg-gradient-to-br from-[#fbfdff] via-white to-[#f7fffb] p-3 sm:p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3 text-xs font-medium text-gray-600">
                     <span className="inline-flex items-center gap-1.5">
@@ -836,7 +836,7 @@ function UsageTrendCard({ primary, secondary, primaryLabel, secondaryLabel, prim
                     Live synced rows
                 </span>
             </div>
-            <div className="relative mt-4 h-[148px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-inner">
+            <div className="relative mt-2.5 sm:mt-4 h-[110px] sm:h-[148px] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-inner">
                 <div className="pointer-events-none absolute -left-16 bottom-0 h-28 w-48 rounded-full bg-emerald-400/10 blur-3xl" />
                 <div className="pointer-events-none absolute -right-16 top-0 h-28 w-48 rounded-full bg-pink-400/10 blur-3xl" />
                 <div className="absolute inset-x-0 top-1/4 border-t border-dashed border-gray-200" />
@@ -1066,49 +1066,49 @@ function RateCard({ label, value, count, color }) {
 
 function HealthRow({ icon, label, value, active }) {
     return (
-        <div className="flex items-center justify-between gap-4 rounded-lg bg-[#f5f7fa] px-4 py-3">
-            <div className="flex min-w-0 items-center gap-3">
-                <span className={`rounded-lg p-2 ${active ? 'bg-white text-[#0064b7]' : 'bg-amber-50 text-amber-600'}`}>
+        <div className="flex items-center justify-between gap-3 sm:gap-4 rounded-lg bg-[#f5f7fa] px-3 py-2.5 sm:px-4 sm:py-3">
+            <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+                <span className={`rounded-lg p-1.5 sm:p-2 ${active ? 'bg-white text-[#0064b7]' : 'bg-amber-50 text-amber-600'}`}>
                     {createElement(icon, { className: 'h-4 w-4' })}
                 </span>
-                <span className="truncate text-sm font-medium text-gray-700">{label}</span>
+                <span className="truncate text-xs sm:text-sm font-medium text-gray-700">{label}</span>
             </div>
-            <span className="shrink-0 text-sm font-semibold text-black">{value}</span>
+            <span className="shrink-0 text-xs sm:text-sm font-semibold text-black">{value}</span>
         </div>
     )
 }
 
 function MiniStat({ icon, label, value }) {
     return (
-        <div className="rounded-lg bg-[#f5f7fa] p-4">
-            <span className="mb-4 flex h-8 w-8 items-center justify-center rounded-lg bg-white text-gray-600">
+        <div className="rounded-lg bg-[#f5f7fa] p-3 sm:p-4">
+            <span className="mb-2 sm:mb-4 flex h-8 w-8 items-center justify-center rounded-lg bg-white text-gray-600">
                 {createElement(icon, { className: 'h-4 w-4' })}
             </span>
             <p className="text-xs font-medium uppercase text-gray-500">{label}</p>
-            <p className="mt-1 text-2xl font-light text-black">{value}</p>
+            <p className="mt-1 text-lg sm:text-2xl font-semibold sm:font-light text-black">{value}</p>
         </div>
     )
 }
 
 function InfoLine({ icon, label, value }) {
     return (
-        <div className="flex items-center justify-between gap-3 rounded-lg bg-[#f5f7fa] px-4 py-3">
-            <div className="flex min-w-0 items-center gap-3">
-                <span className="rounded-lg bg-white p-2 text-gray-600">{createElement(icon, { className: 'h-4 w-4' })}</span>
-                <span className="truncate text-sm font-medium text-gray-700">{label}</span>
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-[#f5f7fa] px-3 py-2.5 sm:px-4 sm:py-3">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                <span className="rounded-lg bg-white p-1.5 sm:p-2 text-gray-600">{createElement(icon, { className: 'h-4 w-4' })}</span>
+                <span className="truncate text-xs sm:text-sm font-medium text-gray-700">{label}</span>
             </div>
-            <span className="text-right text-sm font-semibold text-black">{value}</span>
+            <span className="text-right text-xs sm:text-sm font-semibold text-black">{value}</span>
         </div>
     )
 }
 
 function QuickAction({ to, icon, title, text, primary }) {
     return (
-        <Link to={to} className={`group flex items-center gap-3 rounded-lg p-4 transition-colors ${primary ? 'border border-[#b9dcfb] bg-[#eef7ff] hover:bg-[#e2f2ff]' : 'bg-[#f5f7fa] hover:bg-gray-100'}`}>
-            <span className={`rounded-lg bg-white p-2 ${primary ? 'text-[#0070d1] ring-1 ring-[#cfe5fb]' : 'text-[#0064b7]'}`}>{createElement(icon, { className: 'h-4 w-4' })}</span>
+        <Link to={to} className={`group flex items-center gap-2.5 sm:gap-3 rounded-lg p-3 sm:p-4 transition-colors ${primary ? 'border border-[#b9dcfb] bg-[#eef7ff] hover:bg-[#e2f2ff]' : 'bg-[#f5f7fa] hover:bg-gray-100'}`}>
+            <span className={`rounded-lg bg-white p-1.5 sm:p-2 ${primary ? 'text-[#0070d1] ring-1 ring-[#cfe5fb]' : 'text-[#0064b7]'}`}>{createElement(icon, { className: 'h-4 w-4' })}</span>
             <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-black">{title}</span>
-                <span className="mt-0.5 block truncate text-xs text-gray-600">{text}</span>
+                <span className="block text-xs sm:text-sm font-semibold text-black">{title}</span>
+                <span className="mt-0.5 block truncate text-[11px] sm:text-xs text-gray-600">{text}</span>
             </span>
             <ArrowRight className="h-4 w-4 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-[#0064b7]" />
         </Link>
@@ -1117,17 +1117,17 @@ function QuickAction({ to, icon, title, text, primary }) {
 
 function ActivityRow({ item }) {
     return (
-        <div className="flex items-start gap-3 rounded-lg bg-[#f5f7fa] p-4">
-            <span className="mt-0.5 rounded-lg bg-white p-2 text-[#0064b7]">
+        <div className="flex items-start gap-2 sm:gap-3 rounded-lg bg-[#f5f7fa] p-3 sm:p-4">
+            <span className="mt-0.5 rounded-lg bg-white p-1.5 sm:p-2 text-[#0064b7]">
                 <Activity className="h-4 w-4" />
             </span>
             <div className="min-w-0 flex-1">
                 <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-semibold text-black">{item.title}</p>
-                    <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600">{item.status}</span>
+                    <p className="text-xs sm:text-sm font-semibold text-black">{item.title}</p>
+                    <span className="shrink-0 rounded-full bg-white px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-medium text-gray-600">{item.status}</span>
                 </div>
-                <p className="mt-1 line-clamp-2 text-sm leading-5 text-gray-700">{item.description}</p>
-                <p className="mt-2 text-xs text-gray-500">{item.meta}</p>
+                <p className="mt-1 line-clamp-2 text-xs sm:text-sm leading-4 sm:leading-5 text-gray-700">{item.description}</p>
+                <p className="mt-1 sm:mt-2 text-[11px] sm:text-xs text-gray-500">{item.meta}</p>
             </div>
         </div>
     )
@@ -1135,13 +1135,13 @@ function ActivityRow({ item }) {
 
 function CampaignRow({ campaign }) {
     return (
-        <div className="rounded-lg bg-[#f5f7fa] p-4">
-            <div className="flex items-start justify-between gap-3">
+        <div className="rounded-lg bg-[#f5f7fa] p-3 sm:p-4">
+            <div className="flex items-start justify-between gap-2 sm:gap-3">
                 <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-black">{campaign.name || 'Campaign'}</p>
-                    <p className="mt-1 text-xs text-gray-500">{campaign.status || 'No status'}</p>
+                    <p className="truncate text-xs sm:text-sm font-semibold text-black">{campaign.name || 'Campaign'}</p>
+                    <p className="mt-0.5 sm:mt-1 text-[11px] sm:text-xs text-gray-500">{campaign.status || 'No status'}</p>
                 </div>
-                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-600">
+                <span className="rounded-full bg-white px-2 py-0.5 sm:px-2.5 sm:py-1 text-[11px] sm:text-xs font-medium text-gray-600">
                     {fmt(campaign.total_contacts)} contacts
                 </span>
             </div>

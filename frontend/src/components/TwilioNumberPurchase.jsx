@@ -73,11 +73,11 @@ export default function TwilioNumberPurchase() {
             )}
 
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
-                <div className="flex flex-1 rounded-xl border border-gray-300 bg-white shadow-sm focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500">
+                <div className="flex flex-1 rounded-xl border border-gray-300 bg-white shadow-sm focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 overflow-hidden">
                     <select 
                         value={country} 
                         onChange={e => setCountry(e.target.value)}
-                        className="w-full rounded-l-xl bg-transparent px-4 py-2.5 text-sm font-medium text-gray-900 outline-none sm:w-auto sm:border-r sm:border-gray-200"
+                        className="w-full bg-transparent px-4 py-3 text-sm font-medium text-gray-900 outline-none sm:w-auto sm:border-r sm:border-gray-200"
                     >
                         <option value="US">🇺🇸 United States (+1)</option>
                         <option value="GB">🇬🇧 United Kingdom (+44)</option>
@@ -90,7 +90,7 @@ export default function TwilioNumberPurchase() {
                 <button
                     onClick={searchNumbers}
                     disabled={searching}
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50 sm:w-auto"
+                    className="inline-flex h-11 w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-indigo-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
                 >
                     {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                     Search Numbers

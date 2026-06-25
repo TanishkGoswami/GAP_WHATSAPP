@@ -82,7 +82,7 @@ export default function BotAgents() {
         confirmLabel: '',
         cancelLabel: '',
         tone: 'info',
-        onConfirm: () => {},
+        onConfirm: () => { },
     })
     const fileInputRef = useRef(null)
 
@@ -231,7 +231,7 @@ export default function BotAgents() {
         setConfirmModal({
             isOpen: true,
             title: isEditing ? 'Save changes?' : 'Create agent?',
-            message: isEditing 
+            message: isEditing
                 ? `Are you sure you want to save the updated settings and re-train the agent "${draft.name}"?`
                 : `Are you sure you want to create and train the new agent "${draft.name}"?`,
             confirmLabel: isEditing ? 'Save & Train' : 'Create & Train',
@@ -349,7 +349,7 @@ export default function BotAgents() {
     }
 
     return (
-        <div className="min-h-full bg-[#f5f7fa] px-3 py-4 sm:px-4 lg:px-7">
+        <div className="min-h-full bg-[#f5f7fa]  sm:px-4 lg:px-7">
             <div className="space-y-5">
                 <div className="rounded-lg border border-gray-200 bg-white p-4 sm:p-5">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -912,11 +912,10 @@ function AppleVercelConfirmModal({ isOpen, onClose, title, message, confirmLabel
                                     <button
                                         type="button"
                                         onClick={onConfirm}
-                                        className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white border border-transparent rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all duration-150 outline-none ${
-                                            tone === 'danger'
-                                                ? 'bg-red-600 hover:bg-red-500 active:bg-red-700'
-                                                : 'bg-black hover:bg-neutral-900 active:bg-neutral-800'
-                                        }`}
+                                        className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white border border-transparent rounded-xl shadow-sm hover:shadow active:scale-[0.98] transition-all duration-150 outline-none ${tone === 'danger'
+                                            ? 'bg-red-600 hover:bg-red-500 active:bg-red-700'
+                                            : 'bg-black hover:bg-neutral-900 active:bg-neutral-800'
+                                            }`}
                                     >
                                         {confirmLabel || 'Confirm'}
                                     </button>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap, Activity, X, LayoutTemplate, Star, Search, Sparkles, Clock, Layers, CheckCircle2, Smartphone, ShieldCheck, QrCode, Info, ChevronRight, MessageSquare, LifeBuoy, Send, MoreHorizontal } from 'lucide-react';
+import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap, Activity, X, LayoutTemplate, Star, Search, Sparkles, Clock, Layers, CheckCircle2, Smartphone, ShieldCheck, QrCode, Info, ChevronRight, MessageSquare, LifeBuoy, Send, MoreHorizontal, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
 import FlowEditor from '../components/flow-builder/FlowEditor';
 import { useAuth } from '../context/AuthContext';
@@ -307,12 +307,12 @@ export default function FlowBuilder() {
     }
 
     return (
-        <div className="space-y-5 p-3 sm:p-5 lg:p-6">
+        <div className="space-y-3.5 sm:space-y-5 p-3 sm:p-5 lg:p-6">
             {/* Header */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Flow Builder</h1>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Flow Builder</h1>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-0.5 sm:mt-1">
                         Create automated message flows for your WhatsApp automation
                     </p>
                 </div>
@@ -321,7 +321,7 @@ export default function FlowBuilder() {
                     <button
                         onClick={() => setShowTemplatesModal(true)}
                         data-tour="flows-templates"
-                        className="fp-button-secondary"
+                        className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 sm:px-4 text-xs sm:text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-all active:scale-[0.98] w-full"
                     >
                         <LayoutTemplate className="h-4 w-4" />
                         Flow Templates
@@ -329,7 +329,7 @@ export default function FlowBuilder() {
                     <button
                         onClick={() => setShowCreateModal(true)}
                         data-tour="flows-create"
-                        className="fp-button-primary"
+                        className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3 sm:px-4 text-xs sm:text-sm font-semibold text-white shadow-sm hover:bg-blue-750 transition-all active:scale-[0.98] w-full"
                     >
                         <Plus className="h-4 w-4" />
                         Create Flow
@@ -337,29 +337,29 @@ export default function FlowBuilder() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]">
+            <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(360px,0.7fr)]">
                 {/* Which number will this flow run on Card */}
-                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-6 flex flex-col justify-between md:flex-row md:items-center gap-6">
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 p-3.5 sm:p-6 flex flex-col justify-between md:flex-row md:items-center gap-3 sm:gap-6">
                     <div className="flex-1">
-                        <div className="flex items-start gap-3">
-                            <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
-                                <Info className="h-5 w-5" />
+                        <div className="flex items-start gap-2.5 sm:gap-3">
+                            <div className="mt-0.5 flex h-8 w-8 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-blue-600 text-white shadow-sm">
+                                <Info className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                             </div>
                             <div>
-                                <h2 className="text-base font-bold text-blue-950">Which number will this flow run on?</h2>
-                                <p className="mt-1.5 text-sm leading-6 text-blue-900/90">
+                                <h2 className="text-sm sm:text-base font-bold text-blue-950">Which number will this flow run on?</h2>
+                                <p className="mt-1 text-xs sm:text-sm leading-relaxed text-blue-900/90">
                                     Har flow ko all connected numbers ya selected WhatsApp numbers par run kar sakte hain. Customer jis number par message bhejta hai, reply usi receiving number se jayega.
                                 </p>
                             </div>
                         </div>
-                        <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                            <span className="rounded-full bg-white px-3 py-1.5 font-semibold text-blue-800 ring-1 ring-blue-100/50 shadow-sm">
+                        <div className="mt-3 sm:mt-4 flex flex-wrap gap-1.5 text-[10px] sm:text-xs">
+                            <span className="rounded-md bg-white px-2 py-0.5 font-semibold text-blue-800 ring-1 ring-blue-100/50 shadow-sm">
                                 Current switch: {selectedAccount ? (selectedAccount.display_phone_number || selectedAccount.phone_number_id || selectedAccount.name) : 'All connected accounts'}
                             </span>
-                            <span className="rounded-full bg-white px-3 py-1.5 text-blue-700 ring-1 ring-blue-100/50 shadow-sm">
+                            <span className="rounded-md bg-white px-2 py-0.5 text-blue-700 ring-1 ring-blue-100/50 shadow-sm">
                                 {waAccounts.length} connected number(s)
                             </span>
-                            <span className="rounded-full bg-white px-3 py-1.5 text-blue-700 ring-1 ring-blue-100/50 shadow-sm">
+                            <span className="rounded-md bg-white px-2 py-0.5 text-blue-700 ring-1 ring-blue-100/50 shadow-sm">
                                 Duplicate trigger protection active
                             </span>
                         </div>
@@ -398,47 +398,47 @@ export default function FlowBuilder() {
                 </div>
 
                 {/* Connected access types Card */}
-                <div className="rounded-2xl border border-gray-200 bg-white p-6 flex flex-col justify-between shadow-sm">
-                    <div className="mb-4 flex items-center justify-between">
-                        <h2 className="text-sm font-bold text-gray-900">Connected access types</h2>
-                        <Smartphone className="h-4 w-4 text-gray-400" />
+                <div className="rounded-2xl border border-gray-200 bg-white p-3.5 sm:p-6 flex flex-col justify-between shadow-sm">
+                    <div className="mb-3 sm:mb-4 flex items-center justify-between">
+                        <h2 className="text-xs sm:text-sm font-bold text-gray-900">Connected access types</h2>
+                        <Smartphone className="h-3.5 w-3.5 text-gray-400" />
                     </div>
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-2 sm:gap-3">
                         {/* Meta API Row */}
-                        <div className="flex items-center justify-between border border-gray-100 rounded-xl p-3 bg-white hover:bg-gray-50/50 transition-colors">
-                            <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-green-50 text-green-600 shrink-0">
-                                    <ShieldCheck className="h-5 w-5" />
+                        <div className="flex items-center justify-between border border-gray-100 rounded-xl p-2 sm:p-3 bg-white hover:bg-gray-50/50 transition-colors">
+                            <div className="flex items-center gap-2.5 sm:gap-3">
+                                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg flex items-center justify-center bg-green-50 text-green-600 shrink-0">
+                                    <ShieldCheck className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                                 </div>
                                 <div className="min-w-0">
-                                    <h3 className="text-sm font-semibold text-gray-900">Meta API</h3>
-                                    <p className="text-[11px] leading-4 text-gray-500 truncate max-w-[200px] xl:max-w-[170px]">
+                                    <h3 className="text-xs sm:text-sm font-semibold text-gray-900">Meta API</h3>
+                                    <p className="text-[10px] sm:text-[11px] leading-tight text-gray-500 truncate max-w-[200px] xl:max-w-[170px]">
                                         Templates, broadcasts, profile sync...
                                     </p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-1.5 pl-2">
-                                <span className="text-xl font-bold text-gray-900">{metaAccounts.length}</span>
-                                <ChevronRight className="h-4 w-4 text-gray-400" />
+                                <span className="text-base sm:text-xl font-bold text-gray-900">{metaAccounts.length}</span>
+                                <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
                             </div>
                         </div>
 
                         {/* QR Session Row */}
-                        <div className="flex items-center justify-between border border-gray-100 rounded-xl p-3 bg-white hover:bg-gray-50/50 transition-colors">
-                            <div className="flex items-center gap-3">
-                                <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-amber-50 text-amber-600 shrink-0">
-                                    <QrCode className="h-5 w-5" />
+                        <div className="flex items-center justify-between border border-gray-100 rounded-xl p-2 sm:p-3 bg-white hover:bg-gray-50/50 transition-colors">
+                            <div className="flex items-center gap-2.5 sm:gap-3">
+                                <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg flex items-center justify-center bg-amber-50 text-amber-600 shrink-0">
+                                    <QrCode className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                                 </div>
                                 <div className="min-w-0">
-                                    <h3 className="text-sm font-semibold text-gray-900">QR Session</h3>
-                                    <p className="text-[11px] leading-4 text-gray-500 truncate max-w-[200px] xl:max-w-[170px]">
+                                    <h3 className="text-xs sm:text-sm font-semibold text-gray-900">QR Session</h3>
+                                    <p className="text-[10px] sm:text-[11px] leading-tight text-gray-500 truncate max-w-[200px] xl:max-w-[170px]">
                                         Chats and flow replies only...
                                     </p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-1.5 pl-2">
-                                <span className="text-xl font-bold text-gray-900">{qrAccounts.length}</span>
-                                <ChevronRight className="h-4 w-4 text-gray-400" />
+                                <span className="text-base sm:text-xl font-bold text-gray-900">{qrAccounts.length}</span>
+                                <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
                             </div>
                         </div>
                     </div>
@@ -446,39 +446,39 @@ export default function FlowBuilder() {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-4 overflow-x-auto pb-2.5 sm:pb-0 custom-scrollbar">
+            <div className="grid grid-cols-3 gap-2 sm:gap-4 pb-1 sm:pb-0">
                 {/* Total Flows */}
-                <div className="bg-white p-3 sm:p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-2 sm:gap-4 hover:shadow-md transition-shadow shrink-0 min-w-[120px] sm:min-w-0 flex-1">
-                    <div className="h-9 w-9 sm:h-12 sm:w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
-                        <TrendingUp className="h-4.5 w-4.5 sm:h-6 sm:w-6" />
+                <div className="bg-white p-2.5 sm:p-5 rounded-2xl border border-gray-150 shadow-sm flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-left gap-1.5 sm:gap-4 hover:shadow-md transition-shadow w-full min-w-0 flex-1">
+                    <div className="h-8 w-8 sm:h-12 sm:w-12 rounded-lg sm:rounded-xl bg-gradient-to-tr from-blue-600 to-sky-400 text-white flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
+                        <TrendingUp className="h-4.5 w-4.5 sm:h-6 sm:w-6 text-white" />
                     </div>
-                    <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider truncate">Total Flows</p>
-                        <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-0.5 truncate">{flows.length}</p>
+                    <div className="min-w-0 w-full">
+                        <p className="text-[9px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider leading-none sm:leading-normal">Total Flows</p>
+                        <p className="text-sm sm:text-2xl font-bold text-gray-900 mt-0.5 sm:mt-1 truncate">{flows.length}</p>
                     </div>
                 </div>
 
                 {/* Active Flows */}
-                <div className="bg-white p-3 sm:p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-2 sm:gap-4 hover:shadow-md transition-shadow shrink-0 min-w-[120px] sm:min-w-0 flex-1">
-                    <div className="h-9 w-9 sm:h-12 sm:w-12 rounded-xl bg-green-50 flex items-center justify-center text-green-600 shrink-0">
-                        <Play className="h-4.5 w-4.5 sm:h-5 sm:w-5 fill-green-600 text-green-600" />
+                <div className="bg-white p-2.5 sm:p-5 rounded-2xl border border-gray-150 shadow-sm flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-left gap-1.5 sm:gap-4 hover:shadow-md transition-shadow w-full min-w-0 flex-1">
+                    <div className="h-8 w-8 sm:h-12 sm:w-12 rounded-lg sm:rounded-xl bg-gradient-to-tr from-emerald-600 to-green-400 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 shrink-0">
+                        <Play className="h-4.5 w-4.5 sm:h-5 sm:w-5 fill-current text-white" />
                     </div>
-                    <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider truncate">Active Flows</p>
-                        <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-0.5 truncate">
+                    <div className="min-w-0 w-full">
+                        <p className="text-[9px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider leading-none sm:leading-normal">Active Flows</p>
+                        <p className="text-sm sm:text-2xl font-bold text-gray-900 mt-0.5 sm:mt-1 truncate">
                             {flows.filter(f => f.status === 'active').length}
                         </p>
                     </div>
                 </div>
 
                 {/* Messages Sent */}
-                <div className="bg-white p-3 sm:p-5 rounded-2xl border border-gray-200 shadow-sm flex items-center gap-2 sm:gap-4 hover:shadow-md transition-shadow shrink-0 min-w-[120px] sm:min-w-0 flex-1">
-                    <div className="h-9 w-9 sm:h-12 sm:w-12 rounded-xl bg-purple-50 flex items-center justify-center text-purple-600 shrink-0">
-                        <Send className="h-4.5 w-4.5 sm:h-5 sm:w-5 text-purple-600 fill-purple-600/10" />
+                <div className="bg-white p-2.5 sm:p-5 rounded-2xl border border-gray-150 shadow-sm flex flex-col sm:flex-row items-center sm:items-center text-center sm:text-left gap-1.5 sm:gap-4 hover:shadow-md transition-shadow w-full min-w-0 flex-1">
+                    <div className="h-8 w-8 sm:h-12 sm:w-12 rounded-lg sm:rounded-xl bg-gradient-to-tr from-purple-600 to-fuchsia-400 text-white flex items-center justify-center shadow-md shadow-purple-500/20 shrink-0">
+                        <Send className="h-4.5 w-4.5 sm:h-5 sm:w-5 text-white fill-white/20" />
                     </div>
-                    <div className="min-w-0">
-                        <p className="text-[10px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider truncate">Messages Sent</p>
-                        <p className="text-lg sm:text-2xl font-bold text-gray-900 mt-0.5 truncate">
+                    <div className="min-w-0 w-full">
+                        <p className="text-[9px] sm:text-xs font-semibold text-gray-400 uppercase tracking-wider leading-none sm:leading-normal">Messages Sent</p>
+                        <p className="text-sm sm:text-2xl font-bold text-gray-900 mt-0.5 sm:mt-1 truncate">
                             {flows.reduce((sum, f) => sum + (f.messagesSent || 0), 0).toLocaleString()}
                         </p>
                     </div>
@@ -492,19 +492,19 @@ export default function FlowBuilder() {
                     const IconComp = theme.icon;
 
                     return (
-                        <div key={flow.id} className="flex flex-col bg-white rounded-2xl border border-gray-200 hover:shadow-lg transition-shadow p-5">
+                        <div key={flow.id} className="flex flex-col bg-white rounded-2xl border border-gray-200 hover:shadow-lg transition-shadow p-3.5 sm:p-5">
                             <div className="flex-1">
-                                <div className="flex items-start justify-between gap-4">
+                                <div className="flex items-start justify-between gap-2.5 sm:gap-4">
                                     <div className="flex items-start flex-1 min-w-0">
-                                        <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 border ${theme.bgColor}`}>
-                                            <IconComp className="h-5 w-5" />
+                                        <div className={`h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 border ${theme.bgColor}`}>
+                                            <IconComp className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                                         </div>
-                                        <div className="ml-3 min-w-0 flex-1">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <h3 className="font-bold text-gray-900 truncate text-sm sm:text-base" title={flow.name}>
+                                        <div className="ml-2.5 sm:ml-3 min-w-0 flex-1">
+                                            <div className="flex flex-wrap items-center gap-1.5">
+                                                <h3 className="font-bold text-gray-900 truncate text-xs sm:text-base" title={flow.name}>
                                                     {flow.name}
                                                 </h3>
-                                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider shrink-0 ${
+                                                <span className={`px-1.5 sm:px-2 py-0.2 sm:py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold border uppercase tracking-wider shrink-0 ${
                                                     flow.status === 'active'
                                                         ? 'bg-green-50 text-green-700 border-green-200'
                                                         : flow.status === 'paused'
@@ -515,7 +515,7 @@ export default function FlowBuilder() {
                                                 </span>
                                             </div>
                                             {flow.description && (
-                                                <p className="text-xs text-gray-400 mt-1 line-clamp-2 leading-relaxed">
+                                                <p className="text-[10px] sm:text-xs text-gray-400 mt-0.5 sm:mt-1 line-clamp-2 leading-relaxed">
                                                     {flow.description}
                                                 </p>
                                             )}
@@ -524,87 +524,87 @@ export default function FlowBuilder() {
                                     <div className="flex items-center gap-1 shrink-0">
                                         <button
                                             onClick={() => toggleFlowStatus(flow)}
-                                            className={`p-1.5 rounded-lg border transition-all ${
+                                            className={`p-1 sm:p-1.5 rounded-lg border transition-all ${
                                                 flow.status === 'active'
                                                     ? 'text-amber-600 border-amber-200 bg-amber-50 hover:bg-amber-100'
                                                     : 'text-green-600 border-green-200 bg-green-50 hover:bg-green-100'
                                             }`}
                                             title={flow.status === 'active' ? 'Pause Flow' : 'Activate Flow'}
                                         >
-                                            {flow.status === 'active' ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+                                            {flow.status === 'active' ? <Pause className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> : <Play className="h-3 w-3 sm:h-3.5 sm:w-3.5 fill-current" />}
                                         </button>
                                         <button
                                             onClick={() => handleDuplicateFlow(flow)}
-                                            className="p-1.5 text-gray-400 hover:text-gray-600 border border-gray-200 hover:bg-gray-50 rounded-lg flex items-center justify-center transition-all"
+                                            className="p-1 sm:p-1.5 text-gray-400 hover:text-gray-600 border border-gray-200 hover:bg-gray-50 rounded-lg flex items-center justify-center transition-all"
                                             title="Duplicate"
                                         >
-                                            <Copy className="h-3.5 w-3.5" />
+                                            <Copy className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                                         </button>
                                         <button
                                             onClick={() => handleDeleteFlow(flow.id)}
-                                            className="p-1.5 text-gray-400 hover:text-red-600 border border-gray-200 hover:bg-red-50 rounded-lg flex items-center justify-center transition-all"
+                                            className="p-1 sm:p-1.5 text-gray-400 hover:text-red-600 border border-gray-200 hover:bg-red-50 rounded-lg flex items-center justify-center transition-all"
                                             title="Delete"
                                         >
-                                            <Trash2 className="h-3.5 w-3.5" />
+                                            <Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                                         </button>
                                     </div>
                                 </div>
 
-                                <div className="bg-gray-50/50 rounded-xl p-3 border border-gray-100 grid grid-cols-3 gap-2 text-center text-xs mt-5">
+                                <div className="bg-gray-50/50 rounded-xl p-2.5 sm:p-3 border border-gray-100 grid grid-cols-3 gap-2 text-center text-xs mt-3 sm:mt-5">
                                     <div>
-                                        <span className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Nodes</span>
-                                        <span className="block text-sm font-bold text-gray-900 mt-0.5">{Array.isArray(flow.nodes) ? flow.nodes.length : 0}</span>
+                                        <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Nodes</span>
+                                        <span className="block text-xs sm:text-sm font-bold text-gray-900 mt-0.5">{Array.isArray(flow.nodes) ? flow.nodes.length : 0}</span>
                                     </div>
                                     <div>
-                                        <span className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Messages Sent</span>
-                                        <span className="block text-sm font-bold text-gray-900 mt-0.5">{(flow.messagesSent || 0).toLocaleString()}</span>
+                                        <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Messages Sent</span>
+                                        <span className="block text-xs sm:text-sm font-bold text-gray-900 mt-0.5">{(flow.messagesSent || 0).toLocaleString()}</span>
                                     </div>
                                     <div className="min-w-0">
-                                        <span className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Runs on</span>
-                                        <span className="block text-[10px] font-bold text-blue-700 mt-1 truncate bg-blue-50/60 rounded px-1.5 py-0.5 border border-blue-100/30">
+                                        <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Runs on</span>
+                                        <span className="block text-[8.5px] sm:text-[10px] font-bold text-blue-700 mt-1 truncate bg-blue-50/60 rounded px-1.5 py-0.5 border border-blue-100/30">
                                             {flow.wa_account_scope === 'all' ? 'All numbers' : `${flow.wa_account_ids?.length || 0} selected`}
                                         </span>
                                     </div>
                                 </div>
 
-                                <div className="flex items-end justify-between mt-5">
+                                <div className="flex items-end justify-between mt-3 sm:mt-5">
                                     <div>
-                                        <span className="block text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Triggers</span>
+                                        <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Triggers</span>
                                         <div className="flex flex-wrap gap-1">
                                             {flow.triggers && flow.triggers.length > 0 ? (
                                                 flow.triggers.map((trigger, i) => (
-                                                    <span key={i} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-semibold rounded border border-blue-100/50">
+                                                    <span key={i} className="px-1.5 py-0.2 bg-blue-50 text-blue-700 text-[10px] sm:text-xs font-semibold rounded border border-blue-100/50">
                                                         {trigger}
                                                     </span>
                                                 ))
                                             ) : (
-                                                <span className="text-xs text-gray-400 italic">No triggers</span>
+                                                <span className="text-[10px] sm:text-xs text-gray-400 italic">No triggers</span>
                                             )}
                                         </div>
                                     </div>
                                     <div className="text-right shrink-0">
-                                        <span className="text-[10px] font-semibold text-gray-400 block uppercase tracking-wider">Last edited</span>
-                                        <span className="text-xs font-semibold text-gray-600 block mt-0.5">
+                                        <span className="text-[8.5px] sm:text-[10px] font-semibold text-gray-400 block uppercase tracking-wider">Last edited</span>
+                                        <span className="text-[10px] sm:text-xs font-semibold text-gray-600 block mt-0.5">
                                             {formatRelativeTime(flow.updated_at || flow.created_at)}
                                         </span>
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="mt-5 pt-4 border-t border-gray-100 flex gap-2">
+                            <div className="mt-3.5 sm:mt-5 pt-3 sm:pt-4 border-t border-gray-100 flex gap-2">
                                 <button
                                     onClick={() => setEditingFlow(flow)}
-                                    className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-2 shadow-sm transition-colors"
+                                    className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm font-semibold text-gray-700 hover:bg-gray-50 flex items-center justify-center gap-1.5 shadow-sm transition-colors"
                                 >
-                                    <Edit2 className="h-3.5 w-3.5 text-gray-500" />
+                                    <Edit2 className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-gray-500" />
                                     Edit Flow
                                 </button>
                                 <button
                                     onClick={() => openRunsModal(flow)}
-                                    className="px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 flex items-center justify-center shadow-sm transition-colors"
+                                    className="px-2.5 sm:px-3.5 py-1.5 sm:py-2 bg-white border border-gray-200 rounded-xl text-xs sm:text-sm font-semibold text-gray-600 hover:bg-gray-50 flex items-center justify-center shadow-sm transition-colors"
                                     title="Run logs"
                                 >
-                                    <Activity className="h-3.5 w-3.5 text-gray-500" />
+                                    <Activity className="h-3 w-3 sm:h-3.5 sm:w-3.5 text-gray-500" />
                                 </button>
                             </div>
                         </div>
@@ -614,13 +614,13 @@ export default function FlowBuilder() {
                 {/* Create your next flow Card */}
                 <button
                     onClick={() => setShowCreateModal(true)}
-                    className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 hover:border-gray-300 rounded-2xl bg-white hover:bg-gray-50/50 p-6 text-center min-h-[280px] transition-all group shadow-sm hover:shadow-md cursor-pointer"
+                    className="flex flex-col items-center justify-center border-2 border-dashed border-gray-200 hover:border-gray-300 rounded-2xl bg-white hover:bg-gray-50/50 p-4 sm:p-6 text-center min-h-[180px] sm:min-h-[280px] transition-all group shadow-sm hover:shadow-md cursor-pointer"
                 >
-                    <div className="h-10 w-10 rounded-full bg-gray-50 group-hover:bg-gray-100 flex items-center justify-center border border-gray-200 text-gray-400 group-hover:text-gray-600 transition-colors shadow-sm">
-                        <Plus className="h-5 w-5" />
+                    <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-gray-50 group-hover:bg-gray-100 flex items-center justify-center border border-gray-200 text-gray-400 group-hover:text-gray-600 transition-colors shadow-sm">
+                        <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
                     </div>
-                    <h3 className="text-sm font-bold text-gray-900 mt-4">Create your next flow</h3>
-                    <p className="text-xs text-gray-500 mt-1.5 max-w-[200px]">
+                    <h3 className="text-xs sm:text-sm font-bold text-gray-900 mt-3 sm:mt-4">Create your next flow</h3>
+                    <p className="text-[11px] sm:text-xs text-gray-500 mt-1 sm:mt-1.5 max-w-[200px]">
                         Start building another automation for your business.
                     </p>
                 </button>
@@ -884,9 +884,224 @@ function TemplateGalleryModal({
 }) {
     const preview = selectedTemplate?.preview || { nodes: [], edges: [] };
 
+    // Mobile specific layout states
+    const [isMobileSearchExpanded, setIsMobileSearchExpanded] = useState(false);
+    const [isMoreCategoriesOpen, setIsMoreCategoriesOpen] = useState(false);
+    const [isFillDetailsOpen, setIsFillDetailsOpen] = useState(false);
+    const [isAboutOpen, setIsAboutOpen] = useState(false);
+
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-0 sm:p-4">
-            <div className="flex h-full w-full max-w-7xl flex-col overflow-hidden rounded-none border border-gray-200 bg-white sm:h-[88vh] sm:rounded-lg lg:flex-row">
+            {/* Mobile View (< md) */}
+            <div className="md:hidden flex h-full w-full flex-col overflow-hidden bg-gray-50">
+                {/* Header */}
+                <div className="bg-white border-b border-gray-200 px-4 py-3 flex flex-col gap-2.5 shrink-0">
+                    <div className="flex items-center justify-between gap-3">
+                        {isMobileSearchExpanded ? (
+                            <div className="flex items-center gap-2 flex-grow">
+                                <button onClick={() => { setIsMobileSearchExpanded(false); onQueryChange(''); }} className="p-1 text-gray-500 hover:text-black">
+                                    <ArrowLeft className="h-4.5 w-4.5" />
+                                </button>
+                                <input
+                                    value={query}
+                                    onChange={(e) => onQueryChange(e.target.value)}
+                                    placeholder="Search templates..."
+                                    autoFocus
+                                    className="flex-grow bg-gray-50 border border-gray-200 rounded-lg px-3 py-1 text-xs outline-none focus:ring-1 focus:ring-indigo-500 h-8"
+                                />
+                            </div>
+                        ) : (
+                            <>
+                                <div className="flex items-center gap-1.5 text-sm font-semibold text-[#128C7E]">
+                                    <Sparkles className="h-4 w-4" />
+                                    <span>Flow Templates</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                    <button onClick={() => setIsAboutOpen(prev => !prev)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg">
+                                        <Info className="h-4 w-4" />
+                                    </button>
+                                    <button onClick={() => setIsMobileSearchExpanded(true)} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg">
+                                        <Search className="h-4 w-4" />
+                                    </button>
+                                    <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg ml-0.5">
+                                        <X className="h-4.5 w-4.5" />
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    {isAboutOpen && !isMobileSearchExpanded && (
+                        <div className="rounded-lg bg-blue-50/70 p-2.5 text-[10.5px] text-blue-900 leading-normal flex justify-between gap-2.5 items-start">
+                            <p>Choose a workflow template, customize placeholders (like Business Name), and generate a draft flow instantly.</p>
+                            <button onClick={() => setIsAboutOpen(false)} className="text-blue-500 font-semibold shrink-0">Hide</button>
+                        </div>
+                    )}
+
+                    {/* Categories Horizontal list */}
+                    {!isMobileSearchExpanded && (
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 custom-scrollbar">
+                            {categories.slice(0, 4).map(item => (
+                                <button
+                                    key={item}
+                                    onClick={() => onCategoryChange(item)}
+                                    className={`shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold transition-all ${
+                                        category === item ? 'bg-black text-white' : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                    }`}
+                                >
+                                    {item}
+                                </button>
+                            ))}
+                            {categories.length > 4 && (
+                                <button
+                                    onClick={() => setIsMoreCategoriesOpen(true)}
+                                    className="shrink-0 rounded-full px-3 py-1 text-[11px] font-semibold border border-gray-200 bg-white text-gray-500 flex items-center gap-1"
+                                >
+                                    + More
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Templates Scrollable List */}
+                <div className="flex-1 overflow-y-auto bg-[#f5f7fa] p-3 space-y-2.5">
+                    {templates.map(template => {
+                        const selected = selectedTemplate?.id === template.id;
+                        const starred = Boolean(templateStarStats[template.id]?.starred);
+
+                        return (
+                            <div
+                                key={template.id}
+                                className={`rounded-xl border bg-white overflow-hidden transition-all duration-200 ${
+                                    selected ? 'border-[#25D366] ring-2 ring-[#25D366]/10' : 'border-gray-200 hover:border-gray-300'
+                                }`}
+                            >
+                                {/* Collapsed Header */}
+                                <div
+                                    onClick={() => onSelectTemplate(template)}
+                                    className="p-3 flex items-start justify-between gap-3 cursor-pointer"
+                                >
+                                    <div className="min-w-0 flex-grow">
+                                        <div className="flex items-center gap-1.5">
+                                            <h3 className="text-xs font-bold text-gray-900 truncate">{template.name}</h3>
+                                            <span className="rounded bg-gray-100 px-1.5 py-0.2 text-[8.5px] font-semibold text-gray-500 uppercase tracking-wider shrink-0">{template.category}</span>
+                                        </div>
+                                        <p className="text-[10px] text-gray-500 mt-1 line-clamp-1">{template.bestFor || template.description}</p>
+                                        <div className="flex items-center gap-2 text-[9px] text-gray-400 mt-1">
+                                            <span className="flex items-center gap-0.5"><Layers className="h-3 w-3" /> {template.preview.nodes.length} nodes</span>
+                                            <span>•</span>
+                                            <span>{template.difficulty}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col items-end shrink-0 gap-1">
+                                        <span className={`inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0.2 text-[9px] font-bold ${starred ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-500'}`}>
+                                            <Star className={`h-2.5 w-2.5 ${starred ? 'fill-current text-amber-500' : ''}`} />
+                                            {getTemplateStars(template, templateStarStats)}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Selected / Expanded details */}
+                                {selected && (
+                                    <div className="border-t border-gray-150 bg-gray-50/50 p-3 space-y-3">
+                                        <p className="text-xs text-gray-600 leading-relaxed">{template.description}</p>
+                                        
+                                        <div className="flex items-center justify-between gap-2.5 pt-2">
+                                            <button
+                                                onClick={() => onToggleStar(template.id)}
+                                                className={`inline-flex items-center justify-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold ${starred ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-gray-200 bg-white text-gray-600'}`}
+                                            >
+                                                <Star className={`h-3 w-3 ${starred ? 'fill-current' : ''}`} />
+                                                Star
+                                            </button>
+                                            
+                                            <button
+                                                onClick={() => setIsFillDetailsOpen(true)}
+                                                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#25D366] hover:bg-[#1fb85a] px-3 py-1.5 text-xs font-semibold text-white shadow-sm"
+                                            >
+                                                <LayoutTemplate className="h-3.5 w-3.5" />
+                                                Use & Customize
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* More Categories Bottom Sheet */}
+                {isMoreCategoriesOpen && (
+                    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setIsMoreCategoriesOpen(false)}>
+                        <div className="w-full bg-white rounded-t-2xl p-4 animate-slide-up" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex justify-between items-center mb-3">
+                                <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Select Category</h4>
+                                <button onClick={() => setIsMoreCategoriesOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="h-4.5 w-4.5" /></button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 max-h-[240px] overflow-y-auto pb-4">
+                                {categories.map((item) => (
+                                    <button
+                                        key={item}
+                                        onClick={() => { onCategoryChange(item); setIsMoreCategoriesOpen(false); }}
+                                        className={`p-2.5 rounded-xl text-center text-xs font-medium border ${category === item ? 'bg-black text-white border-black' : 'bg-gray-50 text-gray-700 border-gray-200'}`}
+                                    >
+                                        {item}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Fill Details Bottom Sheet */}
+                {isFillDetailsOpen && selectedTemplate && (
+                    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={() => setIsFillDetailsOpen(false)}>
+                        <div className="w-full bg-white rounded-t-2xl p-4 animate-slide-up shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2.5">
+                                <div>
+                                    <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Customize Flow Settings</h4>
+                                    <h3 className="text-xs font-bold text-gray-900 mt-0.5">{selectedTemplate.name}</h3>
+                                </div>
+                                <button onClick={() => setIsFillDetailsOpen(false)} className="text-gray-400 hover:text-gray-600"><X className="h-4.5 w-4.5" /></button>
+                            </div>
+                            <div className="space-y-3.5 max-h-[300px] overflow-y-auto">
+                                {selectedTemplate.fields.map(field => (
+                                    <label key={field.key} className="block">
+                                        <span className="mb-1 block text-xs font-semibold text-gray-700">{field.label}</span>
+                                        <input
+                                            value={templateDraft[field.key] || ''}
+                                            onChange={(event) => onDraftChange(prev => ({ ...prev, [field.key]: event.target.value }))}
+                                            className="w-full rounded-xl border border-gray-200 px-3 py-2 text-xs outline-none focus:ring-1 focus:ring-indigo-500 h-9"
+                                        />
+                                    </label>
+                                ))}
+                                <div className="rounded-lg border border-gray-200 bg-[#f8faf9] p-3 text-[11px] leading-relaxed text-gray-600">
+                                    <strong>What happens next:</strong> Created as a draft flow. You can customize layout nodes, test messages, then activate.
+                                </div>
+                            </div>
+                            <div className="pt-4 border-t border-gray-100 mt-3 flex gap-2">
+                                <button
+                                    onClick={() => setIsFillDetailsOpen(false)}
+                                    className="flex-1 py-2 border border-gray-200 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-50"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => { onUseTemplate(); setIsFillDetailsOpen(false); }}
+                                    className="flex-1 py-2 bg-[#25D366] hover:bg-[#1fb85a] rounded-xl text-xs font-semibold text-white shadow-sm flex items-center justify-center gap-1.5"
+                                >
+                                    <LayoutTemplate className="h-3.5 w-3.5" />
+                                    Create Flow
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Desktop View (>= md) */}
+            <div className="hidden md:flex h-full w-full max-w-7xl flex-col overflow-hidden rounded-none border border-gray-200 bg-white sm:h-[88vh] sm:rounded-lg lg:flex-row">
                 <div className="flex h-[46vh] w-full flex-col border-b border-gray-200 bg-white lg:h-auto lg:w-[420px] lg:border-b-0 lg:border-r">
                     <div className="border-b border-gray-200 bg-white p-4 sm:p-5">
                         <div className="flex items-start justify-between gap-4">
