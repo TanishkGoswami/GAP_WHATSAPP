@@ -252,52 +252,58 @@ export default function BillingPage() {
                     </div>
                 )}
 
-                <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div data-tour="billing-wallet" className="rounded-xl border border-gray-200 bg-white p-5">
-                        <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium text-gray-500">Current Plan</p>
-                            <ShieldCheck className="h-5 w-5 text-green-600" />
+                <section className="grid grid-cols-2 gap-2.5 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    {/* Current Plan */}
+                    <div data-tour="billing-wallet" className="rounded-xl border border-gray-200 bg-white p-3 sm:p-5">
+                        <div className="flex items-center justify-between gap-1">
+                            <p className="text-[11px] sm:text-sm font-medium text-gray-500 leading-tight">Current Plan</p>
+                            <ShieldCheck className="h-4 w-4 sm:h-5 sm:w-5 text-green-600 shrink-0" />
                         </div>
-                        <p className="mt-3 text-2xl font-semibold text-gray-950">{currentPlan?.name || user?.plan || 'No active plan'}</p>
-                        <p className="mt-1 text-xs text-gray-500">{overview?.organization?.plan_status || user?.subscription_status || 'active'}</p>
+                        <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-semibold text-gray-950 truncate">{currentPlan?.name || user?.plan || 'No active plan'}</p>
+                        <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-gray-500 truncate">{overview?.organization?.plan_status || user?.subscription_status || 'active'}</p>
                     </div>
 
-                    <div className="rounded-xl border border-gray-200 bg-white p-5">
-                        <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium text-gray-500">Wallet Balance</p>
-                            <Wallet className="h-5 w-5 text-emerald-600" />
+                    {/* Wallet Balance */}
+                    <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-5">
+                        <div className="flex items-center justify-between gap-1">
+                            <p className="text-[11px] sm:text-sm font-medium text-gray-500 leading-tight">Wallet Balance</p>
+                            <Wallet className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-600 shrink-0" />
                         </div>
-                        <p className="mt-3 text-2xl font-semibold text-gray-950">{formatINRFromPaise(wallet.balance_paise)}</p>
-                        <p className="mt-1 text-xs text-gray-500">Low balance alert below {formatINRFromPaise(wallet.low_balance_threshold_paise)}</p>
+                        <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-semibold text-gray-950 truncate">{formatINRFromPaise(wallet.balance_paise)}</p>
+                        <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-gray-500 leading-tight">Alert below {formatINRFromPaise(wallet.low_balance_threshold_paise)}</p>
                     </div>
 
-                    <div className="rounded-xl border border-gray-200 bg-white p-5">
-                        <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium text-gray-500">This Month Spend</p>
-                            <ReceiptText className="h-5 w-5 text-blue-600" />
+                    {/* This Month Spend */}
+                    <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-5">
+                        <div className="flex items-center justify-between gap-1">
+                            <p className="text-[11px] sm:text-sm font-medium text-gray-500 leading-tight">This Month</p>
+                            <ReceiptText className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600 shrink-0" />
                         </div>
-                        <p className="mt-3 text-2xl font-semibold text-gray-950">{formatINRFromPaise(overview?.spend?.month_spend_paise)}</p>
-                        <p className="mt-1 text-xs text-gray-500">Paid WhatsApp template/message usage</p>
+                        <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-semibold text-gray-950 truncate">{formatINRFromPaise(overview?.spend?.month_spend_paise)}</p>
+                        <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-gray-500 leading-tight">Template/message usage</p>
                     </div>
 
-                    <div className="rounded-xl border border-gray-200 bg-white p-5">
-                        <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium text-gray-500">Today Spend</p>
-                            <Megaphone className="h-5 w-5 text-purple-600" />
+                    {/* Today Spend */}
+                    <div className="rounded-xl border border-gray-200 bg-white p-3 sm:p-5">
+                        <div className="flex items-center justify-between gap-1">
+                            <p className="text-[11px] sm:text-sm font-medium text-gray-500 leading-tight">Today Spend</p>
+                            <Megaphone className="h-4 w-4 sm:h-5 sm:w-5 text-purple-600 shrink-0" />
                         </div>
-                        <p className="mt-3 text-2xl font-semibold text-gray-950">{formatINRFromPaise(overview?.spend?.today_spend_paise)}</p>
-                        <p className="mt-1 text-xs text-gray-500">Live campaign and automation cost</p>
+                        <p className="mt-2 sm:mt-3 text-lg sm:text-2xl font-semibold text-gray-950 truncate">{formatINRFromPaise(overview?.spend?.today_spend_paise)}</p>
+                        <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-gray-500 leading-tight">Campaign & automation cost</p>
                     </div>
                 </section>
 
-                <section data-tour="billing-recharge" className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-6 md:p-8 text-white shadow-xl shadow-indigo-950/20">
+
+                <section data-tour="billing-recharge" className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-4 sm:p-6 md:p-8 text-white shadow-xl shadow-indigo-950/20">
                     {/* Glowing decorative shapes */}
                     <div className="pointer-events-none absolute -right-20 -top-20 h-64 w-64 rounded-full bg-indigo-500/15 blur-3xl" />
                     <div className="pointer-events-none absolute -left-20 -bottom-20 h-64 w-64 rounded-full bg-emerald-500/10 blur-3xl" />
 
-                    <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between w-full">
-                        <div className="flex items-center gap-5">
-                            {/* Money asset illustration */}
+                    <div className="relative z-10 flex flex-col gap-3 sm:gap-6 lg:flex-row lg:items-center lg:justify-between w-full">
+                        {/* Title + description */}
+                        <div className="flex items-center gap-3 sm:gap-5">
+                            {/* Large image – desktop sm+ only */}
                             <div className="relative hidden shrink-0 sm:block">
                                 <div className="absolute -inset-2 rounded-full bg-indigo-500/20 blur-md" />
                                 <img
@@ -307,40 +313,41 @@ export default function BillingPage() {
                                 />
                             </div>
                             <div>
-                                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                <h2 className="text-base sm:text-xl font-bold text-white flex items-center gap-2">
+                                    {/* Small inline icon – mobile only */}
                                     <span className="sm:hidden shrink-0">
-                                        <img src="/images/money.png" alt="Money" className="h-8 w-8 object-contain" />
+                                        <img src="/images/money.png" alt="Money" className="h-6 w-6 object-contain" />
                                     </span>
                                     Recharge Message Wallet
                                 </h2>
-                                <p className="mt-1.5 text-sm text-indigo-200/80 leading-relaxed max-w-xl">
+                                <p className="mt-1 text-[11px] sm:text-sm text-indigo-200/80 leading-snug sm:leading-relaxed max-w-xl line-clamp-2 sm:line-clamp-none">
                                     Marketing, utility aur authentication message charges wallet se deduct honge. Campaign launch se pehle enough balance rakho.
                                 </p>
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap items-center">
+
+                        {/* Amount buttons */}
+                        <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:flex sm:flex-wrap items-center">
                             {[50000, 100000, 250000, 500000].map(amount => (
                                 <button
                                     key={amount}
                                     type="button"
                                     onClick={() => handleWalletRecharge(amount)}
                                     disabled={recharging !== null}
-                                    className="group relative inline-flex min-w-[100px] sm:min-w-[120px] items-center justify-center gap-2 overflow-hidden rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-white backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:shadow-lg hover:shadow-indigo-500/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="group relative inline-flex min-w-0 sm:min-w-[120px] items-center justify-center gap-1.5 sm:gap-2 overflow-hidden rounded-xl border border-white/10 bg-white/5 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold text-white backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:shadow-lg hover:shadow-indigo-500/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                     {recharging === amount ? (
-                                        <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+                                        <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin text-indigo-400" />
                                     ) : (
-                                        <Wallet className="h-4 w-4 text-indigo-400 transition-transform group-hover:scale-110" />
+                                        <Wallet className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-indigo-400 transition-transform group-hover:scale-110" />
                                     )}
                                     <span>{formatINRFromPaise(amount)}</span>
-
-                                    {/* Subtle glow effect behind button */}
                                     <div className="absolute -inset-px -z-10 rounded-xl bg-gradient-to-r from-indigo-500/20 to-purple-500/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                                 </button>
                             ))}
 
                             {isCustomMode ? (
-                                <div className="relative inline-flex min-w-[150px] sm:min-w-[180px] items-center gap-2 overflow-hidden rounded-xl border border-indigo-400/40 bg-white/10 pl-3 pr-2 py-2 text-sm font-semibold text-white backdrop-blur-md shadow-lg shadow-indigo-500/10 transition-all duration-300">
+                                <div className="col-span-2 sm:col-span-1 relative inline-flex min-w-0 sm:min-w-[180px] items-center gap-2 overflow-hidden rounded-xl border border-indigo-400/40 bg-white/10 pl-3 pr-2 py-2 text-xs sm:text-sm font-semibold text-white backdrop-blur-md shadow-lg shadow-indigo-500/10 transition-all duration-300">
                                     <span className="text-indigo-400 font-bold select-none">₹</span>
                                     <input
                                         type="number"
@@ -348,7 +355,7 @@ export default function BillingPage() {
                                         onChange={(e) => setCustomAmount(e.target.value)}
                                         placeholder="Amount"
                                         min="100"
-                                        className="w-16 sm:w-20 bg-transparent border-0 outline-none p-0 text-sm font-bold text-white placeholder-white/30 focus:ring-0 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        className="w-full sm:w-20 bg-transparent border-0 outline-none p-0 text-xs sm:text-sm font-bold text-white placeholder-white/30 focus:ring-0 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                         autoFocus
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
@@ -392,12 +399,10 @@ export default function BillingPage() {
                                     type="button"
                                     onClick={() => setIsCustomMode(true)}
                                     disabled={recharging !== null}
-                                    className="group relative inline-flex min-w-[100px] sm:min-w-[120px] items-center justify-center gap-2 overflow-hidden rounded-xl border border-dashed border-white/20 bg-white/5 px-4 py-3 text-sm font-semibold text-white/85 backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:border-solid hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:text-white hover:shadow-lg hover:shadow-indigo-500/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="col-span-2 sm:col-span-1 group relative inline-flex min-w-0 sm:min-w-[120px] items-center justify-center gap-1.5 sm:gap-2 overflow-hidden rounded-xl border border-dashed border-white/20 bg-white/5 px-3 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-semibold text-white/85 backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:border-solid hover:border-indigo-400/40 hover:bg-indigo-500/10 hover:text-white hover:shadow-lg hover:shadow-indigo-500/10 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
-                                    <Plus className="h-4 w-4 text-indigo-400 transition-transform group-hover:scale-110" />
+                                    <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-indigo-400 transition-transform group-hover:scale-110" />
                                     <span>Custom</span>
-
-                                    {/* Subtle glow effect behind button */}
                                     <div className="absolute -inset-px -z-10 rounded-xl bg-gradient-to-r from-indigo-500/20 to-purple-500/20 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                                 </button>
                             )}
@@ -405,22 +410,23 @@ export default function BillingPage() {
                     </div>
                 </section>
 
+
                 <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.65fr]">
                     <div className="rounded-xl border border-gray-200 bg-white">
                         <div className="border-b border-gray-100 p-5">
                             <h2 className="text-base font-semibold text-gray-950">Message Spend Breakdown</h2>
                             <p className="mt-1 text-sm text-gray-500">User ko yahan clear dikh jayega ki marketing aur utility par kitna spend hua.</p>
                         </div>
-                        <div className="grid grid-cols-1 divide-y divide-gray-100 md:grid-cols-4 md:divide-x md:divide-y-0">
+                        <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 md:grid-cols-4 md:divide-y-0">
                             {['marketing', 'utility', 'authentication', 'service'].map(category => {
                                 const spend = categorySpend.find(item => item.category === category) || {}
                                 const rate = rateMap[category] || FALLBACK_RATE_CARDS.find(item => item.category === category)
                                 return (
-                                    <div key={category} className="p-5">
-                                        <p className="text-sm font-semibold text-gray-950">{rate?.label || category}</p>
-                                        <p className="mt-2 text-2xl font-semibold text-gray-950">{formatINRFromPaise(spend.charged_amount_paise)}</p>
-                                        <p className="mt-1 text-xs text-gray-500">{spend.message_count || 0} messages</p>
-                                        <p className="mt-4 text-xs font-medium text-gray-500">Rate: {formatINRFromPaise(rate?.rate_paise)}/message</p>
+                                    <div key={category} className="p-3 sm:p-5">
+                                        <p className="text-[11px] sm:text-sm font-semibold text-gray-950 capitalize">{rate?.label || category}</p>
+                                        <p className="mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold text-gray-950 truncate">{formatINRFromPaise(spend.charged_amount_paise)}</p>
+                                        <p className="mt-0.5 sm:mt-1 text-[10px] sm:text-xs text-gray-500">{spend.message_count || 0} msgs</p>
+                                        <p className="mt-2 sm:mt-4 text-[10px] sm:text-xs font-medium text-gray-500">{formatINRFromPaise(rate?.rate_paise)}/msg</p>
                                     </div>
                                 )
                             })}
