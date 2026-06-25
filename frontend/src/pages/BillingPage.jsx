@@ -240,7 +240,9 @@ export default function BillingPage() {
                             Platform subscription alag hai. Marketing, utility aur authentication message spend wallet se deduct hoga.
                         </p>
                     </div>
-                    <TourButton />
+                    <div className="hidden md:block">
+                        <TourButton />
+                    </div>
                 </header>
 
                 {error && (

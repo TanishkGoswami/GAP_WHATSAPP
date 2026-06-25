@@ -662,24 +662,26 @@ export default function Broadcast() {
     };
 
     return (
-        <div className="mx-auto max-w-7xl space-y-8 pb-16">
-            <div className="flex items-center justify-between">
+        <div className="mx-auto max-w-7xl space-y-6 md:space-y-8 px-4 sm:px-6 lg:px-8 pb-16">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                    <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Broadcasts</h1>
-                    <p className="text-sm text-gray-500 mt-2 max-w-lg leading-relaxed">Design, schedule, and track bulk message campaigns for your audience.</p>
+                    <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">Broadcasts</h1>
+                    <p className="text-xs md:text-sm text-gray-500 mt-1 md:mt-2 max-w-lg leading-relaxed">Design, schedule, and track bulk message campaigns for your audience.</p>
                 </div>
-                <div data-tour="broadcast-tabs" className="flex flex-wrap items-center gap-2">
-                    <TourButton />
-                    <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-sm backdrop-blur-sm">
+                <div data-tour="broadcast-tabs" className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
+                    <div className="hidden md:block">
+                        <TourButton />
+                    </div>
+                    <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-sm backdrop-blur-sm w-full md:w-auto">
                         <button
                             onClick={() => setActiveTab('new')}
-                            className={`px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'new' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
+                            className={`flex-1 md:flex-initial text-center px-3 py-2 md:px-5 md:py-2.5 text-xs md:text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'new' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
                         >
                             New Campaign
                         </button>
                         <button
                             onClick={() => setActiveTab('history')}
-                            className={`px-5 py-2.5 text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'history' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
+                            className={`flex-1 md:flex-initial text-center px-3 py-2 md:px-5 md:py-2.5 text-xs md:text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'history' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
                         >
                             History
                         </button>
@@ -851,11 +853,11 @@ export default function Broadcast() {
             ) : (
                 <div className="space-y-10">
                     {/* Progress Steps */}
-                    <div data-tour="broadcast-stepper" className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+                    <div data-tour="broadcast-stepper" className="rounded-2xl border border-gray-200 bg-white p-3 md:p-5 shadow-sm">
                         <div className="relative">
-                            <div className="absolute left-8 right-8 top-5 h-0.5 bg-gray-200"></div>
-                            <div className="absolute left-8 top-5 h-0.5 bg-[#0070d1] transition-all duration-500 ease-in-out" style={{ width: `calc(${((currentStep - 1) / (STEPS.length - 1)) * 100}% - ${currentStep === 1 ? '0px' : '4rem'})` }}></div>
-                            <div className="relative z-10 grid grid-cols-5 gap-2">
+                            <div className="absolute left-6 right-6 md:left-8 md:right-8 top-4 md:top-5 h-0.5 bg-gray-200"></div>
+                            <div className="absolute left-6 md:left-8 top-4 md:top-5 h-0.5 bg-[#0070d1] transition-all duration-500 ease-in-out" style={{ width: `calc(${((currentStep - 1) / (STEPS.length - 1)) * 100}% - ${currentStep === 1 ? '0px' : '1.5rem'})` }}></div>
+                            <div className="relative z-10 grid grid-cols-5 gap-1 md:gap-2">
                             {STEPS.map((step) => {
                                 const isActive = step.id === currentStep
                                 const isCompleted = step.id < currentStep
@@ -863,7 +865,7 @@ export default function Broadcast() {
                                     <button
                                         type="button"
                                         key={step.id} 
-                                        className={`flex flex-col items-center rounded-xl px-2 py-1 text-center transition-colors ${isCompleted ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                                        className={`flex flex-col items-center rounded-xl px-1 py-1 text-center transition-colors ${isCompleted ? 'cursor-pointer hover:bg-gray-50' : ''}`}
                                         onClick={() => {
                                             if (isCompleted) {
                                                 setCurrentStep(step.id)
@@ -871,14 +873,14 @@ export default function Broadcast() {
                                         }}
                                         disabled={!isCompleted && !isActive}
                                     >
-                                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-all ${
+                                        <div className={`flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-lg md:rounded-xl border transition-all ${
                                                 isActive ? 'border-[#0070d1] bg-[#0070d1] text-white shadow-sm' :
                                                 isCompleted ? 'border-emerald-500 bg-emerald-500 text-white' :
                                                 'border-gray-200 bg-white text-gray-400'
                                             }`}>
-                                            <step.icon className="h-5 w-5" />
+                                            <step.icon className="h-4.5 w-4.5 md:h-5 md:w-5" />
                                         </div>
-                                        <span className={`mt-2 text-xs font-bold uppercase tracking-wide transition-colors ${isActive ? 'text-[#0064b7]' : isCompleted ? 'text-emerald-600' : 'text-gray-400'}`}>
+                                        <span className={`mt-1.5 text-[8px] sm:text-[10px] md:text-xs font-bold uppercase tracking-wide transition-colors ${isActive ? 'text-[#0064b7]' : isCompleted ? 'text-emerald-600' : 'text-gray-400'} block text-center truncate w-full`}>
                                             {step.name}
                                         </span>
                                     </button>
@@ -892,25 +894,25 @@ export default function Broadcast() {
                     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
                         {currentStep === 1 && (
                             <div className="grid gap-0 lg:grid-cols-[minmax(260px,0.85fr)_minmax(360px,1fr)_minmax(280px,0.8fr)]">
-                                <div className="border-b border-gray-100 bg-gray-50 p-6 lg:border-b-0 lg:border-r lg:p-8">
+                                <div className="border-b border-gray-100 bg-gray-50 p-4 md:p-6 lg:border-b-0 lg:border-r lg:p-8">
                                     <div className="flex h-full flex-col justify-center">
-                                        <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-[#eef7ff] text-[#0064b7]">
+                                        <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef7ff] text-[#0064b7]">
                                             <LayoutGrid className="h-5 w-5" />
                                         </div>
-                                        <h2 className="mt-5 text-xl font-semibold text-gray-950">Campaign Details</h2>
-                                        <p className="mt-3 text-sm leading-6 text-gray-600">Campaign ka naam, WhatsApp account, aur optional schedule set karein. Agar schedule empty hai to campaign immediately launch hoga.</p>
-                                        <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
+                                        <h2 className="mt-4 md:mt-5 text-lg md:text-xl font-semibold text-gray-950">Campaign Details</h2>
+                                        <p className="mt-2 md:mt-3 text-xs md:text-sm leading-relaxed text-gray-600">Campaign ka naam, WhatsApp account, aur optional schedule set karein. Agar schedule empty hai to campaign immediately launch hoga.</p>
+                                        <div className="mt-4 md:mt-6 rounded-lg border border-blue-100 bg-blue-50 p-3 md:p-4 text-xs md:text-sm leading-relaxed text-blue-900">
                                             Broadcasts ke liye sirf official Meta API account use hoga. QR session accounts inbox testing ke liye hain.
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="space-y-5 p-6 lg:p-8">
+                                <div className="space-y-4 md:space-y-5 p-4 md:p-6 lg:p-8">
                                     <div>
-                                        <label className="mb-1.5 block text-sm font-semibold text-gray-800">Campaign Name <span className="text-red-500">*</span></label>
+                                        <label className="mb-1.5 block text-xs md:text-sm font-semibold text-gray-800">Campaign Name <span className="text-red-500">*</span></label>
                                         <input
                                             type="text"
-                                            className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-[#0070d1] focus:ring-2 focus:ring-[#0070d1]/10"
+                                            className="h-10 md:h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-xs md:text-sm text-gray-950 outline-none transition focus:border-[#0070d1] focus:ring-2 focus:ring-[#0070d1]/10"
                                             placeholder="e.g. Summer Sale Announcement"
                                             value={campaign.name}
                                             onChange={e => setCampaign({ ...campaign, name: e.target.value })}
@@ -918,13 +920,13 @@ export default function Broadcast() {
                                     </div>
 
                                     <div>
-                                        <label className="mb-1.5 block text-sm font-semibold text-gray-800">WhatsApp Account <span className="text-red-500">*</span></label>
+                                        <label className="mb-1.5 block text-xs md:text-sm font-semibold text-gray-800">WhatsApp Account <span className="text-red-500">*</span></label>
                                         {isLoading.accounts ? (
-                                            <div className="flex h-11 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading accounts...</div>
+                                            <div className="flex h-10 md:h-11 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs md:text-sm text-gray-500"><Loader2 className="w-4 h-4 animate-spin" /> Loading accounts...</div>
                                         ) : (
                                             <div className="relative">
                                                 <select
-                                                    className="h-11 w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 pr-10 text-sm text-gray-950 outline-none transition focus:border-[#0070d1] focus:ring-2 focus:ring-[#0070d1]/10"
+                                                    className="h-10 md:h-11 w-full appearance-none rounded-lg border border-gray-300 bg-white px-3 pr-10 text-xs md:text-sm text-gray-950 outline-none transition focus:border-[#0070d1] focus:ring-2 focus:ring-[#0070d1]/10"
                                                     value={campaign.wa_account_id}
                                                     onChange={e => setCampaign({ ...campaign, wa_account_id: e.target.value })}
                                                 >
@@ -941,26 +943,26 @@ export default function Broadcast() {
                                                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                                             </div>
                                         )}
-                                        <p className="mt-2 text-xs leading-5 text-gray-500">
+                                        <p className="mt-1.5 text-[10px] md:text-xs leading-normal text-gray-500">
                                             Approved templates ke saath Meta API account required hai.
                                         </p>
                                     </div>
 
                                     <div>
-                                        <label className="mb-1.5 block text-sm font-semibold text-gray-800">Schedule <span className="font-medium text-gray-400">(Optional)</span></label>
+                                        <label className="mb-1.5 block text-xs md:text-sm font-semibold text-gray-800">Schedule <span className="font-medium text-gray-400">(Optional)</span></label>
                                         <div className="relative">
                                             <input
                                                 type="datetime-local"
-                                                className="h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-950 outline-none transition focus:border-[#0070d1] focus:ring-2 focus:ring-[#0070d1]/10"
+                                                className="h-10 md:h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-xs md:text-sm text-gray-950 outline-none transition focus:border-[#0070d1] focus:ring-2 focus:ring-[#0070d1]/10"
                                                 value={campaign.scheduled_at}
                                                 onChange={e => setCampaign({ ...campaign, scheduled_at: e.target.value })}
                                             />
                                         </div>
-                                        <p className="mt-2 text-xs text-gray-500">Leave empty to send immediately.</p>
+                                        <p className="mt-1.5 text-[10px] md:text-xs text-gray-500">Leave empty to send immediately.</p>
                                     </div>
                                 </div>
 
-                                <div className="border-t border-gray-100 bg-white p-6 lg:border-l lg:border-t-0 lg:p-8">
+                                <div className="hidden lg:block border-t border-gray-100 bg-white p-6 lg:border-l lg:border-t-0 lg:p-8">
                                     <div className="flex h-full min-h-[300px] items-center justify-center overflow-hidden rounded-xl bg-[#edf8f1]">
                                         <img
                                             src="/images/broadcast.png"
@@ -973,7 +975,7 @@ export default function Broadcast() {
                         )}
 
                         {currentStep === 2 && (
-                            <div data-tour="broadcast-recipients" className="p-6 lg:p-8">
+                            <div data-tour="broadcast-recipients" className="p-4 sm:p-6 lg:p-8">
                                 <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                                     <div>
                                         <h2 className="text-xl font-semibold text-gray-950">Select Audience</h2>
@@ -1133,13 +1135,13 @@ export default function Broadcast() {
                         )}
 
                         {currentStep === 3 && (
-                            <div data-tour="broadcast-template" className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-6 md:grid-cols-2 lg:p-8">
+                            <div data-tour="broadcast-template" className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-4 sm:p-6 md:grid-cols-2 lg:p-8">
                                 <div>
                                     <h2 className="text-lg font-medium text-gray-900 mb-4">Select Template</h2>
                                     {isLoading.templates ? (
                                         <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>
                                     ) : (
-                                        <div className="space-y-3 h-[600px] overflow-y-auto pr-2">
+                                        <div className="space-y-3 h-[300px] md:h-[600px] overflow-y-auto pr-2">
                                             {templates.filter(t => t.status === 'APPROVED').map((tpl) => (
                                                 <div
                                                     key={tpl.id || tpl.name}
@@ -1183,12 +1185,12 @@ export default function Broadcast() {
                         )}
 
                         {currentStep === 4 && (
-                            <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-6 md:grid-cols-2 lg:p-8">
-                                <div>
+                            <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-4 sm:p-6 md:grid-cols-2 lg:p-8">
+                                <div className="order-2 md:order-1">
                                     {renderLivePreview()}
                                 </div>
 
-                                <div>
+                                <div className="order-1 md:order-2">
                                     <div className="mb-4 flex items-start justify-between gap-3">
                                         <div>
                                             <h2 className="text-lg font-semibold text-gray-900">Content setup</h2>
@@ -1334,7 +1336,7 @@ export default function Broadcast() {
                         )}
 
                         {currentStep === 5 && (
-                            <div data-tour="broadcast-cost" className="mx-auto max-w-lg space-y-6 p-6 text-center lg:p-8">
+                            <div data-tour="broadcast-cost" className="mx-auto max-w-lg space-y-6 p-4 sm:p-6 text-center lg:p-8">
                                 <div className="mx-auto h-16 w-16 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
                                     <Send className="h-8 w-8 ml-1" />
                                 </div>
@@ -1451,7 +1453,7 @@ export default function Broadcast() {
                     </div>
 
                     {/* Navigation */}
-                    <div className="flex justify-between pt-4">
+                    <div className="flex justify-between pt-4 px-4 md:px-0">
                         <button
                             onClick={handleBack}
                             disabled={currentStep === 1 || isSending}
