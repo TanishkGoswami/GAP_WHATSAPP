@@ -85,6 +85,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     const [activeIndustry, setActiveIndustry] = useState('All Industries')
     const [libraryUseCase, setLibraryUseCase] = useState('All Use Cases')
     const [searchQuery, setSearchQuery] = useState('')
+    const [showMobileFilters, setShowMobileFilters] = useState(false)
 
     useEffect(() => {
         setViewMode(defaultView);
@@ -260,8 +261,8 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                             </div>
                         </div>
 
-                        <div className="flex flex-col sm:flex-row flex-wrap gap-4 items-end">
-                            <div className="w-full sm:w-72">
+                        <div className="grid grid-cols-6 sm:flex sm:flex-row flex-wrap gap-3 sm:gap-4 items-end">
+                            <div className="col-span-5 sm:w-72">
                                 <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 px-1">Search templates</label>
                                 <div className="relative">
                                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -285,32 +286,51 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                     )}
                                 </div>
                             </div>
-                            <div className="w-full sm:w-48">
-                                <CustomSelectDropdown
-                                    value={libraryTopic}
-                                    onChange={setLibraryTopic}
-                                    options={topicOptions}
-                                    label="Topic Category"
-                                    icon={Tag}
-                                />
+                            
+                            <div className="col-span-1 sm:hidden">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowMobileFilters(!showMobileFilters)}
+                                    className={`h-10 w-full flex items-center justify-center rounded-xl border transition-all ${
+                                        showMobileFilters 
+                                            ? 'bg-blue-50 border-blue-500 text-blue-600' 
+                                            : 'bg-white border-gray-300 text-gray-500'
+                                    }`}
+                                    style={{ borderRadius: '10px' }}
+                                    title="Toggle Filters"
+                                >
+                                    <Filter className="h-4 w-4" />
+                                </button>
                             </div>
-                            <div className="w-full sm:w-48">
-                                <CustomSelectDropdown
-                                    value={activeIndustry}
-                                    onChange={setActiveIndustry}
-                                    options={industryOptions}
-                                    label="Industry Filter"
-                                    icon={Building2}
-                                />
-                            </div>
-                            <div className="w-full sm:w-52">
-                                <CustomSelectDropdown
-                                    value={libraryUseCase}
-                                    onChange={setLibraryUseCase}
-                                    options={useCaseOptions}
-                                    label="Use Case Objective"
-                                    icon={Target}
-                                />
+
+                            <div className={`${showMobileFilters ? 'grid grid-cols-2 gap-3 col-span-6 w-full' : 'hidden'} sm:contents`}>
+                                <div className="col-span-1 sm:w-48">
+                                    <CustomSelectDropdown
+                                        value={libraryTopic}
+                                        onChange={setLibraryTopic}
+                                        options={topicOptions}
+                                        label="Topic Category"
+                                        icon={Tag}
+                                    />
+                                </div>
+                                <div className="col-span-1 sm:w-48">
+                                    <CustomSelectDropdown
+                                        value={activeIndustry}
+                                        onChange={setActiveIndustry}
+                                        options={industryOptions}
+                                        label="Industry Filter"
+                                        icon={Building2}
+                                    />
+                                </div>
+                                <div className="col-span-2 sm:w-52">
+                                    <CustomSelectDropdown
+                                        value={libraryUseCase}
+                                        onChange={setLibraryUseCase}
+                                        options={useCaseOptions}
+                                        label="Use Case Objective"
+                                        icon={Target}
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -458,18 +478,20 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
 
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="space-y-6 px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Message Templates</h1>
                     <p className="text-sm text-gray-500 mt-1">Manage your WhatsApp message templates</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                    <TourButton />
+                <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
+                    <div className="hidden md:block">
+                        <TourButton />
+                    </div>
                     <button
                         onClick={() => setIsCreateOpen(true)}
                         data-tour="templates-create"
-                        className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+                        className="flex-1 md:flex-initial inline-flex justify-center items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm w-full md:w-auto"
                     >
                         <Plus className="h-4 w-4" />
                         New Template
@@ -478,23 +500,25 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
             </div>
 
             {/* Filters */}
-            <div data-tour="templates-filters" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-200 pb-3">
-                <div className="flex flex-wrap items-center gap-3">
+            <div data-tour="templates-filters" className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 border-b border-gray-200 pb-3">
+                <div className="flex flex-col md:flex-row md:items-center gap-3 w-full md:w-auto">
                     {/* Category Dropdown */}
-                    <div className="relative">
+                    <div className="relative w-full md:w-auto">
                         <button
                             onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                            className="inline-flex items-center gap-2 bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500/20 shadow-sm transition-all"
+                            className="w-full md:w-auto inline-flex justify-between md:justify-start items-center gap-2 bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500/20 shadow-sm transition-all"
                         >
-                            <Filter className="h-4 w-4 text-gray-400" />
-                            {activeTab === 'ALL' ? 'All Templates' : activeTab.charAt(0) + activeTab.slice(1).toLowerCase()}
+                            <span className="flex items-center gap-2">
+                                <Filter className="h-4 w-4 text-gray-400" />
+                                {activeTab === 'ALL' ? 'All Templates' : activeTab.charAt(0) + activeTab.slice(1).toLowerCase()}
+                            </span>
                             <ChevronDown className="h-4 w-4 text-gray-400 ml-1" />
                         </button>
 
                         {showCategoryDropdown && (
                             <>
                                 <div className="fixed inset-0 z-10" onClick={() => setShowCategoryDropdown(false)} />
-                                <div className="absolute left-0 mt-1.5 w-48 rounded-xl border border-gray-200 bg-white shadow-lg z-20 py-1.5 animate-in fade-in slide-in-from-top-1 duration-100">
+                                <div className="absolute left-0 mt-1.5 w-full md:w-48 rounded-xl border border-gray-200 bg-white shadow-lg z-20 py-1.5 animate-in fade-in slide-in-from-top-1 duration-100">
                                     {[
                                         { val: 'ALL', label: 'All Templates' },
                                         { val: 'MARKETING', label: 'Marketing' },
@@ -521,10 +545,10 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                     </div>
 
                     {/* Divider */}
-                    <div className="hidden sm:block h-6 w-px bg-gray-200" />
+                    <div className="hidden md:block h-6 w-px bg-gray-200" />
 
                     {/* Status Tabs */}
-                    <div className="flex bg-gray-100 p-0.5  rounded-xl border border-gray-200/50 shadow-sm">
+                    <div className="flex bg-gray-100 p-0.5 rounded-xl border border-gray-200/50 shadow-sm w-full md:w-auto">
                         {[
                             { status: 'APPROVED', label: 'Approved', count: approvedCount, icon: CheckCircle, activeColor: 'text-emerald-500', dotColor: 'bg-emerald-500' },
                             { status: 'PENDING', label: 'Pending', count: pendingCount, icon: Clock, activeColor: 'text-amber-500', dotColor: 'bg-amber-500' },
@@ -536,14 +560,14 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                 <button
                                     key={btn.status}
                                     onClick={() => setActiveStatus(btn.status)}
-                                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap ${isSelected
+                                    className={`flex-1 md:flex-initial flex items-center justify-center gap-1 px-2.5 py-2 md:px-4 md:py-1.5 rounded-lg text-[11px] md:text-xs font-semibold transition-all whitespace-nowrap ${isSelected
                                         ? 'bg-white text-gray-900 shadow-sm border border-gray-200/50'
                                         : 'text-gray-500 hover:text-gray-900'
                                         }`}
                                 >
                                     <Icon className={`h-3.5 w-3.5 ${isSelected ? btn.activeColor : 'text-gray-400'}`} />
-                                    <span>{btn.label}</span>
-                                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${isSelected ? 'bg-gray-100 text-gray-700' : 'bg-gray-200/60 text-gray-400'
+                                    <span className="hidden xs:inline">{btn.label}</span>
+                                    <span className={`px-1 py-0.2 rounded-md text-[9px] font-bold ${isSelected ? 'bg-gray-100 text-gray-700' : 'bg-gray-200/60 text-gray-400'
                                         }`}>
                                         {btn.count}
                                     </span>
@@ -555,7 +579,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                     <button
                         onClick={fetchData}
                         disabled={isFetching}
-                        className="inline-flex items-center gap-2 bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500/20 shadow-sm transition-all disabled:opacity-50"
+                        className="w-full md:w-auto inline-flex justify-center items-center gap-2 bg-white border border-gray-300 rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-green-500/20 shadow-sm transition-all disabled:opacity-50"
                     >
                         <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
                         Sync Status

@@ -251,76 +251,80 @@ export default function TeamMembers() {
     }, [members, searchQuery, roleFilter, statusFilter])
 
     return (
-        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-4 py-8 text-gray-900">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-3 sm:gap-6 px-4 py-4 sm:py-8 text-gray-900">
             {/* Header Section */}
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Team Members</h1>
-                    <p className="text-sm text-gray-505 text-gray-500 mt-1">Manage your agents, availability, assignments and access</p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Team Members</h1>
+                    <p className="text-xs sm:text-sm text-gray-500 mt-0.5 sm:mt-1">Manage your agents, availability, assignments and access</p>
                 </div>
                 
-                <div className="flex flex-wrap items-center gap-3">
-                    {/* Search Input */}
-                    <div className="relative min-w-[240px]">
-                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setFilterParam('search', e.target.value)}
-                            placeholder="Search name or email..."
-                            className="h-10 w-full rounded-xl border border-gray-200 bg-white pl-10 pr-4 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition"
-                        />
-                        {searchQuery && (
-                            <button onClick={() => setFilterParam('search', '')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                                <X className="h-4 w-4" />
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+                    <div className="flex gap-2 w-full sm:w-auto">
+                        {/* Search Input */}
+                        <div className="relative flex-1 sm:min-w-[240px] sm:w-auto">
+                            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setFilterParam('search', e.target.value)}
+                                placeholder="Search name/email..."
+                                className="h-9 sm:h-10 w-full rounded-xl border border-gray-200 bg-white pl-8 pr-7 text-xs sm:text-sm focus:border-indigo-500 focus:outline-none transition"
+                            />
+                            {searchQuery && (
+                                <button onClick={() => setFilterParam('search', '')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                                    <X className="h-3.5 w-3.5" />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Invite Button */}
+                        {isAdmin && (
+                            <button
+                                onClick={() => setIsInviteOpen(true)}
+                                className="inline-flex h-9 sm:h-10 items-center justify-center gap-1.5 rounded-xl bg-[#128C7E] px-3 text-xs sm:text-sm font-semibold text-white transition-colors hover:bg-[#0f7a6f] shadow-sm shrink-0"
+                            >
+                                <UserPlus className="h-3.5 w-3.5" />
+                                <span>Invite</span>
                             </button>
                         )}
                     </div>
 
-                    {/* Role Filter Selector */}
-                    <div className="relative">
-                        <select
-                            value={roleFilter}
-                            onChange={(e) => setFilterParam('role', e.target.value)}
-                            className="h-10 rounded-xl border border-gray-200 bg-white pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none transition appearance-none cursor-pointer"
-                        >
-                            <option value="all">All Roles</option>
-                            <option value="owner">Owner</option>
-                            <option value="admin">Admin</option>
-                            <option value="agent">Agent</option>
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" />
-                    </div>
+                    <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto sm:gap-3">
+                        {/* Role Filter Selector */}
+                        <div className="relative w-full">
+                            <select
+                                value={roleFilter}
+                                onChange={(e) => setFilterParam('role', e.target.value)}
+                                className="h-9 sm:h-10 w-full rounded-xl border border-gray-200 bg-white pl-2.5 pr-7 text-xs sm:text-sm focus:border-indigo-500 focus:outline-none transition appearance-none cursor-pointer"
+                            >
+                                <option value="all">All Roles</option>
+                                <option value="owner">Owner</option>
+                                <option value="admin">Admin</option>
+                                <option value="agent">Agent</option>
+                            </select>
+                            <ChevronDown className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        </div>
 
-                    {/* Status Filter Selector */}
-                    <div className="relative">
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setFilterParam('status', e.target.value)}
-                            className="h-10 rounded-xl border border-gray-200 bg-white pl-3 pr-8 text-sm focus:border-indigo-500 focus:outline-none transition appearance-none cursor-pointer"
-                        >
-                            <option value="all">All Statuses</option>
-                            <option value="online">Online Agents</option>
-                            <option value="offline">Offline Agents</option>
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        {/* Status Filter Selector */}
+                        <div className="relative w-full">
+                            <select
+                                value={statusFilter}
+                                onChange={(e) => setFilterParam('status', e.target.value)}
+                                className="h-9 sm:h-10 w-full rounded-xl border border-gray-200 bg-white pl-2.5 pr-7 text-xs sm:text-sm focus:border-indigo-500 focus:outline-none transition appearance-none cursor-pointer"
+                            >
+                                <option value="all">All Statuses</option>
+                                <option value="online">Online Agents</option>
+                                <option value="offline">Offline Agents</option>
+                            </select>
+                            <ChevronDown className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                        </div>
                     </div>
-
-                    {/* Invite Button */}
-                    {isAdmin && (
-                        <button
-                            onClick={() => setIsInviteOpen(true)}
-                            className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#128C7E] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#0f7a6f] shadow-sm"
-                        >
-                            <UserPlus className="h-4 w-4" />
-                            Invite Member
-                        </button>
-                    )}
                 </div>
             </div>
 
             {/* Stats Cards Section */}
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-4">
                 <SummaryCard icon={Users} title="Total Members" value={stats.total} color="bg-indigo-50 text-indigo-700" />
                 <SummaryCard icon={Activity} title="Online Agents" value={stats.onlineAgents} color="bg-green-50 text-green-700 font-bold" />
                 <SummaryCard icon={Clock} title="Offline Agents" value={stats.offlineAgents} color="bg-gray-50 text-gray-500" />
@@ -331,11 +335,11 @@ export default function TeamMembers() {
             {!isLoadingMembers && ownerMember && (
                 <div 
                     onClick={() => setSelectedMember(ownerMember)}
-                    className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 cursor-pointer hover:bg-gray-50/40 transition-colors"
+                    className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 sm:gap-4 cursor-pointer hover:bg-gray-50/40 transition-colors"
                 >
                     <div className="flex items-center">
                         <div className="relative flex-shrink-0">
-                            <div className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold overflow-hidden"
+                            <div className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center text-white font-bold overflow-hidden"
                                 style={ownerMember.avatar_color?.startsWith('/images/avatars/') ? {} : { backgroundColor: ownerMember.avatar_color || '#6366f1' }}>
                                 {ownerMember.avatar_color?.startsWith('/images/avatars/') ? (
                                     <img src={ownerMember.avatar_color} className="h-full w-full object-cover" alt={ownerMember.name} />
@@ -343,32 +347,32 @@ export default function TeamMembers() {
                                     ownerMember.name?.charAt(0)?.toUpperCase()
                                 )}
                             </div>
-                            <span className="absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-white bg-green-500 shadow-sm" />
+                            <span className="absolute bottom-0 right-0 block h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full ring-1.5 sm:ring-2 ring-white bg-green-500 shadow-sm" />
                         </div>
-                        <div className="ml-4">
-                            <div className="flex items-center gap-2">
-                                <span className="font-bold text-gray-900 text-sm">{ownerMember.name}</span>
-                                <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-600/10 uppercase tracking-wide">
+                        <div className="ml-2.5 sm:ml-4">
+                            <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-gray-900 text-xs sm:text-sm">{ownerMember.name}</span>
+                                <span className="inline-flex items-center rounded-md bg-indigo-50 px-1.5 py-0.2 text-[9px] font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-600/10 uppercase tracking-wide">
                                     Owner
                                 </span>
                             </div>
-                            <div className="text-xs text-gray-500 mt-0.5">{ownerMember.email}</div>
+                            <div className="text-[10px] sm:text-xs text-gray-500 mt-0.5">{ownerMember.email}</div>
                         </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-xs">
+                    <div className="grid grid-cols-3 gap-2 border-t border-gray-100 pt-2.5 sm:border-t-0 sm:pt-0 sm:flex sm:flex-row sm:items-center sm:gap-6 text-xs">
                         <div className="flex flex-col">
-                            <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Active Chats</span>
-                            <span className="font-bold text-gray-900 mt-0.5">{ownerMember.active_chats_count || 0} open</span>
+                            <span className="text-[9px] sm:text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Active Chats</span>
+                            <span className="font-bold text-gray-900 mt-0.5 text-[11px] sm:text-xs">{ownerMember.active_chats_count || 0} open</span>
                         </div>
                         <div className="h-8 border-l border-gray-150 hidden sm:block" />
                         <div className="flex flex-col">
-                            <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Last Active</span>
-                            <span className="font-semibold text-gray-700 mt-0.5">{formatDate(ownerMember.last_active_at)}</span>
+                            <span className="text-[9px] sm:text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Last Active</span>
+                            <span className="font-semibold text-gray-700 mt-0.5 text-[11px] sm:text-xs">{formatDate(ownerMember.last_active_at)}</span>
                         </div>
                         <div className="h-8 border-l border-gray-150 hidden sm:block" />
-                        <div className="flex flex-col">
-                            <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wider">Availability</span>
-                            <span className="inline-flex items-center text-emerald-700 font-semibold mt-0.5">
+                        <div className="flex flex-col col-span-1 sm:col-span-1">
+                            <span className="text-[9px] sm:text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Availability</span>
+                            <span className="inline-flex items-center text-emerald-700 font-semibold mt-0.5 text-[11px] sm:text-xs">
                                 <span className="h-1.5 w-1.5 rounded-full mr-1 bg-emerald-500" />
                                 Always Available
                             </span>
@@ -383,139 +387,231 @@ export default function TeamMembers() {
                     <TableSkeleton />
                 </div>
             ) : (
-                <div className="overflow-hidden border border-gray-200 rounded-xl bg-white shadow-sm">
-                    {filteredMembers.length === 0 ? (
-                        <div className="py-16 text-center text-gray-500 flex flex-col items-center justify-center">
-                            <Users className="h-10 w-10 text-gray-300 mb-2" />
-                            <p className="text-sm font-medium">No team members match the filter criteria</p>
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50/70">
-                                    <tr>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Member</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Availability</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Chats</th>
-                                        <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Active</th>
-                                        <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Time Today</th>
-                                        {isAdmin && <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>}
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {filteredMembers.map((member) => {
-                                        const inviteStatus = getInviteStatus(member)
-                                        const statusStyles = inviteStatus === 'active'
-                                            ? 'bg-green-100 text-green-800'
-                                            : inviteStatus === 'expired'
-                                                ? 'bg-red-100 text-red-800'
-                                                : 'bg-amber-100 text-amber-800'
-                                        const dotStyles = inviteStatus === 'active'
-                                            ? 'bg-green-400'
-                                            : inviteStatus === 'expired'
-                                                ? 'bg-red-400'
-                                                : 'bg-amber-400'
-                                        
-                                        return (
-                                            <tr
-                                                key={member.id}
-                                                onClick={() => setSelectedMember(member)}
-                                                className="hover:bg-gray-50/60 cursor-pointer transition-colors"
-                                            >
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="flex items-center">
-                                                        <div className="relative flex-shrink-0">
-                                                            <div className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold overflow-hidden"
-                                                                style={member.avatar_color?.startsWith('/images/avatars/') ? {} : { backgroundColor: member.avatar_color || '#6366f1' }}>
-                                                                {member.avatar_color?.startsWith('/images/avatars/') ? (
-                                                                    <img src={member.avatar_color} className="h-full w-full object-cover" alt={member.name} />
-                                                                ) : (
-                                                                    member.name?.charAt(0)?.toUpperCase()
+                <>
+                    {/* Desktop Table View */}
+                    <div className="hidden sm:block overflow-hidden border border-gray-200 rounded-xl bg-white shadow-sm">
+                        {filteredMembers.length === 0 ? (
+                            <div className="py-16 text-center text-gray-500 flex flex-col items-center justify-center">
+                                <Users className="h-10 w-10 text-gray-300 mb-2" />
+                                <p className="text-sm font-medium">No team members match the filter criteria</p>
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-200">
+                                    <thead className="bg-gray-50/70">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Member</th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Availability</th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Chats</th>
+                                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Active</th>
+                                            <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Active Time Today</th>
+                                            {isAdmin && <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-gray-200">
+                                        {filteredMembers.map((member) => {
+                                            const inviteStatus = getInviteStatus(member)
+                                            return (
+                                                <tr
+                                                    key={member.id}
+                                                    onClick={() => setSelectedMember(member)}
+                                                    className="hover:bg-gray-50/60 cursor-pointer transition-colors"
+                                                >
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <div className="flex items-center">
+                                                            <div className="relative flex-shrink-0">
+                                                                <div className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold overflow-hidden"
+                                                                    style={member.avatar_color?.startsWith('/images/avatars/') ? {} : { backgroundColor: member.avatar_color || '#6366f1' }}>
+                                                                    {member.avatar_color?.startsWith('/images/avatars/') ? (
+                                                                        <img src={member.avatar_color} className="h-full w-full object-cover" alt={member.name} />
+                                                                    ) : (
+                                                                        member.name?.charAt(0)?.toUpperCase()
+                                                                    )}
+                                                                </div>
+                                                                {['agent', 'admin', 'owner'].includes(member.role) && (
+                                                                    <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-white ${member.is_online ? 'bg-green-500' : 'bg-gray-300'}`} />
                                                                 )}
                                                             </div>
-                                                            {['agent', 'admin', 'owner'].includes(member.role) && (
-                                                                <span className={`absolute bottom-0 right-0 block h-2.5 w-2.5 rounded-full ring-2 ring-white ${member.is_online ? 'bg-green-500' : 'bg-gray-300'}`} />
-                                                            )}
+                                                            <div className="ml-4">
+                                                                <div className="text-sm font-medium text-gray-900">{member.name}</div>
+                                                            </div>
                                                         </div>
-                                                        <div className="ml-4">
-                                                            <div className="text-sm font-medium text-gray-900">{member.name}</div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {member.email}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                                    <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/10">
-                                                        {member.role ? member.role.charAt(0).toUpperCase() + member.role.slice(1) : 'Agent'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                                    {['agent', 'admin', 'owner'].includes(member.role) ? (
-                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${member.is_online ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
-                                                            <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${member.is_online ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
-                                                            {member.is_online ? 'Online' : 'Offline'}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        {member.email}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                        <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/10">
+                                                            {member.role ? member.role.charAt(0).toUpperCase() + member.role.slice(1) : 'Agent'}
                                                         </span>
-                                                    ) : (
-                                                        <span className="text-gray-400 text-xs">—</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
-                                                    {member.active_chats_count || 0}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                                    {formatDate(member.last_active_at)}
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                    <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                                                        {inviteStatus !== 'active' && member.role !== 'owner' && isAdmin ? (
-                                                            <button
-                                                                type="button"
-                                                                onClick={(ev) => resendInvite(ev, member)}
-                                                                disabled={resendingMemberId === member.id}
-                                                                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-                                                            >
-                                                                {resendingMemberId === member.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                                                                Resend
-                                                            </button>
-                                                        ) : ['agent', 'admin', 'owner'].includes(member.role) ? (
-                                                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 border border-emerald-100/50">
-                                                                <Clock className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                                                                {formatOnlineTime(member.online_time_today)}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                                        {['agent', 'admin', 'owner'].includes(member.role) ? (
+                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${member.is_online ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'}`}>
+                                                                <span className={`h-1.5 w-1.5 rounded-full mr-1.5 ${member.is_online ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+                                                                {member.is_online ? 'Online' : 'Offline'}
                                                             </span>
                                                         ) : (
                                                             <span className="text-gray-400 text-xs">—</span>
                                                         )}
-                                                    </div>
-                                                </td>
-                                                {isAdmin && (
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                                                        {member.active_chats_count || 0}
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                        {formatDate(member.last_active_at)}
+                                                    </td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                                                            {member.role !== 'owner' && member.user_id !== user?.id ? (
+                                                        <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                                                            {inviteStatus !== 'active' && member.role !== 'owner' && isAdmin ? (
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => removeMember(member.id)}
-                                                                    className="inline-flex items-center justify-center p-1.5 text-rose-600 hover:text-white rounded-lg hover:bg-rose-600 border border-rose-200 hover:border-rose-600 transition-colors"
-                                                                    title="Remove Member"
+                                                                    onClick={(ev) => resendInvite(ev, member)}
+                                                                    disabled={resendingMemberId === member.id}
+                                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
                                                                 >
-                                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                                    {resendingMemberId === member.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                                                                    Resend
                                                                 </button>
+                                                            ) : ['agent', 'admin', 'owner'].includes(member.role) ? (
+                                                                <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 border border-emerald-100/50">
+                                                                    <Clock className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                                                                    {formatOnlineTime(member.online_time_today)}
+                                                                </span>
                                                             ) : (
                                                                 <span className="text-gray-400 text-xs">—</span>
                                                             )}
                                                         </div>
                                                     </td>
+                                                    {isAdmin && (
+                                                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                            <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                                                                {member.role !== 'owner' && member.user_id !== user?.id ? (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => removeMember(member.id)}
+                                                                        className="inline-flex items-center justify-center p-1.5 text-rose-600 hover:text-white rounded-lg hover:bg-rose-600 border border-rose-200 hover:border-rose-600 transition-colors"
+                                                                        title="Remove Member"
+                                                                    >
+                                                                        <Trash2 className="h-3.5 w-3.5" />
+                                                                    </button>
+                                                                ) : (
+                                                                    <span className="text-gray-400 text-xs">—</span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    )}
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Mobile Card View */}
+                    <div className="block sm:hidden space-y-3">
+                        {filteredMembers.length === 0 ? (
+                            <div className="py-12 text-center text-gray-500 bg-white border border-gray-200 rounded-xl flex flex-col items-center justify-center p-4">
+                                <Users className="h-8 w-8 text-gray-300 mb-2" />
+                                <p className="text-sm font-medium">No team members match the filter criteria</p>
+                            </div>
+                        ) : (
+                            filteredMembers.map((member) => {
+                                const inviteStatus = getInviteStatus(member)
+                                return (
+                                    <div
+                                        key={member.id}
+                                        onClick={() => setSelectedMember(member)}
+                                        className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm flex flex-col gap-2.5 cursor-pointer hover:bg-gray-50/40 transition-colors"
+                                    >
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center min-w-0">
+                                                <div className="relative flex-shrink-0">
+                                                    <div className="h-9 w-9 rounded-full flex items-center justify-center text-white font-bold overflow-hidden"
+                                                        style={member.avatar_color?.startsWith('/images/avatars/') ? {} : { backgroundColor: member.avatar_color || '#6366f1' }}>
+                                                        {member.avatar_color?.startsWith('/images/avatars/') ? (
+                                                            <img src={member.avatar_color} className="h-full w-full object-cover" alt={member.name} />
+                                                        ) : (
+                                                            member.name?.charAt(0)?.toUpperCase()
+                                                        )}
+                                                    </div>
+                                                    {['agent', 'admin', 'owner'].includes(member.role) && (
+                                                        <span className={`absolute bottom-0 right-0 block h-2 w-2 rounded-full ring-1.5 ring-white ${member.is_online ? 'bg-green-500' : 'bg-gray-300'}`} />
+                                                    )}
+                                                </div>
+                                                <div className="ml-2.5 min-w-0">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-xs font-semibold text-gray-900 truncate">{member.name}</span>
+                                                        <span className="inline-flex items-center rounded-md bg-indigo-50 px-1.5 py-0.2 text-[9px] font-medium text-indigo-700 ring-1 ring-inset ring-indigo-600/10 shrink-0">
+                                                            {member.role ? member.role.charAt(0).toUpperCase() + member.role.slice(1) : 'Agent'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="text-[10px] text-gray-500 truncate">{member.email}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-3 gap-2 border-t border-gray-100 pt-2.5 text-xs">
+                                            <div>
+                                                <span className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider block">Availability</span>
+                                                {['agent', 'admin', 'owner'].includes(member.role) ? (
+                                                    <span className={`inline-flex items-center mt-0.5 font-semibold text-[11px] ${member.is_online ? 'text-green-700' : 'text-gray-500'}`}>
+                                                        <span className={`h-1.5 w-1.5 rounded-full mr-1 ${member.is_online ? 'bg-green-500' : 'bg-gray-400'}`} />
+                                                        {member.is_online ? 'Online' : 'Offline'}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-gray-400 text-[11px]">—</span>
                                                 )}
-                                            </tr>
-                                        )
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
+                                            </div>
+                                            <div>
+                                                <span className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider block">Active Chats</span>
+                                                <span className="font-bold text-gray-900 mt-0.5 text-[11px] block">{member.active_chats_count || 0} open</span>
+                                            </div>
+                                            <div>
+                                                <span className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider block mb-0.5">Active Time</span>
+                                                <div className="flex items-center justify-between gap-1.5">
+                                                    {inviteStatus !== 'active' && member.role !== 'owner' && isAdmin ? (
+                                                        <button
+                                                            type="button"
+                                                            onClick={(ev) => { ev.stopPropagation(); resendInvite(ev, member); }}
+                                                            disabled={resendingMemberId === member.id}
+                                                            className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                                                        >
+                                                            {resendingMemberId === member.id ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Send className="h-2.5 w-2.5" />}
+                                                            Resend
+                                                        </button>
+                                                    ) : ['agent', 'admin', 'owner'].includes(member.role) ? (
+                                                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800 border border-emerald-100/50">
+                                                            <Clock className="h-2.5 w-2.5 text-emerald-600 shrink-0" />
+                                                            {formatOnlineTime(member.online_time_today)}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-gray-400 text-[11px]">—</span>
+                                                    )}
+
+                                                    {isAdmin && member.role !== 'owner' && member.user_id !== user?.id && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => { e.stopPropagation(); removeMember(member.id); }}
+                                                            className="inline-flex items-center justify-center p-1 text-rose-600 hover:text-white rounded-md hover:bg-rose-50 border border-rose-200 hover:border-rose-300 transition-colors"
+                                                            title="Remove Member"
+                                                        >
+                                                            <Trash2 className="h-3 w-3" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )
+                            })
+                        )}
+                    </div>
+                </>
             )}
 
             {/* Member Details Drawer */}
@@ -730,13 +826,13 @@ export default function TeamMembers() {
 
 function SummaryCard({ icon: Icon, title, value, color }) {
     return (
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-all duration-300 hover:shadow-md flex items-center gap-4">
-            <div className={`p-3 rounded-xl ${color}`}>
-                <Icon className="h-5 w-5" />
+        <div className="rounded-2xl border border-gray-200 bg-white p-2 sm:p-5 shadow-sm transition-all duration-300 hover:shadow-md flex items-center gap-1.5 sm:gap-4">
+            <div className={`p-1.5 sm:p-3 rounded-lg sm:rounded-xl ${color} shrink-0`}>
+                <Icon className="h-3.5 w-3.5 sm:h-5 sm:w-5" />
             </div>
-            <div>
-                <p className="text-xs font-medium text-gray-500">{title}</p>
-                <p className="text-xl font-bold text-gray-900 mt-1">{value}</p>
+            <div className="min-w-0">
+                <p className="text-[10px] sm:text-xs font-medium text-gray-500 truncate">{title}</p>
+                <p className="text-sm sm:text-xl font-bold text-gray-900 mt-0 sm:mt-1">{value}</p>
             </div>
         </div>
     )

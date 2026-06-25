@@ -265,7 +265,7 @@ function CategoryPill({ category, isActive, onClick }) {
             type="button"
             id={`help-category-${category.id}`}
             onClick={onClick}
-            className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-200 ${
+            className={`inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition-all duration-200 shrink-0 ${
                 isActive
                     ? `${category.color} ${category.border} shadow-sm scale-105`
                     : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900'
@@ -308,12 +308,14 @@ function FaqItem({ faq, isOpen, onToggle }) {
 
 function StatCard({ icon, value, label, tone }) {
     return (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-gray-200 bg-white p-5 shadow-sm text-center">
-            <div className={`rounded-xl p-3 ${tone}`}>
-                {createElement(icon, { className: 'h-5 w-5' })}
+        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 sm:p-5 shadow-sm text-left sm:flex-col sm:items-center sm:gap-2 sm:text-center">
+            <div className={`rounded-xl p-2 sm:p-3 shrink-0 ${tone}`}>
+                {createElement(icon, { className: 'h-4 w-4 sm:h-5 sm:w-5' })}
             </div>
-            <div className="text-2xl font-bold text-gray-950">{value}</div>
-            <div className="text-sm text-gray-500">{label}</div>
+            <div className="min-w-0">
+                <div className="text-base sm:text-2xl font-bold text-gray-950 leading-tight">{value}</div>
+                <div className="text-[11px] sm:text-sm text-gray-500 truncate">{label}</div>
+            </div>
         </div>
     )
 }
@@ -359,11 +361,13 @@ export default function HelpCenter() {
                     GAP FlowPilot ke baare mein sawal? Yahan answers milenge. Har feature ka detailed guide available hai.
                 </p>
                 </div>
-                <TourButton />
+                <div className="hidden md:block">
+                    <TourButton />
+                </div>
             </div>
 
             {/* ── Hero Search ── */}
-            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-gray-950 via-gray-900 to-gray-800 p-8 text-white shadow-xl">
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-gray-950 via-gray-900 to-gray-800 p-6 sm:p-8 text-white shadow-xl">
                 {/* Decorative blobs */}
                 <div className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-green-500/10 blur-3xl" />
                 <div className="pointer-events-none absolute -bottom-12 -left-12 h-48 w-48 rounded-full bg-green-400/10 blur-3xl" />
@@ -426,7 +430,7 @@ export default function HelpCenter() {
                         </button>
                     )}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap">
                     {categories.map((cat) => (
                         <CategoryPill
                             key={cat.id}

@@ -843,14 +843,18 @@ export default function Contacts() {
 
     return (
         <div className="min-h-full bg-gray-50/70">
-            <div className="space-y-5 px-4 py-5 lg:px-7">
+            <div className="space-y-5 p-2 sm:p-5 lg:px-7">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-950">Contacts</h1>
-                        <p className="mt-1 text-sm text-gray-500">Manage customer profiles, account ownership, and tags.</p>
+                    <div className="flex items-start justify-between w-full lg:w-auto">
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-950 flex items-center gap-2">
+                                Contacts
+                            </h1>
+                            <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm text-gray-500">Manage customer profiles, account ownership, and tags.</p>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-2">
-
+                    <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:items-center sm:w-auto">
+                   
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -925,18 +929,18 @@ export default function Contacts() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 lg:grid-cols-4">
                     {[
                         { label: 'Total contacts', value: stats.total, icon: UserRound },
                         { label: 'With account', value: stats.assigned, icon: Building2 },
                         { label: 'Tagged', value: stats.withTags, icon: Tag },
                     ].map(item => (
-                        <div key={item.label} className="rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-                            <div className="flex items-center justify-between">
-                                <div className="text-xs font-medium text-gray-500">{item.label}</div>
-                                <item.icon className="h-4 w-4 text-gray-400" />
+                        <div key={item.label} className="rounded-xl border border-gray-200 bg-white p-2 sm:px-4 sm:py-3 shadow-sm flex flex-col justify-between">
+                            <div className="flex items-center justify-between gap-1">
+                                <div className="text-[10px] sm:text-xs font-medium text-gray-500 truncate leading-tight">{item.label}</div>
+                                <item.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 shrink-0" />
                             </div>
-                            <div className="mt-2 text-2xl font-bold text-gray-950">{item.value}</div>
+                            <div className="mt-1.5 sm:mt-2 text-lg sm:text-2xl font-bold text-gray-950 leading-none">{item.value}</div>
                         </div>
                     ))}
                 </div>
@@ -949,15 +953,15 @@ export default function Contacts() {
                     </div>
                 ) : null}
 
-                <div data-tour="contacts-filters" className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                    <div className="grid grid-cols-1 gap-3 xl:flex xl:flex-row">
+                <div data-tour="contacts-filters" className="rounded-xl border border-gray-200 bg-white p-2.5 sm:p-4 shadow-sm">
+                    <div className="flex flex-col gap-2 xl:flex-row xl:gap-3">
                         <div className="relative flex-1">
-                            <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                            <Search className="absolute left-2.5 sm:left-3 top-1/2 h-4 w-4 sm:h-5 sm:w-5 -translate-y-1/2 text-gray-400" />
                             <input
                                 value={searchTerm}
                                 onChange={(event) => setSearchTerm(event.target.value)}
-                                placeholder="Search name, phone, tag, account, invoice, address, amount..."
-                                className="w-full rounded-lg border border-gray-300 py-2.5 pl-10 pr-3 text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/20"
+                                placeholder="Search name, phone, tag..."
+                                className="w-full rounded-lg border border-gray-300 py-1.5 pl-8 pr-2.5 text-xs sm:text-sm sm:py-2 sm:pl-10 sm:pr-3 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/20"
                             />
                         </div>
                         <CustomSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} className="xl:w-44" />
@@ -970,7 +974,7 @@ export default function Contacts() {
                     </div>
                 </div>
 
-                <div data-tour="contacts-table" className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                <div data-tour="contacts-table" className="hidden md:block overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                     <div className="overflow-x-auto">
                         <table className="w-full min-w-[980px] text-left text-sm">
                             <thead className="border-b border-gray-200 bg-gray-50 text-xs font-semibold uppercase text-gray-500">
@@ -1045,6 +1049,77 @@ export default function Contacts() {
                     </div>
                     <div className="flex flex-col gap-1 border-t border-gray-200 px-4 py-3 text-sm text-gray-500 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                         <span>Showing <strong className="text-gray-800">{filteredContacts.length}</strong> of <strong className="text-gray-800">{contacts.length}</strong> contacts</span>
+                    </div>
+                </div>
+
+                {/* Mobile Card List (Apple X Meta High-Density Layout) */}
+                <div className="block md:hidden space-y-1.5">
+                    {contactsLoading ? (
+                        <div className="rounded-xl border border-gray-200 bg-white p-5 text-center text-xs text-gray-500 shadow-sm">Loading contacts...</div>
+                    ) : filteredContacts.length === 0 ? (
+                        <div className="rounded-xl border border-gray-200 bg-white p-5 text-center text-xs text-gray-500 shadow-sm">No contacts match this view.</div>
+                    ) : (
+                        filteredContacts.map(contact => (
+                            <div
+                                key={contact.id}
+                                onClick={() => openContact(contact)}
+                                className="rounded-xl border border-gray-100 bg-white p-2.5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all hover:border-indigo-300 hover:shadow active:scale-[0.99] cursor-pointer"
+                            >
+                                <div className="flex items-center gap-2.5">
+                                    {/* Avatar */}
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-600 text-[10px] font-bold text-white shadow-sm">
+                                        {String(getDisplayName(contact)).slice(0, 2).toUpperCase()}
+                                    </div>
+                                    
+                                    {/* Core Details */}
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5">
+                                            <h3 className="truncate text-xs font-bold text-gray-950">{getDisplayName(contact)}</h3>
+                                            {/* Account Name Badge */}
+                                            <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-gray-50 px-1 py-0.2 text-[8px] font-semibold text-gray-500 border border-gray-100">
+                                                {getAccountLabel(contact)}
+                                            </span>
+                                        </div>
+                                        
+                                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] sm:text-[10px] text-gray-400 font-mono">
+                                            <span className="flex items-center gap-0.5">
+                                                <Phone className="h-2.5 w-2.5" />
+                                                {getPhone(contact) || contact.wa_id || '-'}
+                                            </span>
+                                            <span className="h-1 w-1 rounded-full bg-gray-200" />
+                                            <span className="flex items-center gap-0.5">
+                                                <Calendar className="h-2.5 w-2.5" />
+                                                {contact.last_active ? format(new Date(contact.last_active), 'MMM d, yyyy') : contact.created_at ? format(new Date(contact.created_at), 'MMM d, yyyy') : '-'}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Button & Tags */}
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        {(contact.tags && contact.tags.length > 0) && (
+                                            <div className="flex gap-0.5">
+                                                {contact.tags.slice(0, 1).map(tag => (
+                                                    <span key={tag} className="rounded bg-blue-50 border border-blue-100/50 px-1.5 py-0.2 text-[8px] font-bold text-blue-600 truncate max-w-[50px]">{tag}</span>
+                                                ))}
+                                                {contact.tags.length > 1 ? (
+                                                    <span className="rounded bg-gray-50 border border-gray-100 px-1 py-0.2 text-[8px] font-bold text-gray-500">+{contact.tags.length - 1}</span>
+                                                ) : null}
+                                            </div>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={(event) => { event.stopPropagation(); openContact(contact) }}
+                                            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                                        >
+                                            <MoreHorizontal className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-[10px] text-gray-500 shadow-sm text-center">
+                        Showing <strong className="text-gray-800">{filteredContacts.length}</strong> of <strong className="text-gray-800">{contacts.length}</strong> contacts
                     </div>
                 </div>
             </div>
@@ -1514,8 +1589,7 @@ function CustomSelect({ value, onChange, options, className = '' }) {
                 type="button"
                 onClick={() => setOpen(current => !current)}
                 onBlur={() => setTimeout(() => setOpen(false), 120)}
-                className={`w-full apple-select-trigger`}
-                style={{ height: '42px' }}
+                className="w-full apple-select-trigger h-9 sm:h-[42px] text-xs sm:text-sm"
             >
                 <span className="min-w-0 text-left">
                     <span className="block truncate text-[#1d1d1f]">{selected?.label || 'Select'}</span>

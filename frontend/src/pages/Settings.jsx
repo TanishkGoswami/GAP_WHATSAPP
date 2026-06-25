@@ -679,30 +679,30 @@ export default function Settings() {
     const selectedNotificationSound = notificationSounds.find(sound => sound.id === selectedSoundId) || notificationSounds[0]
 
     return (
-        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 px-0 sm:px-2 lg:flex-row lg:gap-8 lg:px-6">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 px-4 sm:px-6 lg:flex-row lg:gap-8 lg:px-6">
             {/* Sidebar */}
             <div className="w-full flex-shrink-0 lg:w-60">
                 <div className="mb-4 flex items-center justify-between gap-3 lg:mb-6">
                     <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
                     <TourButton compact />
                 </div>
-                <nav className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
+                <nav className="flex gap-1.5 overflow-x-auto p-1 bg-gray-100/60 rounded-xl lg:bg-transparent lg:p-0 lg:block lg:space-y-1 lg:overflow-visible scrollbar-none">
                     {['General', 'Notifications', 'Knowledge Base', 'Integrations', 'Developer API'].map((tab) => {
                         const id = tab.toLowerCase().replace(' ', '_')
                         return (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(id)}
-                                className={`flex shrink-0 items-center rounded-lg px-3 py-2 text-sm font-medium transition-colors lg:w-full lg:shrink ${activeTab === id
-                                    ? 'bg-indigo-50 text-indigo-700'
-                                    : 'text-gray-700 hover:bg-gray-50'
+                                className={`flex shrink-0 items-center rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150 lg:w-full lg:shrink ${activeTab === id
+                                    ? 'bg-white text-indigo-700 shadow-sm border border-gray-200/50 lg:bg-indigo-50 lg:border-transparent lg:shadow-none font-semibold'
+                                    : 'text-gray-600 hover:text-gray-900 hover:bg-white/50 lg:hover:bg-gray-50 lg:text-gray-700'
                                     }`}
                             >
-                                {id === 'general' && <Globe className="mr-3 h-5 w-5 text-gray-400" />}
-                                {id === 'notifications' && <Bell className="mr-3 h-5 w-5 text-gray-400" />}
-                                {id === 'knowledge_base' && <Database className="mr-3 h-5 w-5 text-gray-400" />}
-                                {id === 'integrations' && <ShoppingBag className="mr-3 h-5 w-5 text-gray-400" />}
-                                {id === 'developer_api' && <Bot className="mr-3 h-5 w-5 text-gray-400" />}
+                                {id === 'general' && <Globe className="mr-2 h-4 w-4 shrink-0 text-indigo-600/70 lg:mr-3 lg:h-5 lg:w-5 lg:text-gray-400" />}
+                                {id === 'notifications' && <Bell className="mr-2 h-4 w-4 shrink-0 text-indigo-600/70 lg:mr-3 lg:h-5 lg:w-5 lg:text-gray-400" />}
+                                {id === 'knowledge_base' && <Database className="mr-2 h-4 w-4 shrink-0 text-indigo-600/70 lg:mr-3 lg:h-5 lg:w-5 lg:text-gray-400" />}
+                                {id === 'integrations' && <ShoppingBag className="mr-2 h-4 w-4 shrink-0 text-indigo-600/70 lg:mr-3 lg:h-5 lg:w-5 lg:text-gray-400" />}
+                                {id === 'developer_api' && <Bot className="mr-2 h-4 w-4 shrink-0 text-indigo-600/70 lg:mr-3 lg:h-5 lg:w-5 lg:text-gray-400" />}
                                 {tab}
                             </button>
                         )
@@ -747,7 +747,7 @@ export default function Settings() {
                             <div className="border-b border-gray-200 bg-white px-4 py-6 sm:px-8">
                                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
                                     {/* Business Profile Details */}
-                                    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-300 hover:shadow-md min-h-[220px] flex flex-col justify-between">
+                                    <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 sm:p-6 shadow-sm transition-all duration-300 hover:shadow-md min-h-[220px] flex flex-col justify-between">
                                         <div>
                                             <h4 className="text-sm font-bold text-gray-900 tracking-tight mb-4">Business profile</h4>
                                             <div className="flex items-center gap-4">
@@ -806,7 +806,7 @@ export default function Settings() {
                                     </div>
                                     {/* Subscription & Plan Details */}
                                     {!billingOverview ? (
-                                        <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm min-h-[220px] flex flex-col justify-between animate-pulse">
+                                        <div className="relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 sm:p-6 shadow-sm min-h-[220px] flex flex-col justify-between animate-pulse">
                                             <div>
                                                 <div className="flex gap-2">
                                                     <div className="h-6 w-24 bg-gray-250 bg-slate-200 rounded-full"></div>
@@ -822,7 +822,7 @@ export default function Settings() {
                                         const isActivePlan = (billingOverview?.organization?.plan_status === 'active' || user?.subscription_status === 'active') && !!planId;
 
                                         return (
-                                            <div className="relative bg-purple-50 overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-indigo-50/10 p-6 shadow-sm transition-all duration-300 hover:shadow-md min-h-[220px] flex flex-col justify-between">
+                                            <div className="relative bg-purple-50 overflow-hidden rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-indigo-50/10 p-4 sm:p-6 shadow-sm transition-all duration-300 hover:shadow-md min-h-[220px] flex flex-col justify-between">
                                                 {/* 3D Asset watermark */}
                                                 <div className="absolute -right-6 -bottom-6 h-36 w-36 opacity-90 pointer-events-none select-none transform rotate-12 transition-transform duration-500 hover:scale-105">
                                                     <img src="/images/money.png" alt="3D Currency Coins" className="h-full w-full object-contain" />
@@ -945,7 +945,7 @@ export default function Settings() {
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 gap-0 xl:grid-cols-[320px_1fr]">
-                                    <aside className="border-b border-gray-200 bg-white p-6 xl:border-b-0 xl:border-r">
+                                    <aside className="border-b border-gray-200 bg-white p-4 sm:p-6 xl:border-b-0 xl:border-r">
                                         <div className="mb-4 text-[10px] font-bold uppercase tracking-wider text-gray-400">Connected accounts</div>
                                         <div className="space-y-3">
                                             {accounts.map(account => (
@@ -994,8 +994,8 @@ export default function Settings() {
                                     </aside>
 
                                     <form onSubmit={saveBusinessProfile} className="min-w-0 bg-gray-50/40">
-                                        <div className="border-b border-gray-200 bg-white px-8 py-5">
-                                            <div className="flex items-center justify-between gap-4">
+                                        <div className="border-b border-gray-200 bg-white px-4 sm:px-8 py-5">
+                                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                                                 <div>
                                                     <h3 className="text-base font-semibold text-gray-900">Business profile</h3>
                                                     <p className="mt-1 text-sm text-gray-500">These details are shown to customers on WhatsApp where Meta supports them.</p>
@@ -1005,12 +1005,12 @@ export default function Settings() {
                                                         </p>
                                                     )}
                                                 </div>
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 shrink-0">
                                                     <button
                                                         type="button"
                                                         onClick={() => loadBusinessProfile(selectedAccountId)}
                                                         disabled={isLoadingProfile}
-                                                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                                        className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60 w-full sm:w-auto justify-center"
                                                     >
                                                         {isLoadingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                                                         Sync from Meta
@@ -1019,8 +1019,8 @@ export default function Settings() {
                                             </div>
                                         </div>
 
-                                        <div className="space-y-6 p-8">
-                                            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                                        <div className="space-y-6 p-4 sm:p-8">
+                                            <section className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6 shadow-sm">
                                                 <div className="mb-5">
                                                     <h4 className="text-sm font-bold text-gray-900">Profile identity</h4>
                                                     <p className="mt-1 text-xs text-gray-500">Photo and internal label for this connected number.</p>
@@ -1108,12 +1108,12 @@ export default function Settings() {
                                                 </div>
                                             </section>
 
-                                            <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                                            <section className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-6 shadow-sm">
                                                 <div className="mb-5">
                                                     <h4 className="text-sm font-bold text-gray-900">Business details</h4>
                                                     <p className="mt-1 text-xs text-gray-500">Customer-facing description and ways to contact the business.</p>
                                                 </div>
-
+ 
                                                 <div className="grid grid-cols-1 gap-5 2xl:grid-cols-2">
                                                     <label className="block 2xl:col-span-2">
                                                         <span className="text-xs font-semibold text-gray-700">Business description</span>
@@ -1166,7 +1166,7 @@ export default function Settings() {
                                                     </label>
                                                 </div>
                                             </section>
-
+ 
                                             <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 text-xs leading-relaxed text-indigo-900 flex gap-2.5">
                                                 <Info className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
                                                 <div>
@@ -1175,8 +1175,8 @@ export default function Settings() {
                                                 </div>
                                             </div>
                                         </div>
-
-                                        <div className="sticky bottom-0 flex items-center justify-between border-t border-gray-200 bg-white/95 px-8 py-4 backdrop-blur-md z-20">
+ 
+                                        <div className="sticky bottom-0 flex items-center justify-between border-t border-gray-200 bg-white/95 px-4 sm:px-8 py-4 backdrop-blur-md z-20">
                                             <div className="text-xs text-gray-400 font-medium">
                                                 Changes apply to the selected WhatsApp account only.
                                             </div>
@@ -1456,7 +1456,7 @@ export default function Settings() {
                 )}
                 {activeTab === 'knowledge_base' && (
                     <div data-tour="settings-knowledge" className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-                        <div className="flex items-start justify-between gap-4 border-b border-gray-200 px-8 py-6">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-gray-200 px-4 sm:px-8 py-6">
                             <div>
                                 <h2 className="text-lg font-semibold text-gray-900">Knowledge Base</h2>
                                 <p className="mt-1 max-w-2xl text-sm text-gray-500">
@@ -1466,14 +1466,14 @@ export default function Settings() {
                             <button
                                 onClick={fetchKnowledgeBase}
                                 disabled={isLoadingKnowledge || isUploadingKnowledge}
-                                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60"
+                                className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-60 shrink-0 w-full sm:w-auto justify-center"
                             >
                                 {isLoadingKnowledge ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                                 Refresh
                             </button>
                         </div>
 
-                        <div className="space-y-6 p-8">
+                        <div className="space-y-6 p-4 sm:p-8">
                             {(knowledgeError || knowledgeSuccess) && (
                                 <div className={`flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${knowledgeError ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-green-200 bg-green-50 text-green-800'}`}>
                                     {knowledgeError ? <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" /> : <Check className="mt-0.5 h-4 w-4 flex-shrink-0" />}
@@ -1508,7 +1508,7 @@ export default function Settings() {
                                     setIsDraggingKnowledge(false)
                                     uploadKnowledgeFiles(e.dataTransfer.files)
                                 }}
-                                className={`cursor-pointer rounded-xl border-2 border-dashed p-10 text-center transition-colors ${isDraggingKnowledge ? 'border-green-500 bg-green-50' : 'border-gray-300 bg-gray-50 hover:border-green-300 hover:bg-green-50/40'}`}
+                                className={`cursor-pointer rounded-xl border-2 border-dashed p-6 sm:p-10 text-center transition-colors ${isDraggingKnowledge ? 'border-green-500 bg-green-50' : 'border-gray-300 bg-gray-50 hover:border-green-300 hover:bg-green-50/40'}`}
                             >
                                 <input
                                     ref={knowledgeFileInputRef}
@@ -1539,24 +1539,24 @@ export default function Settings() {
                                     ) : documents.length === 0 ? (
                                         <div className="px-5 py-10 text-center text-sm text-gray-500">No knowledge documents yet.</div>
                                     ) : documents.map((doc) => (
-                                        <div key={doc.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
-                                            <div className="flex items-center gap-3">
-                                                <div className="h-10 w-10 bg-white rounded-lg border border-gray-200 flex items-center justify-center text-gray-500">
+                                        <div key={doc.id} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className="h-10 w-10 bg-white rounded-lg border border-gray-200 flex items-center justify-center text-gray-500 shrink-0">
                                                     <FileText className="h-5 w-5" />
                                                 </div>
-                                                <div>
-                                                    <h4 className="text-sm font-medium text-gray-900">{doc.name}</h4>
-                                                    <p className="text-xs text-gray-500">{doc.size} • {doc.date}</p>
+                                                <div className="min-w-0">
+                                                    <h4 className="text-sm font-medium text-gray-900 truncate" title={doc.name}>{doc.name}</h4>
+                                                    <p className="text-xs text-gray-500 truncate">{doc.size} • {doc.date}</p>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-4">
+                                            <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0">
                                                 <span className={`text-xs font-medium px-2 py-1 rounded-full ${doc.status === 'INDEXED' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
                                                     }`}>
                                                     {doc.status}
                                                 </span>
                                                 <button
                                                     onClick={() => handleDelete(doc.id)}
-                                                    className="text-gray-400 hover:text-red-600 transition-colors"
+                                                    className="text-gray-400 hover:text-red-600 transition-colors p-1"
                                                 >
                                                     <Trash2 className="h-4 w-4" />
                                                 </button>
@@ -1567,11 +1567,10 @@ export default function Settings() {
                             </div>
                         </div>
                     </div>
-                     )}
-
+                )}
                 {activeTab === 'integrations' && (
                     <div className="relative min-h-[600px] overflow-hidden">
-                        <div className="pointer-events-none select-none p-8 space-y-8 blur-[3px] opacity-45">
+                        <div className="pointer-events-none select-none p-4 sm:p-8 space-y-8 blur-[3px] opacity-45">
                             <div>
                                 <h2 className="text-lg font-medium text-gray-900">E-commerce Integrations</h2>
                                 <p className="text-sm text-gray-500">Connect your store to automate order notifications and abandoned cart recovery.</p>
@@ -1632,7 +1631,7 @@ export default function Settings() {
 
                 {activeTab === 'developer_api' && (
                     <div data-tour="settings-developer" className="relative min-h-[600px] overflow-hidden">
-                        <div className="pointer-events-none select-none p-8 space-y-8 blur-[3px] opacity-45">
+                        <div className="pointer-events-none select-none p-4 sm:p-8 space-y-8 blur-[3px] opacity-45">
                             <div>
                                 <h2 className="text-lg font-medium text-gray-900">Developer API</h2>
                                 <p className="text-sm text-gray-500">Manage your API keys and webhooks for custom integrations.</p>

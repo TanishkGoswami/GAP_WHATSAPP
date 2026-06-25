@@ -2965,39 +2965,50 @@ export default function LiveChat() {
                                 >
                                     <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${isChatFilterMenuOpen ? 'rotate-180' : ''}`} />
                                 </button>
-
                                 {isChatFilterMenuOpen && (
-                                    <div className="apple-select-dropdown absolute right-0 top-8 w-44 z-50">
-                                        {[
-                                            { id: 'favorites', label: 'Favourites' },
-                                            { id: 'archived', label: 'Archived' },
-                                            { id: 'assigned', label: 'Assigned' },
-                                            { id: 'unassigned', label: 'Unassigned' },
-                                        ].map(filter => {
-                                            const active = chatFilter === filter.id
-                                            return (
-                                                <button
-                                                    key={filter.id}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setChatFilter(filter.id)
-                                                        setIsChatFilterMenuOpen(false)
-                                                    }}
-                                                    className={`apple-select-option ${active ? 'apple-select-option-selected' : ''}`}
-                                                >
-                                                    <span>{filter.label}</span>
-                                                    <div className="flex items-center gap-1.5">
-                                                        {chatFilterCounts[filter.id] > 0 && (
-                                                            <span className="text-xs text-gray-400 bg-gray-100/50 px-1.5 py-0.5 rounded-full font-normal">
-                                                                {chatFilterCounts[filter.id]}
-                                                            </span>
-                                                        )}
-                                                        {active && <Check className="h-3.5 w-3.5 text-emerald-500" />}
-                                                    </div>
-                                                </button>
-                                            )
-                                        })}
-                                    </div>
+                                    <>
+                                        {/* Backdrop for mobile */}
+                                        <div
+                                            onClick={() => setIsChatFilterMenuOpen(false)}
+                                            className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm sm:hidden transition-opacity duration-300"
+                                        />
+                                        <div className="fixed bottom-0 left-0 right-0 z-[101] w-full rounded-t-3xl border-t border-gray-100 bg-white p-5 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] transition-transform duration-300 ease-out sm:absolute sm:bottom-auto sm:left-auto sm:right-0 sm:top-8 sm:w-44 sm:rounded-xl sm:border sm:p-0 sm:shadow-lg sm:z-50 animate-in slide-in-from-bottom sm:animate-none">
+                                            {/* Handle bar on mobile */}
+                                            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-gray-200 sm:hidden" />
+                                            <div className="py-1">
+                                                <p className="text-[11px] font-bold text-gray-400 px-4 mb-2.5 uppercase tracking-wider sm:hidden">Filter Chats</p>
+                                                {[
+                                                    { id: 'favorites', label: 'Favourites' },
+                                                    { id: 'archived', label: 'Archived' },
+                                                    { id: 'assigned', label: 'Assigned' },
+                                                    { id: 'unassigned', label: 'Unassigned' },
+                                                ].map(filter => {
+                                                    const active = chatFilter === filter.id
+                                                    return (
+                                                        <button
+                                                            key={filter.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setChatFilter(filter.id)
+                                                                setIsChatFilterMenuOpen(false)
+                                                            }}
+                                                            className={`flex w-full items-center justify-between px-4 py-3 sm:py-2 text-left text-sm rounded-xl sm:rounded-none transition-colors ${active ? 'bg-green-50 text-green-800 font-semibold' : 'text-gray-700 hover:bg-gray-50'}`}
+                                                        >
+                                                            <span>{filter.label}</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                {chatFilterCounts[filter.id] > 0 && (
+                                                                    <span className="text-xs text-gray-400 bg-gray-100/50 px-1.5 py-0.5 rounded-full font-normal">
+                                                                        {chatFilterCounts[filter.id]}
+                                                                    </span>
+                                                                )}
+                                                                {active && <Check className="h-3.5 w-3.5 text-emerald-500" />}
+                                                            </div>
+                                                        </button>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -3247,8 +3258,8 @@ export default function LiveChat() {
                                                             setShowTimeTooltip(prev => !prev)
                                                         }}
                                                         className={`inline-flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold border leading-none tracking-wide uppercase transition-all duration-300 select-none outline-none ${timeRemainingStr === 'Closed' || isCustomerWindowExpired || isUrgentTime
-                                                                ? 'bg-rose-50 text-rose-600 border-rose-200/50 hover:bg-rose-100/70'
-                                                                : 'bg-emerald-50 text-emerald-600 border-emerald-200/50 hover:bg-emerald-100/70'
+                                                            ? 'bg-rose-50 text-rose-600 border-rose-200/50 hover:bg-rose-100/70'
+                                                            : 'bg-emerald-50 text-emerald-600 border-emerald-200/50 hover:bg-emerald-100/70'
                                                             }`}
                                                     >
                                                         <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3 shrink-0" />
@@ -3413,13 +3424,29 @@ export default function LiveChat() {
 
                                         {/* Bot Menu Dropdown */}
                                         {showBotMenu && (
-                                            <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 z-50">
-                                                <div className="p-3 border-b border-gray-100">
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-sm font-medium text-gray-900">Bot Auto-Reply</span>
+                                            <>
+                                                {/* Backdrop for mobile */}
+                                                <div
+                                                    onClick={() => setShowBotMenu(false)}
+                                                    className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm sm:hidden transition-opacity duration-300"
+                                                />
+                                                <div className="fixed bottom-0 left-0 right-0 z-[101] w-full rounded-t-3xl border-t border-gray-200 bg-white p-5 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] transition-transform duration-300 ease-out sm:absolute sm:bottom-auto sm:left-auto sm:right-0 sm:top-full sm:z-50 sm:mt-2 sm:w-64 sm:rounded-xl sm:border sm:p-0 sm:shadow-lg animate-in slide-in-from-bottom sm:animate-none">
+                                                    {/* Handle bar on mobile */}
+                                                    <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-gray-200 sm:hidden" />
+                                                    <div className="p-3 sm:p-3 border-b border-gray-100 flex items-center justify-between">
+                                                        <div>
+                                                            <span className="text-sm font-semibold text-gray-900">Bot Auto-Reply</span>
+                                                            <p className="text-xs text-gray-500 mt-0.5 normal-case">
+                                                                {botEnabled
+                                                                    ? 'AI Agent can reply only when no active flow matches.'
+                                                                    : workspaceAutoReplyBot
+                                                                        ? `AI Agent fallback is off for this chat. Flow Builder still works.`
+                                                                        : 'AI Agent fallback is off for this chat. Flow Builder still works.'}
+                                                            </p>
+                                                        </div>
                                                         <button
                                                             onClick={() => toggleBotForConversation(!botEnabled, selectedBotId || workspaceAutoReplyBot?.id || null)}
-                                                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${effectiveBotEnabled ? 'bg-green-600' : 'bg-gray-200'
+                                                            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${effectiveBotEnabled ? 'bg-green-600' : 'bg-gray-200'
                                                                 }`}
                                                         >
                                                             <span
@@ -3428,68 +3455,61 @@ export default function LiveChat() {
                                                             />
                                                         </button>
                                                     </div>
-                                                    <p className="text-xs text-gray-500 mt-1">
-                                                        {botEnabled
-                                                            ? 'AI Agent can reply only when no active flow matches.'
-                                                            : workspaceAutoReplyBot
-                                                                ? `AI Agent fallback is off for this chat. Flow Builder still works.`
-                                                                : 'AI Agent fallback is off for this chat. Flow Builder still works.'}
-                                                    </p>
-                                                </div>
 
-                                                {availableBots.length > 0 && (
-                                                    <div className="p-2 border-t border-gray-100 max-h-60 overflow-y-auto">
-                                                        <p className="text-xs font-semibold text-gray-400 px-2 mb-1 uppercase tracking-wider">Select Agent</p>
-                                                        {availableBots.map(bot => (
+                                                    {availableBots.length > 0 && (
+                                                        <div className="p-2 border-t border-gray-100 max-h-60 overflow-y-auto">
+                                                            <p className="text-[11px] font-bold text-gray-400 px-2 mb-1.5 uppercase tracking-wider">Select Agent</p>
+                                                            {availableBots.map(bot => (
+                                                                <button
+                                                                    key={bot.id}
+                                                                    onClick={() => toggleBotForConversation(true, bot.id)}
+                                                                    className={`w-full text-left px-3 py-2.5 sm:py-2 rounded-xl text-sm flex items-center gap-3 transition-colors ${effectiveBotEnabled && selectedBotId === bot.id
+                                                                        ? 'bg-green-50 text-green-700 font-semibold'
+                                                                        : 'hover:bg-gray-50 text-gray-700'
+                                                                        }`}
+                                                                >
+                                                                    <Bot className="h-5 w-5 sm:h-4 sm:w-4 shrink-0 text-gray-500" />
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="font-semibold sm:font-medium truncate text-gray-800">{bot.name}</div>
+                                                                        <div className="text-xs text-gray-500 truncate">{bot.model}</div>
+                                                                    </div>
+                                                                    {effectiveBotEnabled && selectedBotId === bot.id && (
+                                                                        <Check className="h-4.5 w-4.5 sm:h-4 sm:w-4 text-green-600 shrink-0" />
+                                                                    )}
+                                                                </button>
+                                                            ))}
                                                             <button
-                                                                key={bot.id}
-                                                                onClick={() => toggleBotForConversation(true, bot.id)}
-                                                                className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors ${effectiveBotEnabled && selectedBotId === bot.id
-                                                                    ? 'bg-green-50 text-green-700 font-medium'
+                                                                onClick={() => toggleBotForConversation(true, null)}
+                                                                className={`w-full text-left px-3 py-2.5 sm:py-2 rounded-xl text-sm flex items-center gap-3 mt-1.5 sm:mt-1 transition-colors ${effectiveBotEnabled && !selectedBotId
+                                                                    ? 'bg-green-50 text-green-700 font-semibold'
                                                                     : 'hover:bg-gray-50 text-gray-700'
                                                                     }`}
                                                             >
-                                                                <Bot className="h-4 w-4 shrink-0" />
+                                                                <Bot className="h-5 w-5 sm:h-4 sm:w-4 shrink-0 text-gray-500" />
                                                                 <div className="flex-1 min-w-0">
-                                                                    <div className="font-medium truncate">{bot.name}</div>
-                                                                    <div className="text-xs text-gray-500 truncate">{bot.model}</div>
+                                                                    <div className="font-semibold sm:font-medium truncate text-gray-800">Auto (Workspace Rules)</div>
+                                                                    <div className="text-xs text-gray-500 truncate">Keyword/default/unknown rules</div>
                                                                 </div>
-                                                                {effectiveBotEnabled && selectedBotId === bot.id && (
-                                                                    <Check className="h-4 w-4 text-green-600 shrink-0" />
+                                                                {effectiveBotEnabled && !selectedBotId && (
+                                                                    <Check className="h-4.5 w-4.5 sm:h-4 sm:w-4 text-green-600 shrink-0" />
                                                                 )}
                                                             </button>
-                                                        ))}
-                                                        <button
-                                                            onClick={() => toggleBotForConversation(true, null)}
-                                                            className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 mt-1 transition-colors ${effectiveBotEnabled && !selectedBotId
-                                                                ? 'bg-green-50 text-green-700 font-medium'
-                                                                : 'hover:bg-gray-50 text-gray-700'
-                                                                }`}
-                                                        >
-                                                            <Bot className="h-4 w-4 shrink-0" />
-                                                            <div className="flex-1 min-w-0">
-                                                                 <div className="font-medium truncate">Auto (Workspace Rules)</div>
-                                                                <div className="text-xs text-gray-500 truncate">Keyword/default/unknown rules</div>
-                                                            </div>
-                                                            {effectiveBotEnabled && !selectedBotId && (
-                                                                <Check className="h-4 w-4 text-green-600 shrink-0" />
-                                                            )}
-                                                        </button>
-                                                    </div>
-                                                )}
+                                                        </div>
+                                                    )}
 
-                                                {availableBots.length === 0 && (
-                                                    <div className="p-3 text-center">
-                                                        <p className="text-xs text-gray-500">No bots configured yet</p>
-                                                        <a
-                                                            href="/bot-agents"
-                                                            className="text-xs text-green-600 hover:underline"
-                                                        >
-                                                            Create a bot →
-                                                        </a>
-                                                    </div>
-                                                )}
-                                            </div>
+                                                    {availableBots.length === 0 && (
+                                                        <div className="p-3 text-center">
+                                                            <p className="text-xs text-gray-500 font-medium">No bots configured yet</p>
+                                                            <a
+                                                                href="/bot-agents"
+                                                                className="text-xs text-green-600 font-semibold hover:underline"
+                                                            >
+                                                                Create a bot →
+                                                            </a>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </>
                                         )}
                                     </div>
 
@@ -3512,30 +3532,42 @@ export default function LiveChat() {
                                                 <MoreVertical className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
                                             </button>
                                             {isAutoAssignMenuOpen && (
-                                                <div className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl z-50">
-                                                    <button
-                                                        onClick={() => {
-                                                            setDraftAutoAssignSettings({ enabled: autoAssignSettings.enabled, batch_size: autoAssignSettings.batch_size });
-                                                            setIsAutoAssignModalOpen(true);
-                                                            setIsAutoAssignMenuOpen(false);
-                                                        }}
-                                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                                    >
-                                                        <Bot className="h-4 w-4 text-green-500" />
-                                                        Auto Assign Rules
-                                                    </button>
-                                                    <button
-                                                        onClick={() => {
-                                                            setDraftPausedAgents([...autoAssignSettings.paused_agents]);
-                                                            setIsAgentStatusModalOpen(true);
-                                                            setIsAutoAssignMenuOpen(false);
-                                                        }}
-                                                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                                    >
-                                                        <User className="h-4 w-4 text-blue-500" />
-                                                        Agent Status (Pause)
-                                                    </button>
-                                                </div>
+                                                <>
+                                                    {/* Backdrop for mobile */}
+                                                    <div
+                                                        onClick={() => setIsAutoAssignMenuOpen(false)}
+                                                        className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm sm:hidden transition-opacity duration-300"
+                                                    />
+                                                    <div className="fixed bottom-0 left-0 right-0 z-[101] w-full rounded-t-3xl border-t border-gray-200 bg-white p-5 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] transition-transform duration-300 ease-out sm:absolute sm:bottom-auto sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-56 sm:overflow-hidden sm:rounded-xl sm:border sm:p-0 sm:shadow-xl sm:z-50 animate-in slide-in-from-bottom sm:animate-none">
+                                                        {/* Handle bar on mobile */}
+                                                        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-gray-200 sm:hidden" />
+                                                        <div className="py-1">
+                                                            <p className="text-[11px] font-bold text-gray-400 px-4 mb-2.5 uppercase tracking-wider sm:hidden">Admin Actions</p>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setDraftAutoAssignSettings({ enabled: autoAssignSettings.enabled, batch_size: autoAssignSettings.batch_size });
+                                                                    setIsAutoAssignModalOpen(true);
+                                                                    setIsAutoAssignMenuOpen(false);
+                                                                }}
+                                                                className="w-full text-left px-4 py-3 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 sm:gap-2 rounded-xl sm:rounded-none transition-colors"
+                                                            >
+                                                                <Bot className="h-5 w-5 sm:h-4 sm:w-4 text-green-500" />
+                                                                <span className="font-semibold sm:font-normal">Auto Assign Rules</span>
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setDraftPausedAgents([...autoAssignSettings.paused_agents]);
+                                                                    setIsAgentStatusModalOpen(true);
+                                                                    setIsAutoAssignMenuOpen(false);
+                                                                }}
+                                                                className="w-full text-left px-4 py-3 sm:py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-3 sm:gap-2 rounded-xl sm:rounded-none transition-colors"
+                                                            >
+                                                                <User className="h-5 w-5 sm:h-4 sm:w-4 text-blue-500" />
+                                                                <span className="font-semibold sm:font-normal">Agent Status (Pause)</span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </>
                                             )}
                                         </div>
                                     )}
@@ -3637,95 +3669,98 @@ export default function LiveChat() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Jump to Latest button (relative to message area scroll boundary) */}
+                                {(showJumpToLatest || newMessagesPending > 0) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            scrollToBottom('smooth')
+                                            setNewMessagesPending(0)
+                                        }}
+                                        className="absolute bottom-4 right-5 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#54656f] shadow-[0_2px_8px_rgba(11,20,26,0.18)] transition hover:bg-gray-50 hover:text-[#111b21] active:scale-95"
+                                        title={newMessagesPending > 0 ? `${newMessagesPending} new message${newMessagesPending > 1 ? 's' : ''}` : 'Jump to latest'}
+                                    >
+                                        <ArrowDown className="h-5 w-5" />
+                                        {newMessagesPending > 0 && (
+                                            <span className="absolute right-0.5 top-0.5 flex h-3 w-3 rounded-full bg-[#25d366] ring-2 ring-[#00a884]" />
+                                        )}
+                                    </button>
+                                )}
                             </div>
 
                             {activeMenuMessage && messageMenuAnchor && (
-                                <div
-                                    data-message-menu
-                                    className="fixed z-[80] w-56 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
-                                    style={{
-                                        top: `${messageMenuAnchor.top}px`,
-                                        left: `${messageMenuAnchor.left}px`,
-                                    }}
-                                >
-                                    <div className="flex items-center justify-between gap-1 border-b border-gray-100 px-3 py-2">
-                                        {QUICK_REACTIONS.map(item => (
+                                <>
+                                    {/* Backdrop for mobile */}
+                                    <div
+                                        onClick={closeMessageMenu}
+                                        className="fixed inset-0 z-[79] bg-black/50 backdrop-blur-sm sm:hidden transition-opacity duration-300 animate-in fade-in"
+                                    />
+                                    <div
+                                        data-message-menu
+                                        className="fixed bottom-0 left-0 right-0 z-[80] w-full rounded-t-3xl border-t border-gray-200 bg-white p-5 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] transition-transform duration-300 ease-out sm:fixed sm:bottom-auto sm:left-auto sm:right-auto sm:w-56 sm:overflow-hidden sm:rounded-2xl sm:border sm:p-0 sm:shadow-2xl sm:z-[80] animate-in slide-in-from-bottom sm:animate-none"
+                                        style={typeof window !== 'undefined' && window.innerWidth >= 640 ? {
+                                            top: `${messageMenuAnchor.top}px`,
+                                            left: `${messageMenuAnchor.left}px`,
+                                        } : undefined}
+                                    >
+                                        {/* Handle bar on mobile */}
+                                        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-gray-200 sm:hidden" />
+
+                                        {/* Horizontal reactions at the top */}
+                                        <div className="flex items-center justify-between gap-1 border-b border-gray-100 pb-3 mb-3 sm:pb-2 sm:mb-0 sm:px-3 sm:py-2">
+                                            {QUICK_REACTIONS.map(item => (
+                                                <button
+                                                    key={item.label}
+                                                    type="button"
+                                                    onClick={() => sendReaction(activeMenuMessage, item.emoji)}
+                                                    className="flex h-10 w-10 sm:h-8 sm:w-8 items-center justify-center rounded-full transition hover:scale-110 hover:bg-gray-100"
+                                                    title={item.label}
+                                                >
+                                                    <EmojiAsset emoji={item.emoji} label={item.label} className="h-6 w-6 sm:h-5 sm:w-5" />
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="py-1">
                                             <button
-                                                key={item.label}
                                                 type="button"
-                                                onClick={() => sendReaction(activeMenuMessage, item.emoji)}
-                                                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:scale-110 hover:bg-gray-100"
-                                                title={item.label}
+                                                onClick={() => startReplyToMessage(activeMenuMessage)}
+                                                className="flex w-full items-center gap-3 px-4 py-3 sm:py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 rounded-xl sm:rounded-none font-semibold sm:font-normal"
                                             >
-                                                <EmojiAsset emoji={item.emoji} label={item.label} className="h-5 w-5" />
+                                                <Reply className="h-5 w-5 sm:h-4 sm:w-4 text-gray-500" />
+                                                Reply
                                             </button>
-                                        ))}
-                                    </div>
-                                    <div className="hidden">
-                                        {QUICK_REACTIONS.map(({ emoji }) => (
                                             <button
-                                                key={emoji}
                                                 type="button"
-                                                onClick={() => sendReaction(activeMenuMessage, emoji)}
-                                                className="flex h-8 w-8 items-center justify-center rounded-full transition hover:scale-110 hover:bg-gray-100"
-                                                title={`React ${emoji}`}
+                                                onClick={() => copyMessageText(activeMenuMessage)}
+                                                className="flex w-full items-center gap-3 px-4 py-3 sm:py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 rounded-xl sm:rounded-none font-semibold sm:font-normal"
                                             >
-                                                {emoji}
+                                                <Copy className="h-5 w-5 sm:h-4 sm:w-4 text-gray-500" />
+                                                Copy
                                             </button>
-                                        ))}
+                                            <button
+                                                type="button"
+                                                onClick={() => forwardMessage(activeMenuMessage)}
+                                                className="flex w-full items-center gap-3 px-4 py-3 sm:py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50 rounded-xl sm:rounded-none font-semibold sm:font-normal"
+                                            >
+                                                <Forward className="h-5 w-5 sm:h-4 sm:w-4 text-gray-500" />
+                                                Forward
+                                            </button>
+                                            <div className="my-1.5 sm:my-1 border-t border-gray-100" />
+                                            <button
+                                                type="button"
+                                                onClick={() => deleteMessageLocal(activeMenuMessage)}
+                                                className="flex w-full items-center gap-3 px-4 py-3 sm:py-2.5 text-left text-sm text-red-600 hover:bg-red-50 rounded-xl sm:rounded-none font-semibold sm:font-normal"
+                                            >
+                                                <Trash2 className="h-5 w-5 sm:h-4 sm:w-4" />
+                                                Delete
+                                            </button>
+                                        </div>
                                     </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => startReplyToMessage(activeMenuMessage)}
-                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
-                                    >
-                                        <Reply className="h-4 w-4" />
-                                        Reply
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => copyMessageText(activeMenuMessage)}
-                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
-                                    >
-                                        <Copy className="h-4 w-4" />
-                                        Copy
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => forwardMessage(activeMenuMessage)}
-                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-gray-800 hover:bg-gray-50"
-                                    >
-                                        <Forward className="h-4 w-4" />
-                                        Forward
-                                    </button>
-                                    <div className="my-1 border-t border-gray-100" />
-                                    <button
-                                        type="button"
-                                        onClick={() => deleteMessageLocal(activeMenuMessage)}
-                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-red-600 hover:bg-red-50"
-                                    >
-                                        <Trash2 className="h-4 w-4" />
-                                        Delete
-                                    </button>
-                                </div>
+                                </>
                             )}
 
-                            {(showJumpToLatest || newMessagesPending > 0) && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        scrollToBottom('smooth')
-                                        setNewMessagesPending(0)
-                                    }}
-                                    className="absolute bottom-20 right-5 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#54656f] shadow-[0_2px_8px_rgba(11,20,26,0.18)] transition hover:bg-gray-50 hover:text-[#111b21] active:scale-95"
-                                    title={newMessagesPending > 0 ? `${newMessagesPending} new message${newMessagesPending > 1 ? 's' : ''}` : 'Jump to latest'}
-                                >
-                                    <ArrowDown className="h-5 w-5" />
-                                    {newMessagesPending > 0 && (
-                                        <span className="absolute right-0.5 top-0.5 flex h-3 w-3 rounded-full bg-[#25d366] ring-2 ring-[#00a884]" />
-                                    )}
-                                </button>
-                            )}
+
 
                             {forwardingMessage && (
                                 <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/35 px-4 py-6">
@@ -3825,20 +3860,22 @@ export default function LiveChat() {
                             {/* Input Area */}
                             <div data-tour="chat-composer" className={`px-2 py-1.5 sm:px-4 sm:py-2.5 lg:px-5 ${isInternalNote ? 'border-t border-amber-200 bg-amber-50' : 'bg-[#f0f2f5]'}`}>
                                 {isCustomerWindowExpired && !isInternalNote && (
-                                    <div className="mx-auto mb-2 flex w-full max-w-[1180px] flex-col gap-3 rounded-lg bg-[#fff0d8] px-4 py-3 shadow-sm ring-1 ring-amber-100 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-                                        <div className="flex min-w-0 items-start gap-3">
-                                            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
-                                            <div className="min-w-0 text-sm leading-5 text-black">
-                                                <div className="font-semibold">24 Hour Limit</div>
-                                                <p>
-                                                    WhatsApp does not allow sending messages 24 hours after they last messaged you. However, you can send them a template message.
+                                    <div className="mx-auto mb-2 flex w-full max-w-[1180px] flex-col gap-3 rounded-2xl bg-[#fffbfa] p-3 sm:p-4 shadow-sm border border-rose-100 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="flex items-start gap-3">
+                                            <div className="mt-0.5 bg-rose-50 p-1.5 rounded-full shrink-0">
+                                                <AlertCircle className="h-4.5 w-4.5 text-rose-600" />
+                                            </div>
+                                            <div className="min-w-0 text-xs sm:text-sm leading-relaxed text-gray-700">
+                                                <div className="font-bold text-gray-900 text-sm mb-0.5">24 Hour Limit</div>
+                                                <p className="text-gray-600">
+                                                    WhatsApp does not allow sending normal messages 24 hours after the user's last message. You can still initiate contact using a template message.
                                                 </p>
                                             </div>
                                         </div>
                                         <button
                                             type="button"
                                             onClick={openTemplateSender}
-                                            className="inline-flex h-10 shrink-0 items-center justify-center rounded-md bg-[#075e54] px-8 text-sm font-semibold text-white transition hover:bg-[#064f47] focus:outline-none focus:ring-2 focus:ring-[#075e54]/30"
+                                            className="inline-flex h-10 w-full sm:w-auto shrink-0 items-center justify-center rounded-xl bg-[#00a884] hover:bg-[#029977] px-2 text-sm font-bold text-white transition-all duration-200 shadow-sm shadow-green-100 active:scale-[0.98] outline-none"
                                         >
                                             Send Template
                                         </button>

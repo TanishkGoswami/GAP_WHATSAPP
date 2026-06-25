@@ -110,62 +110,62 @@ export default function WhatsAppNumberPage() {
     return (
         <div className="mx-auto max-w-5xl space-y-8 pb-20 pt-6 px-4 sm:px-0">
             {/* Global Stepper */}
-            <div className="mb-10 mx-auto max-w-3xl">
+            <div className="mb-8 mx-auto max-w-3xl">
                 <div className="relative flex items-center justify-between">
                     <div className="absolute left-0 top-1/2 -z-10 h-1 w-full -translate-y-1/2 bg-gray-200 rounded-full"></div>
                     <div className="absolute left-0 top-1/2 -z-10 h-1 w-1/4 -translate-y-1/2 bg-green-500 rounded-full"></div>
                     
-                    <div className="flex flex-col items-center bg-[#fdfdfd] px-2 sm:px-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-600 text-white shadow-md ring-4 ring-[#fdfdfd]">
+                    <div className="flex flex-col items-center bg-[#fdfdfd] px-1 sm:px-4">
+                        <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-green-600 text-xs sm:text-sm font-bold text-white shadow-md ring-4 ring-[#fdfdfd]">
                             1
                         </div>
-                        <span className="mt-3 text-xs font-bold text-gray-900 uppercase tracking-wider">Get Number</span>
+                        <span className="mt-1.5 sm:mt-3 text-[9px] sm:text-xs font-bold text-gray-900 uppercase tracking-tight sm:tracking-wider text-center max-w-[70px] sm:max-w-none">Get Number</span>
                     </div>
-                    <div className="flex flex-col items-center bg-[#fdfdfd] px-2 sm:px-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-gray-400 border-2 border-gray-200 ring-4 ring-[#fdfdfd]">
+                    <div className="flex flex-col items-center bg-[#fdfdfd] px-1 sm:px-4">
+                        <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-white text-xs sm:text-sm text-gray-400 border-2 border-gray-200 ring-4 ring-[#fdfdfd]">
                             2
                         </div>
-                        <span className="mt-3 text-xs font-bold text-gray-400 uppercase tracking-wider">Meta Verification</span>
+                        <span className="mt-1.5 sm:mt-3 text-[9px] sm:text-xs font-bold text-gray-400 uppercase tracking-tight sm:tracking-wider text-center max-w-[70px] sm:max-w-none">Meta Verification</span>
                     </div>
-                    <div className="flex flex-col items-center bg-[#fdfdfd] px-2 sm:px-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-gray-400 border-2 border-gray-200 ring-4 ring-[#fdfdfd]">
+                    <div className="flex flex-col items-center bg-[#fdfdfd] px-1 sm:px-4">
+                        <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-white text-xs sm:text-sm text-gray-400 border-2 border-gray-200 ring-4 ring-[#fdfdfd]">
                             3
                         </div>
-                        <span className="mt-3 text-xs font-bold text-gray-400 uppercase tracking-wider">Launch</span>
+                        <span className="mt-1.5 sm:mt-3 text-[9px] sm:text-xs font-bold text-gray-400 uppercase tracking-tight sm:tracking-wider text-center max-w-[70px] sm:max-w-none">Launch</span>
                     </div>
                 </div>
             </div>
 
             <section className="text-center">
-                <div className="mb-4 flex justify-center">
+                <div className="mb-4 hidden sm:flex justify-center">
                     <TourButton />
                 </div>
-                <h1 className="text-3xl font-extrabold tracking-tight text-gray-950 sm:text-4xl">Set up your WhatsApp number</h1>
-                <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-gray-600">
-                    Get a fresh virtual number instantly for WhatsApp Cloud API, or request our team\'s assistance for a guided onboarding experience.
+                <h1 className="text-2xl font-bold tracking-tight text-gray-950 sm:text-4xl">Set up your WhatsApp number</h1>
+                <p className="mx-auto mt-2 sm:mt-4 max-w-2xl text-xs sm:text-base leading-relaxed text-gray-600">
+                    Get a fresh virtual number instantly for WhatsApp Cloud API, or request our team's assistance for a guided onboarding experience.
                 </p>
-                <div className="mt-6 flex items-center justify-center gap-4">
-                    <Link to="/whatsapp-connect" className="inline-flex items-center text-sm font-semibold text-indigo-600 hover:text-indigo-500">
+                <div className="mt-4 flex items-center justify-center gap-4">
+                    <Link to="/whatsapp-connect" className="inline-flex items-center text-xs sm:text-sm font-semibold text-indigo-600 hover:text-indigo-500">
                         Already have a number? Connect it here &rarr;
                     </Link>
                 </div>
             </section>
 
             {/* Tab Selector */}
-            <div data-tour="number-tabs" className="flex justify-center mt-8">
-                <div className="inline-flex rounded-xl bg-gray-200/60 p-1.5 shadow-inner">
+            <div data-tour="number-tabs" className="flex justify-center mt-6">
+                <div className="inline-flex rounded-xl bg-gray-200/60 p-1 sm:p-1.5 shadow-inner">
                     <button
                         onClick={() => setActiveTab('instant')}
-                        className={`flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-bold transition-all ${activeTab === 'instant' ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-900/5' : 'text-gray-500 hover:text-gray-900'}`}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-2 sm:px-6 sm:py-2.5 text-xs sm:text-sm font-bold transition-all ${activeTab === 'instant' ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-900/5' : 'text-gray-500 hover:text-gray-900'}`}
                     >
-                        <Zap className="h-4 w-4" />
+                        <Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         Instant Setup (Twilio)
                     </button>
                     <button
                         onClick={() => setActiveTab('assisted')}
-                        className={`flex items-center gap-2 rounded-lg px-6 py-2.5 text-sm font-bold transition-all ${activeTab === 'assisted' ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-900/5' : 'text-gray-500 hover:text-gray-900'}`}
+                        className={`flex items-center gap-1.5 rounded-lg px-3 py-2 sm:px-6 sm:py-2.5 text-xs sm:text-sm font-bold transition-all ${activeTab === 'assisted' ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-900/5' : 'text-gray-500 hover:text-gray-900'}`}
                     >
-                        <Briefcase className="h-4 w-4" />
+                        <Briefcase className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         Assisted Setup
                     </button>
                 </div>

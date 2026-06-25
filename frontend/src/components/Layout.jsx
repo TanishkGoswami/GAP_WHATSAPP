@@ -462,11 +462,6 @@ export default function Layout() {
                             >
                                 <Menu className="h-5 w-5" />
                             </button>
-                            <div className="flex min-w-0 items-center gap-2 md:hidden">
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-gray-200">
-                                    <img src="/logo.png" alt="GetAiPilot" className="h-5 w-5 object-contain" />
-                                </span>
-                            </div>
                         </div>
 
                         <div className="flex min-w-0 items-center gap-2 sm:gap-4">
