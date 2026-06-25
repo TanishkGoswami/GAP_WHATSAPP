@@ -1,6 +1,6 @@
 import { createElement, useState, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield, Activity, Calendar } from 'lucide-react'
+import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield, Activity, Calendar, ChevronDown } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { useNotificationSound } from '../hooks/useNotificationSound'
@@ -86,6 +86,8 @@ export default function Settings() {
         profile_picture_url: ''
     })
     const [testSoundStatus, setTestSoundStatus] = useState('')
+    const [isSoundDropdownOpen, setIsSoundDropdownOpen] = useState(false)
+    const soundDropdownRef = useRef(null)
     const [desktopNotificationsEnabled, setDesktopNotificationsEnabled] = useState(() => readStoredBoolean(DESKTOP_NOTIFICATION_KEY, false))
     const [quietHoursEnabled, setQuietHoursEnabled] = useState(() => readStoredBoolean(QUIET_HOURS_ENABLED_KEY, false))
     const [quietHours, setQuietHours] = useState(() => ({
@@ -120,6 +122,29 @@ export default function Settings() {
         }
     }, [quietHoursEnabled, quietHours])
 
+    useEffect(() => {
+        if (!isSoundDropdownOpen) return
+
+        const handleDropdownClose = (event) => {
+            if (event.key === 'Escape') {
+                setIsSoundDropdownOpen(false)
+                return
+            }
+
+            if (event.type === 'mousedown' && soundDropdownRef.current && !soundDropdownRef.current.contains(event.target)) {
+                setIsSoundDropdownOpen(false)
+            }
+        }
+
+        document.addEventListener('mousedown', handleDropdownClose)
+        document.addEventListener('keydown', handleDropdownClose)
+
+        return () => {
+            document.removeEventListener('mousedown', handleDropdownClose)
+            document.removeEventListener('keydown', handleDropdownClose)
+        }
+    }, [isSoundDropdownOpen])
+
     const handleTestNotificationSound = async () => {
         setTestSoundStatus('playing')
         const didPlay = await playNotification({ force: true, messageId: `test-${Date.now()}` })
@@ -129,11 +154,10 @@ export default function Settings() {
 
     const handleSoundSelect = async (soundId) => {
         setSelectedSoundId(soundId)
-        setTestSoundStatus('playing')
+        setIsSoundDropdownOpen(false)
+        setTestSoundStatus('')
         window.setTimeout(async () => {
-            const didPlay = await playNotification({ force: true, messageId: `preview-${soundId}-${Date.now()}` })
-            setTestSoundStatus(didPlay ? 'previewed' : 'blocked')
-            window.setTimeout(() => setTestSoundStatus(''), 2500)
+            await playNotification({ force: true, messageId: `preview-${soundId}-${Date.now()}` })
         }, 50)
     }
 
@@ -652,6 +676,7 @@ export default function Settings() {
     }
 
     const isAdmin = userRole === 'admin' || userRole === 'owner'
+    const selectedNotificationSound = notificationSounds.find(sound => sound.id === selectedSoundId) || notificationSounds[0]
 
     return (
         <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 px-4 sm:px-6 lg:flex-row lg:gap-8 lg:px-6">
@@ -1173,7 +1198,7 @@ export default function Settings() {
                 {activeTab === 'notifications' && (
                     <div data-tour="settings-notifications" className="bg-gray-50/60">
                         <div className="border-b border-gray-200 bg-white px-4 py-5 sm:px-8 sm:py-6">
-                            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                                 <div className="max-w-3xl">
                                     <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
                                         <Sparkles className="h-3.5 w-3.5" />
@@ -1184,11 +1209,11 @@ export default function Settings() {
                                         Jab customer ka new WhatsApp message kisi aur chat me aaye, agents ko yahan selected sound alert milega. Ye settings is browser/device ke liye save hoti hain.
                                     </p>
                                 </div>
-                                <div className="flex flex-col gap-2 sm:flex-row">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                                     <button
                                         type="button"
                                         onClick={handleTestNotificationSound}
-                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#0070d1] px-5 text-sm font-semibold text-white hover:bg-[#0064b7]"
+                                        className="inline-flex h-10 min-w-32 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-[#0070d1] px-5 text-sm font-semibold text-white hover:bg-[#0064b7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0070d1]/30"
                                     >
                                         <Play className="h-4 w-4" />
                                         Test sound
@@ -1196,7 +1221,7 @@ export default function Settings() {
                                     <button
                                         type="button"
                                         onClick={requestDesktopNotificationPermission}
-                                        className="inline-flex h-10 items-center justify-center gap-2 rounded-full border border-gray-200 bg-white px-5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                        className="inline-flex h-10 min-w-40 items-center justify-center gap-2 whitespace-nowrap rounded-full border border-gray-200 bg-white px-5 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0070d1]/20"
                                     >
                                         <MonitorCheck className="h-4 w-4" />
                                         Browser permission
@@ -1204,12 +1229,12 @@ export default function Settings() {
                                 </div>
                             </div>
                             {testSoundStatus ? (
-                                <div className={`mt-4 flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${testSoundStatus === 'blocked' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
-                                    {testSoundStatus === 'blocked' ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <Check className="mt-0.5 h-4 w-4 shrink-0" />}
-                                    <span>
+                                <div className={`mt-4 inline-flex max-w-full items-center gap-2 rounded-full border px-3.5 py-2 text-sm ${testSoundStatus === 'blocked' ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                                    {testSoundStatus === 'blocked' ? <AlertCircle className="h-4 w-4 shrink-0" /> : <Check className="h-4 w-4 shrink-0" />}
+                                    <span className="min-w-0 truncate">
                                         {testSoundStatus === 'playing' && 'Playing notification preview...'}
                                         {testSoundStatus === 'played' && 'Sound test successful. Incoming message alerts should be audible.'}
-                                        {testSoundStatus === 'previewed' && 'Sound preview played. This style is selected now.'}
+                                        {testSoundStatus === 'previewed' && 'Preview played. Tone selected.'}
                                         {testSoundStatus === 'blocked' && 'Browser blocked audio. Click anywhere in the app once, then press Test sound again.'}
                                     </span>
                                 </div>
@@ -1266,40 +1291,73 @@ export default function Settings() {
                             </section>
 
                             <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
-                                <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                                <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                                     <div>
-                                        <h3 className="text-sm font-semibold text-gray-900">Sound style</h3>
-                                        <p className="mt-1 text-sm text-gray-500">Har sound ko click karte hi preview bhi bajega, so agent comfortable alert choose kar sakta hai.</p>
+                                        <h3 className="text-sm font-semibold text-gray-900">Choose alert tone</h3>
+                                        <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">Future me sounds zyada honge, isliye list dropdown me rakhi hai. Option select karte hi preview bajega.</p>
                                     </div>
-                                    <span className="inline-flex items-center gap-2 rounded-full bg-gray-50 px-3 py-1 text-xs font-medium text-gray-600">
+                                    <span className="inline-flex w-fit items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700">
                                         <Headphones className="h-3.5 w-3.5" />
-                                        Selected: {notificationSounds.find(sound => sound.id === selectedSoundId)?.label || 'Default'}
+                                        {notificationSounds.length} tones available
                                     </span>
                                 </div>
-                                <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                                    {notificationSounds.map(sound => {
-                                        const selected = selectedSoundId === sound.id
-                                        return (
-                                            <button
-                                                key={sound.id}
-                                                type="button"
-                                                onClick={() => handleSoundSelect(sound.id)}
-                                                className={`flex items-start justify-between rounded-lg border p-4 text-left transition-colors ${selected ? 'border-[#0070d1] bg-[#eef7ff]' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
-                                            >
-                                                <div className="min-w-0">
-                                                    <div className="flex flex-wrap items-center gap-2">
-                                                        <div className="truncate text-sm font-semibold text-gray-900">{sound.label}</div>
-                                                        {selected ? <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[#0064b7] ring-1 ring-[#cfe5fb]">Active</span> : null}
-                                                    </div>
-                                                    <div className="mt-1 truncate text-xs text-gray-500">{sound.src.split('/').pop()}</div>
-                                                    <div className="mt-2 text-xs leading-5 text-gray-500">{getSoundDescription(sound.id)}</div>
-                                                </div>
-                                                <span className={`ml-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-[#0070d1] bg-[#0070d1] text-white' : 'border-gray-300 text-transparent'}`}>
-                                                    <Check className="h-3.5 w-3.5" />
+                                <div ref={soundDropdownRef} className="relative max-w-3xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsSoundDropdownOpen(prev => !prev)}
+                                        className="flex w-full items-center justify-between gap-4 rounded-lg border border-gray-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-blue-200 hover:bg-blue-50/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0070d1]/25"
+                                        aria-haspopup="listbox"
+                                        aria-expanded={isSoundDropdownOpen}
+                                    >
+                                        <span className="flex min-w-0 items-start gap-3">
+                                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#eef7ff] text-[#0070d1]">
+                                                <Headphones className="h-5 w-5" />
+                                            </span>
+                                            <span className="min-w-0">
+                                                <span className="flex flex-wrap items-center gap-2">
+                                                    <span className="truncate text-sm font-semibold text-gray-950">{selectedNotificationSound?.label || 'Select sound'}</span>
+                                                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-semibold text-gray-600">{selectedNotificationSound?.tone || 'Custom'}</span>
                                                 </span>
-                                            </button>
-                                        )
-                                    })}
+                                                <span className="mt-1 block truncate text-sm text-gray-500">{selectedNotificationSound?.description || getSoundDescription(selectedSoundId)}</span>
+                                            </span>
+                                        </span>
+                                        <ChevronDown className={`h-5 w-5 shrink-0 text-gray-400 transition-transform ${isSoundDropdownOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+
+                                    {isSoundDropdownOpen ? (
+                                        <div className="absolute left-0 right-0 z-40 mt-2 max-h-80 overflow-y-auto rounded-lg border border-gray-200 bg-white p-1.5 shadow-xl" role="listbox">
+                                            {notificationSounds.map(sound => {
+                                                const selected = selectedSoundId === sound.id
+                                                const fileName = getSoundFileName(sound.src)
+                                                const description = sound.description || getSoundDescription(sound.id)
+                                                const tone = sound.tone || 'Custom'
+
+                                                return (
+                                                    <button
+                                                        key={sound.id}
+                                                        type="button"
+                                                        onClick={() => handleSoundSelect(sound.id)}
+                                                        className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0070d1]/25 ${selected ? 'bg-[#eef7ff]' : 'hover:bg-gray-50'}`}
+                                                        role="option"
+                                                        aria-selected={selected}
+                                                        title={fileName}
+                                                    >
+                                                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-[#0070d1] bg-[#0070d1] text-white' : 'border-gray-200 bg-white text-gray-400'}`}>
+                                                            {selected ? <Check className="h-4 w-4" /> : <Play className="h-3.5 w-3.5" />}
+                                                        </span>
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="flex flex-wrap items-center gap-2">
+                                                                <span className="truncate text-sm font-semibold text-gray-950">{sound.label}</span>
+                                                                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${selected ? 'bg-white text-[#0064b7]' : 'bg-gray-100 text-gray-600'}`}>{tone}</span>
+                                                            </span>
+                                                            <span className="mt-0.5 block truncate text-xs text-gray-500">{description}</span>
+                                                        </span>
+                                                        <span className={`shrink-0 text-xs font-semibold ${selected ? 'text-[#0064b7]' : 'text-gray-400'}`}>{selected ? 'Active' : 'Preview'}</span>
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    ) : null}
                                 </div>
                             </section>
 
@@ -1688,8 +1746,14 @@ function getSoundDescription(soundId) {
         'dragon-studio': 'Soft and professional, best for long support shifts.',
         'universfield-033': 'Short pop, good when agents are active on multiple tabs.',
         'universfield-038': 'Brighter ping for busy teams who need noticeable alerts.',
+        'universfield-051': 'Rounded alert that feels present without being harsh.',
         'universfield-056': 'Clean tap with low distraction.',
+        'universfield-057': 'Clean new-message cue with a little more lift.',
         'universfield-09': 'Very short alert for quiet workspaces.'
     }
     return descriptions[soundId] || 'Notification preview sound.'
+}
+
+function getSoundFileName(src) {
+    return String(src || '').split('/').pop() || 'Custom sound'
 }
