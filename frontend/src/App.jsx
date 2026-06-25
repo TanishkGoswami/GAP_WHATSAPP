@@ -24,6 +24,7 @@ import HelpCenter from './pages/HelpCenter'
 import BillingPage from './pages/BillingPage'
 import PaymentSuccessPage from './pages/PaymentSuccessPage'
 import WhatsAppNumberPage from './pages/WhatsAppNumberPage'
+import WhatsAppLinkGenerator from './pages/WhatsAppLinkGenerator'
 import CookieConsent from './components/CookieConsent'
 import { loadFacebookSDK } from './services/facebookSdkLoader'
 
@@ -78,6 +79,7 @@ export default function App() {
                 <Route path="settings" element={<Settings />} />
                 <Route path="team-members" element={<TeamMembers />} />
                 <Route path="help" element={<HelpCenter />} />
+                <Route path="wa-link-generator" element={<WhatsAppLinkGenerator />} />
               </Route>
             </Routes>
             {import.meta.env.VITE_ENABLE_COOKIE_CONSENT === 'true' && <CookieConsent />}
