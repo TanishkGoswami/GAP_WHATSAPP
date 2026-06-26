@@ -33,7 +33,8 @@ import {
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
-import TourButton from '../onboarding/TourButton'
+
+import DiceBearAvatar from '../components/DiceBearAvatar'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
@@ -95,6 +96,7 @@ const FIELD_PRESETS = FIELD_GROUPS.flatMap(group => group.fields)
 const FIELD_PRESET_BY_KEY = FIELD_PRESETS.reduce((acc, field) => ({ ...acc, [field.key]: field }), {})
 
 const HIDDEN_CUSTOM_FIELDS = new Set(['profile_photo_url', 'profile_photo_checked_at'])
+const IGNORED_IMPORT_COLUMNS = new Set(['sr no', 'sr. no', 's.no', 's no', 'serial no', 'serial number', 'no', '#'])
 
 const emptyDraft = {
     id: null,
@@ -108,7 +110,7 @@ const emptyDraft = {
 
 export default function Contacts() {
     const navigate = useNavigate()
-    const { session, apiCall } = useAuth()
+    const { session, apiCall, memberProfile } = useAuth()
     const { alertDialog } = useDialog()
     const queryClient = useQueryClient()
     const fileInputRef = useRef(null)
@@ -145,9 +147,98 @@ export default function Contacts() {
     const [activeContact, setActiveContact] = useState(null)
     const [drawerMode, setDrawerMode] = useState('view')
     const [draft, setDraft] = useState(emptyDraft)
-    const [importStatus, setImportStatus] = useState('')
+    const [importStatus, setImportStatus] = useState(null)
+    const [isActionMenuOpen, setIsActionMenuOpen] = useState(false)
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false)
+    const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false)
+    const [deleteAllConfirmName, setDeleteAllConfirmName] = useState('')
+    const [deleteAllConfirmText, setDeleteAllConfirmText] = useState('')
+    const actionMenuRef = useRef(null)
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (actionMenuRef.current && !actionMenuRef.current.contains(event.target)) {
+                setIsActionMenuOpen(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
+
+    const handleDownloadSample = async () => {
+        try {
+            const ExcelJS = await import('exceljs')
+            const workbook = new ExcelJS.Workbook()
+            const worksheet = workbook.addWorksheet('Sample Contacts')
+
+            worksheet.columns = [
+                { header: 'Name', key: 'name', width: 25 },
+                { header: 'Phone', key: 'phone', width: 22 },
+                { header: 'Tag', key: 'tag', width: 15 },
+                { header: 'Account', key: 'account', width: 25 }
+            ]
+
+            worksheet.getRow(1).eachCell((cell) => {
+                cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } }
+                cell.alignment = { vertical: 'middle', horizontal: 'center' }
+                cell.border = {
+                    top: { style: 'thin' }, left: { style: 'thin' },
+                    bottom: { style: 'thin' }, right: { style: 'thin' }
+                }
+            })
+
+            const rows = [
+                { name: 'Rahul Sharma', phone: '+91 98765 43210', tag: 'VIP', account: 'Main Account' },
+                { name: 'Priya Singh', phone: '+91 87654 32109', tag: 'Lead', account: 'Sales Account' },
+                { name: 'Amit Kumar', phone: '+91 76543 21098', tag: 'Follow-up', account: 'Support Account' },
+                { name: 'Neha Gupta', phone: '+91 65432 10987', tag: 'Customer', account: 'Main Account' },
+                { name: 'Vikram Singh', phone: '+91 54321 09876', tag: 'New', account: 'Sales Account' }
+            ]
+
+            rows.forEach((rowData, index) => {
+                const row = worksheet.addRow(rowData)
+                if (index % 2 === 0) {
+                    row.eachCell((cell) => {
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } }
+                    })
+                }
+                row.eachCell((cell) => {
+                    cell.alignment = { vertical: 'middle', horizontal: 'left' }
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+                        right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
+                    }
+                })
+            })
+
+            const buffer = await workbook.xlsx.writeBuffer()
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+            const url = URL.createObjectURL(blob)
+            const link = document.createElement('a')
+            link.href = url
+            link.download = 'sample_contacts.xlsx'
+            document.body.appendChild(link)
+            link.click()
+            document.body.removeChild(link)
+            URL.revokeObjectURL(url)
+        } catch (error) {
+            console.error('Error generating sample file:', error)
+            alertDialog('Could not generate sample file.', { title: 'Error', tone: 'danger' })
+        }
+    }
 
     const authEnabled = !!session?.access_token
+    const isAdmin = ['admin', 'owner'].includes(String(memberProfile?.role || '').toLowerCase())
+    const adminConfirmName = String(
+        memberProfile?.name ||
+        session?.user?.user_metadata?.full_name ||
+        session?.user?.user_metadata?.name ||
+        session?.user?.email ||
+        ''
+    ).trim()
 
     const isHumanContact = (c) => {
         const waId = String(c?.wa_id || '').trim().toLowerCase()
@@ -214,15 +305,30 @@ export default function Contacts() {
     const getPhone = (contact) => formatPhoneForDisplay(contact?.phone || contact?.wa_id) || ''
 
     const getAccountLabel = (contactOrAccount) => {
-        const account = contactOrAccount?.wa_account_id
-            ? accounts.find(item => item.id === contactOrAccount.wa_account_id) || contactOrAccount.account
-            : contactOrAccount?.account || contactOrAccount
+        if (!contactOrAccount) return 'Unassigned'
+
+        const isContact = Object.prototype.hasOwnProperty.call(contactOrAccount, 'wa_account_id')
+            || Object.prototype.hasOwnProperty.call(contactOrAccount, 'wa_id')
+            || Object.prototype.hasOwnProperty.call(contactOrAccount, 'phone')
+
+        const account = isContact
+            ? (contactOrAccount.wa_account_id
+                ? accounts.find(item => item.id === contactOrAccount.wa_account_id) || contactOrAccount.account
+                : contactOrAccount.account)
+            : contactOrAccount
         if (!account) return 'Unassigned'
         return account.name || account.display_phone_number || account.phone_number_id || 'WhatsApp account'
     }
 
     const visibleCustomFields = (contact) => Object.entries(contact?.custom_fields || {})
-        .filter(([key, value]) => !HIDDEN_CUSTOM_FIELDS.has(key) && value !== null && value !== undefined && String(value).trim() !== '')
+        .filter(([key, value]) => {
+            const normalizedKey = String(key || '').trim().toLowerCase()
+            return !HIDDEN_CUSTOM_FIELDS.has(key)
+                && !IGNORED_IMPORT_COLUMNS.has(normalizedKey)
+                && value !== null
+                && value !== undefined
+                && String(value).trim() !== ''
+        })
 
     const getFieldMeta = (key) => {
         const normalized = String(key || '').trim()
@@ -358,6 +464,38 @@ export default function Contacts() {
         },
     })
 
+    const resetDeleteAllModal = () => {
+        setDeleteAllConfirmName('')
+        setDeleteAllConfirmText('')
+        setIsDeleteAllModalOpen(false)
+    }
+
+    const deleteAllMutation = useMutation({
+        mutationFn: async () => {
+            const res = await apiCall(`${API_BASE}/contacts/all`, {
+                method: 'DELETE',
+                body: JSON.stringify({
+                    confirm_name: deleteAllConfirmName,
+                    confirm_delete: deleteAllConfirmText,
+                }),
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data.error || `Failed to delete contacts (${res.status})`)
+            return data
+        },
+        onSuccess: (data) => {
+            resetDeleteAllModal()
+            setActiveContact(null)
+            setDrawerMode('view')
+            queryClient.invalidateQueries({ queryKey: ['contacts'] })
+            setImportStatus({
+                type: 'success',
+                message: `Deleted ${data.deleted_count || 0} contact${Number(data.deleted_count || 0) === 1 ? '' : 's'}.`,
+            })
+            setTimeout(() => setImportStatus(null), 8000)
+        },
+    })
+
     const openContact = (contact) => {
         setActiveContact(contact)
         setDraft(hydrateDraft(contact))
@@ -425,61 +563,152 @@ export default function Contacts() {
         if (!file) return
 
         try {
-            setImportStatus('Importing CSV...')
-            const text = await file.text()
-            const lines = text.split(/\r?\n/).filter(line => line.trim())
-            if (lines.length < 2) throw new Error('CSV must include a header row and at least one contact')
+            setImportStatus({ type: 'info', message: 'Reading file...' })
 
-            const headers = parseCsvLine(lines[0])
-            const normalized = headers.map(header => header.toLowerCase().trim())
-            const nameIdx = normalized.findIndex(header => header.includes('name'))
-            const phoneIdx = normalized.findIndex(header => header.includes('phone') || header.includes('mobile') || header.includes('number'))
-            const tagsIdx = normalized.findIndex(header => header.includes('tag'))
-            const accountIdx = normalized.findIndex(header => header.includes('account'))
-            if (phoneIdx === -1) throw new Error('CSV needs a phone/mobile/number column')
+            let parsedLines = []
+            if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+                const XLSX = await import('xlsx')
+                const arrayBuffer = await file.arrayBuffer()
+                const workbook = XLSX.read(arrayBuffer, { type: 'array' })
 
-            const reserved = new Set([nameIdx, phoneIdx, tagsIdx, accountIdx].filter(index => index >= 0))
-            let imported = 0
-            let failed = 0
-            for (const line of lines.slice(1)) {
-                const cols = parseCsvLine(line)
-                const phone = cols[phoneIdx]
-                if (!phone) continue
-                const accountText = accountIdx >= 0 ? String(cols[accountIdx] || '').trim().toLowerCase() : ''
-                const account = accountText
-                    ? accounts.find(acc => [acc.id, acc.name, acc.display_phone_number, acc.phone_number_id].some(value => String(value || '').toLowerCase() === accountText))
-                    : null
-                const custom_fields = headers.reduce((acc, header, index) => {
-                    if (reserved.has(index)) return acc
-                    const key = String(header || '').trim()
-                    const value = String(cols[index] || '').trim()
-                    if (key && value) acc[key] = value
-                    return acc
-                }, {})
+                for (const sheetName of workbook.SheetNames) {
+                    const worksheet = workbook.Sheets[sheetName]
+                    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
+                    const lines = rawData.map(row => row.map(cell => String(cell !== undefined && cell !== null ? cell : '').trim()))
+                                         .filter(row => row.some(cell => cell !== ''))
 
-                try {
-                    const res = await apiCall(`${API_BASE}/contacts`, {
-                        method: 'POST',
-                        body: JSON.stringify({
-                            name: nameIdx >= 0 ? cols[nameIdx] : '',
-                            phone,
-                            tags: tagsIdx >= 0 ? cols[tagsIdx] : '',
-                            wa_account_id: account?.id || null,
-                            custom_fields,
-                        }),
-                    })
-                    if (!res.ok) throw new Error('failed')
-                    imported++
-                } catch {
-                    failed++
+                    if (lines.length > 0) {
+                        parsedLines = lines
+                        break
+                    }
+                }
+
+                if (parsedLines.length === 0) throw new Error('Excel file is completely empty')
+            } else {
+                const text = await file.text()
+                parsedLines = text.split(/\r?\n/).filter(line => line.trim()).map(line => parseCsvLine(line))
+            }
+
+            if (parsedLines.length === 0) throw new Error('File is empty')
+
+            let headers = parsedLines[0]
+            let normalized = headers.map(header => header.toLowerCase().trim())
+            let nameIdx = normalized.findIndex(header => header.includes('name'))
+            let phoneIdx = normalized.findIndex(header => header.includes('phone') || header.includes('mobile') || header.includes('number') || header.includes('whatsapp') || header.includes('contact') || header === 'wa' || header === 'ph')
+            let tagsIdx = normalized.findIndex(header => header.includes('tag'))
+            let accountIdx = normalized.findIndex(header => header.includes('account'))
+
+            // Auto-detect phone column if header name is completely unrecognized
+            if (phoneIdx === -1 && parsedLines.length > 1) {
+                phoneIdx = parsedLines[1].findIndex(cell => /^\+?[0-9\s-()]{10,20}$/.test(cell) && cell.replace(/\D/g, '').length >= 10)
+            }
+
+            // If still not found, maybe there is no header row and the first row is data
+            if (phoneIdx === -1) {
+                phoneIdx = parsedLines[0].findIndex(cell => /^\+?[0-9\s-()]{10,20}$/.test(cell) && cell.replace(/\D/g, '').length >= 10)
+                if (phoneIdx !== -1) {
+                    // Prepend dummy headers since the first row is actually data
+                    headers = parsedLines[0].map((_, i) => i === phoneIdx ? 'phone' : `column_${i+1}`)
+                    parsedLines.unshift(headers)
+                    normalized = headers
                 }
             }
 
-            setImportStatus(`Imported ${imported} contact${imported === 1 ? '' : 's'}${failed ? `, skipped ${failed}` : ''}. Extra CSV columns were saved as custom fields.`)
-            queryClient.invalidateQueries({ queryKey: ['contacts'] })
+            if (phoneIdx === -1) throw new Error(`File needs a phone column (or auto-detectable phone numbers). Found columns: ${headers.join(', ') || 'none'}`)
+
+            const ignoredColumnIndexes = headers
+                .map((header, index) => IGNORED_IMPORT_COLUMNS.has(String(header || '').trim().toLowerCase()) ? index : -1)
+                .filter(index => index >= 0)
+            const reserved = new Set([nameIdx, phoneIdx, tagsIdx, accountIdx, ...ignoredColumnIndexes].filter(index => index >= 0))
+            let imported = 0
+            let failed = 0
+            let skipped = 0
+            const batchErrors = []
+
+            const contactsToImport = parsedLines.slice(1);
+            const total = contactsToImport.length;
+
+            setImportStatus({ type: 'info', message: 'Importing contacts...', progress: { current: 0, total } });
+
+            const BATCH_SIZE = 500;
+
+            for (let i = 0; i < total; i += BATCH_SIZE) {
+                const chunk = contactsToImport.slice(i, i + BATCH_SIZE);
+                const payload = [];
+
+                for (const cols of chunk) {
+                    if (!cols || cols.length === 0) continue;
+                    const phone = cols[phoneIdx];
+                    if (!phone) continue;
+                    const accountText = accountIdx >= 0 ? String(cols[accountIdx] || '').trim().toLowerCase() : '';
+                    const account = accountText
+                        ? accounts.find(acc => [acc.id, acc.name, acc.display_phone_number, acc.phone_number_id].some(value => String(value || '').toLowerCase() === accountText))
+                        : null;
+                    const custom_fields = headers.reduce((acc, header, index) => {
+                        if (reserved.has(index)) return acc;
+                        const key = String(header || '').trim();
+                        const value = String(cols[index] || '').trim();
+                        if (key && value) acc[key] = value;
+                        return acc;
+                    }, {});
+
+                    payload.push({
+                        name: nameIdx >= 0 ? cols[nameIdx] : '',
+                        phone,
+                        tags: tagsIdx >= 0 ? cols[tagsIdx] : '',
+                        wa_account_id: account?.id || null,
+                        custom_fields,
+                    });
+                }
+
+                if (payload.length > 0) {
+                    try {
+                        const res = await apiCall(`${API_BASE}/contacts/batch`, {
+                            method: 'POST',
+                            body: JSON.stringify({ contacts: payload }),
+                        });
+                        if (!res.ok) {
+                            const errData = await res.json().catch(() => ({}));
+                            throw new Error(errData.error || 'Batch import failed');
+                        }
+                        const data = await res.json();
+                        imported += data.imported || 0;
+                        skipped += Number(data.skipped_existing || 0) + Number(data.skipped_duplicate_rows || 0) + Number(data.skipped_invalid_rows || 0);
+
+                        if (data.contacts && Array.isArray(data.contacts)) {
+                            queryClient.setQueriesData({ queryKey: ['contacts'] }, (old) => {
+                                const prev = Array.isArray(old) ? old : [];
+                                const newIds = new Set(data.contacts.map(c => c.id));
+                                return [...data.contacts, ...prev.filter(c => !newIds.has(c.id))];
+                            });
+                        }
+                    } catch (err) {
+                        console.error('Batch error:', err);
+                        failed += payload.length;
+                        if (err?.message && batchErrors.length < 3) batchErrors.push(err.message);
+                        if (err.message && err.message.toLowerCase().includes('limit')) {
+                            throw err; // Stop if it's a billing limit error
+                        }
+                    }
+                }
+
+                setImportStatus({ type: 'info', message: 'Importing contacts...', progress: { current: Math.min(i + BATCH_SIZE, total), total } });
+            }
+
+            if (failed && imported === 0) {
+                throw new Error(batchErrors[0] || `Import failed for ${failed} contacts`);
+            }
+
+            setImportStatus({
+                type: failed ? 'error' : 'success',
+                message: `Imported ${imported} contact${imported === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}${failed ? `, failed ${failed}: ${batchErrors[0] || 'Some rows could not be imported'}` : ''}. Extra columns were saved as custom fields.`
+            });
+            setTimeout(() => setImportStatus(null), 8000);
+            queryClient.invalidateQueries({ queryKey: ['contacts'] });
         } catch (err) {
-            setImportStatus('')
-            alertDialog(err.message, { title: 'Import failed', tone: 'danger' })
+            setImportStatus({ type: 'error', message: err.message || 'Import failed' });
+            setTimeout(() => setImportStatus(null), 8000);
+            alertDialog(err.message, { title: 'Import failed', tone: 'danger' });
         }
     }
 
@@ -601,6 +830,16 @@ export default function Contacts() {
     ]
     const tagOptions = [{ value: '', label: 'All tags' }, ...allTags.map(tag => ({ value: tag, label: tag }))]
     const fieldOptions = [{ value: '', label: 'All fields' }, ...allFieldKeys.map(key => ({ value: key, label: getFieldMeta(key).label }))]
+    const fieldPresetOptions = [
+        { value: '', label: 'Custom field' },
+        ...FIELD_PRESETS.map(field => ({ value: field.key, label: field.label })),
+    ]
+    const canConfirmDeleteAll = Boolean(
+        isAdmin &&
+        adminConfirmName &&
+        deleteAllConfirmName.trim() === adminConfirmName &&
+        deleteAllConfirmText.trim().toLowerCase() === 'delete all contacts'
+    )
 
     return (
         <div className="min-h-full bg-gray-50/70">
@@ -615,42 +854,78 @@ export default function Contacts() {
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:items-center sm:w-auto">
-                        <span className="hidden sm:inline-block"><TourButton /></span>
+                   
                         <input
                             ref={fileInputRef}
                             type="file"
-                            accept=".csv,text/csv"
+                            accept=".csv, .xls, .xlsx"
                             className="hidden"
-                            onChange={handleImportCsv}
+                            onChange={(e) => {
+                                handleImportCsv(e)
+                                setIsImportModalOpen(false)
+                                setIsActionMenuOpen(false)
+                            }}
                         />
-                        <div className="col-span-2 sm:col-span-1">
+                        <div className="relative" ref={actionMenuRef}>
                             <button
                                 type="button"
-                                onClick={openNewContact}
-                                data-tour="contacts-add"
-                                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-3.5 py-2 sm:py-2 text-xs sm:text-sm font-bold text-white shadow-sm shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-[0.98]"
+                                onClick={() => setIsActionMenuOpen(!isActionMenuOpen)}
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 focus:outline-none transition-colors"
                             >
-                                <Plus className="h-4 w-4" />
-                                Add Contact
+                                Actions
+                                <ChevronDown className={`h-4 w-4 transition-transform ${isActionMenuOpen ? 'rotate-180' : ''}`} />
                             </button>
+                            {isActionMenuOpen && (
+                                <div className="absolute right-0 top-full mt-2 w-48 z-10 rounded-xl border border-gray-100 bg-white shadow-lg shadow-gray-200/50 ring-1 ring-black ring-opacity-5 focus:outline-none">
+                                    <div className="py-1">
+                                        <button
+                                            onClick={() => {
+                                                setIsActionMenuOpen(false)
+                                                setIsImportModalOpen(true)
+                                            }}
+                                            data-tour="contacts-import"
+                                            className="group flex w-full items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                        >
+                                            <Upload className="h-4 w-4 text-gray-400 group-hover:text-gray-600" />
+                                            Import Contacts
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setIsActionMenuOpen(false)
+                                                handleExportExcel()
+                                            }}
+                                            className="group flex w-full items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                        >
+                                            <Download className="h-4 w-4 text-gray-400 group-hover:text-gray-600" />
+                                            Export Excel
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setIsActionMenuOpen(false)
+                                                openNewContact()
+                                            }}
+                                            data-tour="contacts-add"
+                                            className="group flex w-full items-center gap-3 px-4 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50"
+                                        >
+                                            <Plus className="h-4 w-4 text-indigo-500" />
+                                            Add Contact
+                                        </button>
+                                        {isAdmin ? (
+                                            <button
+                                                onClick={() => {
+                                                    setIsActionMenuOpen(false)
+                                                    setIsDeleteAllModalOpen(true)
+                                                }}
+                                                className="group flex w-full items-center gap-3 border-t border-gray-100 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+                                            >
+                                                <Trash2 className="h-4 w-4 text-red-500" />
+                                                Delete all contacts
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                        <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            data-tour="contacts-import"
-                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2 sm:py-2 text-xs sm:text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-all active:scale-[0.98]"
-                        >
-                            <Upload className="h-4 w-4" />
-                            Import CSV
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleExportExcel}
-                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2 sm:py-2 text-xs sm:text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50 transition-all active:scale-[0.98]"
-                        >
-                            <Download className="h-4 w-4 text-gray-500" />
-                            Export Excel
-                        </button>
                     </div>
                 </div>
 
@@ -670,16 +945,11 @@ export default function Contacts() {
                     ))}
                 </div>
 
-                {importStatus ? (
-                    <div className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-800">
-                        {importStatus}
-                    </div>
-                ) : null}
 
-                {(contactsError || saveMutation.error || deleteMutation.error) ? (
+                {(contactsError || saveMutation.error || deleteMutation.error || deleteAllMutation.error) ? (
                     <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                        <span>{contactsError?.message || saveMutation.error?.message || deleteMutation.error?.message}</span>
+                        <span>{contactsError?.message || saveMutation.error?.message || deleteMutation.error?.message || deleteAllMutation.error?.message}</span>
                     </div>
                 ) : null}
 
@@ -694,18 +964,13 @@ export default function Contacts() {
                                 className="w-full rounded-lg border border-gray-300 py-1.5 pl-8 pr-2.5 text-xs sm:text-sm sm:py-2 sm:pl-10 sm:pr-3 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/20"
                             />
                         </div>
-                        <div className="grid grid-cols-3 gap-1.5 xl:flex xl:flex-row xl:gap-3">
-                            <CustomSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} className="xl:w-44" />
-                            <CustomSelect value={tagFilter} onChange={setTagFilter} options={tagOptions} className="xl:w-40" />
-                            <button
-                                type="button"
-                                onClick={resetFilters}
-                                className="inline-flex h-9 sm:h-[42px] items-center justify-center gap-1 rounded-lg border border-gray-300 bg-white px-2.5 text-xs sm:text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-all active:scale-[0.98]"
-                            >
-                                <Filter className="h-3.5 w-3.5" />
-                                Reset
-                            </button>
-                        </div>
+                        <CustomSelect value={accountFilter} onChange={setAccountFilter} options={accountOptions} className="xl:w-44" />
+                        <CustomSelect value={tagFilter} onChange={setTagFilter} options={tagOptions} className="xl:w-40" />
+                        <CustomSelect value={fieldFilter} onChange={setFieldFilter} options={fieldOptions} className="xl:w-44" />
+                        <button type="button" onClick={resetFilters} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-3.5 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+                            <Filter className="h-4 w-4" />
+                            Reset
+                        </button>
                     </div>
                 </div>
 
@@ -717,6 +982,7 @@ export default function Contacts() {
                                     <th className="px-5 py-3">Customer</th>
                                     <th className="px-5 py-3">Account</th>
                                     <th className="px-5 py-3">Tags</th>
+                                    <th className="px-5 py-3">Business data</th>
                                     <th className="px-5 py-3">Activity</th>
                                     <th className="px-5 py-3 text-right">Action</th>
                                 </tr>
@@ -734,9 +1000,7 @@ export default function Contacts() {
                                     <tr key={contact.id} onClick={() => openContact(contact)} className="cursor-pointer bg-white transition hover:bg-gray-50">
                                         <td className="px-5 py-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-600 text-sm font-bold text-white shadow-sm">
-                                                    {String(getDisplayName(contact)).slice(0, 2).toUpperCase()}
-                                                </div>
+                                                <DiceBearAvatar seed={getDisplayName(contact)} className="h-10 w-10 rounded-full object-cover shadow-sm shrink-0" />
                                                 <div className="min-w-0">
                                                     <div className="truncate font-semibold text-gray-950">{getDisplayName(contact)}</div>
                                                     <div className="mt-0.5 flex items-center gap-1 font-mono text-xs text-gray-500">
@@ -759,6 +1023,13 @@ export default function Contacts() {
                                                 ))}
                                                 {(contact.tags || []).length > 3 ? <span className="text-xs text-gray-400">+{contact.tags.length - 3}</span> : null}
                                             </div>
+                                        </td>
+                                        <td className="px-5 py-4">
+                                            {topFields(contact).length ? (
+                                                <BusinessDataCell fields={topFields(contact)} />
+                                            ) : (
+                                                <span className="text-xs text-gray-400">No fields</span>
+                                            )}
                                         </td>
                                         <td className="px-5 py-4 text-xs text-gray-500">
                                             <div className="flex items-center gap-1">
@@ -856,7 +1127,7 @@ export default function Contacts() {
             {(activeContact || drawerMode === 'edit') ? (
                 <div className="fixed inset-0 z-50 overflow-hidden">
                     <div className="absolute inset-0 bg-gray-950/30" onClick={() => { setActiveContact(null); setDrawerMode('view') }} />
-                    <div className="absolute inset-y-0 right-0 w-full max-w-2xl bg-white shadow-2xl">
+                    <div className="absolute inset-y-0 right-0 w-full max-w-[500px] bg-white shadow-2xl">
                         <div className="flex h-full flex-col">
                             <div className="border-b border-gray-200 px-5 py-4">
                                 <div className="flex items-start justify-between gap-4">
@@ -882,9 +1153,7 @@ export default function Contacts() {
                                     <div className="space-y-5">
                                         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                                             <div className="flex items-center gap-4">
-                                                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-600 text-xl font-bold text-white">
-                                                    {String(getDisplayName(activeContact)).slice(0, 2).toUpperCase()}
-                                                </div>
+                                                <DiceBearAvatar seed={getDisplayName(activeContact)} className="h-16 w-16 rounded-full object-cover shrink-0 shadow-sm" />
                                                 <div className="min-w-0">
                                                     <div className="text-lg font-bold text-gray-950">{getDisplayName(activeContact)}</div>
                                                     <div className="mt-1 font-mono text-sm text-gray-500">{getPhone(activeContact) || activeContact.wa_id || '-'}</div>
@@ -908,6 +1177,22 @@ export default function Contacts() {
                                                     <span key={tag} className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">{tag}</span>
                                                 )) : <span className="text-sm text-gray-500">No tags yet</span>}
                                             </div>
+                                        </section>
+
+                                        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                                            <div className="mb-3 flex items-center justify-between">
+                                                <h3 className="text-sm font-bold text-gray-950">Business data</h3>
+                                                <Database className="h-4 w-4 text-gray-400" />
+                                            </div>
+                                            {selectedFields.length ? (
+                                                <div className="grid gap-3 sm:grid-cols-2">
+                                                    {selectedFields.map(([key, value]) => (
+                                                        <InfoRow key={key} label={getFieldMeta(key).label} value={String(value)} />
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-sm text-gray-500">No custom fields saved yet</span>
+                                            )}
                                         </section>
                                     </div>
                                 ) : (
@@ -975,6 +1260,84 @@ export default function Contacts() {
                                             </Field>
                                         </section>
 
+                                        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                                            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                                <div>
+                                                    <h3 className="text-sm font-bold text-gray-950">Custom fields</h3>
+                                                    <p className="mt-1 text-xs text-gray-500">Invoice, address, course, payment ya business-specific data yahan save hota hai.</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => addField()}
+                                                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                                                >
+                                                    <Plus className="h-3.5 w-3.5" />
+                                                    Add field
+                                                </button>
+                                            </div>
+
+                                            <div className="mb-4 flex flex-wrap gap-2">
+                                                {FIELD_GROUPS.map(group => {
+                                                    const Icon = group.icon
+                                                    return (
+                                                        <button
+                                                            key={group.label}
+                                                            type="button"
+                                                            onClick={() => addFieldGroup(group)}
+                                                            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                                                        >
+                                                            <Icon className="h-3.5 w-3.5" />
+                                                            {group.label}
+                                                        </button>
+                                                    )
+                                                })}
+                                            </div>
+
+                                            {draft.fields.length ? (
+                                                <div className="space-y-3">
+                                                    {draft.fields.map((field, index) => {
+                                                        const meta = getFieldMeta(field.key)
+                                                        return (
+                                                            <div key={`${field.key || 'field'}-${index}`} className="grid gap-2 rounded-lg border border-gray-100 bg-gray-50 p-3 sm:grid-cols-[140px_minmax(0,1fr)_40px]">
+                                                                <div className="space-y-2">
+                                                                    <CustomSelect
+                                                                        value={FIELD_PRESET_BY_KEY[field.key] ? field.key : ''}
+                                                                        onChange={value => updateField(index, { key: value })}
+                                                                        options={fieldPresetOptions}
+                                                                    />
+                                                                    {!FIELD_PRESET_BY_KEY[field.key] ? (
+                                                                        <input
+                                                                            value={field.key}
+                                                                            onChange={event => updateField(index, { key: event.target.value })}
+                                                                            className="field-input"
+                                                                            placeholder="Field name"
+                                                                        />
+                                                                    ) : null}
+                                                                </div>
+                                                                <FieldValueInput
+                                                                    field={field}
+                                                                    meta={meta}
+                                                                    onChange={value => updateField(index, { value })}
+                                                                />
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => removeField(index)}
+                                                                    className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600"
+                                                                    aria-label={`Remove ${meta.label}`}
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </button>
+                                                            </div>
+                                                        )
+                                                    })}
+                                                </div>
+                                            ) : (
+                                                <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                                                    No custom fields yet.
+                                                </div>
+                                            )}
+                                        </section>
+
                                     </form>
                                 )}
                             </div>
@@ -1011,6 +1374,187 @@ export default function Contacts() {
                     </div>
                 </div>
             ) : null}
+
+            {isImportModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto overflow-x-hidden bg-black/50 p-4 backdrop-blur-sm">
+                    <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-gray-900">Import Contacts</h3>
+                            <button
+                                onClick={() => setIsImportModalOpen(false)}
+                                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+                        <p className="mb-6 text-sm text-gray-500">
+                            Download the sample Excel or CSV file to see the required format, or directly upload your file if it's ready.
+                        </p>
+
+                        <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                            <button
+                                onClick={handleDownloadSample}
+                                className="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                            >
+                                <Download className="h-4 w-4" />
+                                Download Sample
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setIsImportModalOpen(false)
+                                    fileInputRef.current?.click()
+                                }}
+                                className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+                            >
+                                <Upload className="h-4 w-4" />
+                                Import File
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isDeleteAllModalOpen && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center overflow-y-auto overflow-x-hidden bg-gray-950/40 p-4 backdrop-blur-sm">
+                    <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-950 shadow-2xl">
+                        <div className="p-6">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <h3 className="text-xl font-bold">Delete All Contacts</h3>
+                                    <p className="mt-3 text-sm leading-6 text-gray-600">
+                                        This will permanently delete all individual contacts in this workspace. Sirf admin/owner is action ko complete kar sakta hai.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={resetDeleteAllModal}
+                                    disabled={deleteAllMutation.isPending}
+                                    className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+                                    aria-label="Close delete all contacts modal"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="border-y border-gray-200 bg-gray-50 p-6">
+                            <label className="block">
+                                <span className="text-sm font-semibold text-gray-800">To confirm, type your admin name</span>
+                                <span className="mt-2 block rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900">
+                                    {adminConfirmName || 'Admin name'}
+                                </span>
+                                <input
+                                    value={deleteAllConfirmName}
+                                    onChange={event => setDeleteAllConfirmName(event.target.value)}
+                                    disabled={deleteAllMutation.isPending}
+                                    className="mt-3 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-950 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 disabled:opacity-50"
+                                    autoComplete="off"
+                                />
+                            </label>
+
+                            <label className="mt-5 block">
+                                <span className="text-sm font-semibold text-gray-800">To confirm, type "delete all contacts"</span>
+                                <input
+                                    value={deleteAllConfirmText}
+                                    onChange={event => setDeleteAllConfirmText(event.target.value)}
+                                    disabled={deleteAllMutation.isPending}
+                                    className="mt-3 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-950 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 disabled:opacity-50"
+                                    autoComplete="off"
+                                />
+                            </label>
+                        </div>
+
+                        <div className="p-6">
+                            <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                                <span>Deleting contacts cannot be undone. Export contacts first if you need a backup.</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between border-t border-gray-200 bg-white p-4">
+                            <button
+                                type="button"
+                                onClick={resetDeleteAllModal}
+                                disabled={deleteAllMutation.isPending}
+                                className="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => deleteAllMutation.mutate()}
+                                disabled={!canConfirmDeleteAll || deleteAllMutation.isPending}
+                                className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500 disabled:shadow-none"
+                            >
+                                {deleteAllMutation.isPending ? 'Deleting...' : 'Delete All Contacts'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {importStatus && (
+                <div className={`fixed bottom-6 right-6 z-[110] w-80 overflow-hidden rounded-xl shadow-2xl ring-1 animate-in slide-in-from-bottom-5 fade-in duration-300 ${
+                    importStatus.type === 'success' ? 'bg-green-50 ring-green-100/50' :
+                    importStatus.type === 'error' ? 'bg-red-50 ring-red-100/50' :
+                    'bg-blue-50 ring-blue-100/50'
+                }`}>
+                    <div className="p-4">
+                        <div className="flex items-start gap-3">
+                            {importStatus.type === 'info' && <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-blue-500 animate-pulse" />}
+                            {importStatus.type === 'success' && <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-green-200/50"><Check className="h-3 w-3 text-green-700" strokeWidth={3} /></div>}
+                            {importStatus.type === 'error' && <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />}
+
+                            <div className="flex-1 min-w-0">
+                                <p className={`text-sm font-medium ${
+                                    importStatus.type === 'success' ? 'text-green-900' :
+                                    importStatus.type === 'error' ? 'text-red-900' :
+                                    'text-blue-900'
+                                }`}>{importStatus.message}</p>
+                                {importStatus.progress && (
+                                    <div className="mt-3">
+                                        <div className={`flex items-center justify-between text-xs font-semibold mb-1.5 ${
+                                            importStatus.type === 'success' ? 'text-green-700' :
+                                            importStatus.type === 'error' ? 'text-red-700' :
+                                            'text-blue-700'
+                                        }`}>
+                                            <span>{Math.round((importStatus.progress.current / importStatus.progress.total) * 100)}%</span>
+                                            <span>{importStatus.progress.current} / {importStatus.progress.total}</span>
+                                        </div>
+                                        <div className={`h-1.5 w-full overflow-hidden rounded-full ${
+                                            importStatus.type === 'success' ? 'bg-green-200/50' :
+                                            importStatus.type === 'error' ? 'bg-red-200/50' :
+                                            'bg-blue-200/50'
+                                        }`}>
+                                            <div
+                                                className={`h-full rounded-full transition-all duration-300 ease-out ${
+                                                    importStatus.type === 'success' ? 'bg-green-600' :
+                                                    importStatus.type === 'error' ? 'bg-red-600' :
+                                                    'bg-blue-600'
+                                                }`}
+                                                style={{ width: `${Math.max(2, (importStatus.progress.current / importStatus.progress.total) * 100)}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {importStatus.type !== 'info' && (
+                                <button
+                                    onClick={() => setImportStatus(null)}
+                                    className={`shrink-0 rounded-lg p-1 transition-colors ${
+                                        importStatus.type === 'success' ? 'text-green-600 hover:bg-green-100' :
+                                        importStatus.type === 'error' ? 'text-red-600 hover:bg-red-100' :
+                                        'text-blue-600 hover:bg-blue-100'
+                                    }`}
+                                >
+                                    <X className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

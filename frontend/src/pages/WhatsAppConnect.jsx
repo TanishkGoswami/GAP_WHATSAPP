@@ -867,21 +867,21 @@ function Notice({ tone, title, text, onClose }) {
 const STATUS_CONFIG = {
     connected: {
         label: 'Connected',
-        badgeClass: 'bg-emerald-50 text-emerald-800 border border-emerald-100',
-        dotClass: 'bg-emerald-600',
-        bannerClass: 'border-emerald-100 bg-emerald-50 text-emerald-900',
+        badgeClass: 'bg-emerald-50 text-emerald-700 border border-emerald-100',
+        dotClass: 'bg-emerald-500',
+        bannerClass: 'border-emerald-200 bg-emerald-50 text-emerald-800',
     },
     pending: {
-        label: 'Pending',
-        badgeClass: 'bg-amber-50 text-amber-800 border border-amber-100',
+        label: 'Pending Verification',
+        badgeClass: 'bg-amber-50 text-amber-700 border border-amber-100',
         dotClass: 'bg-amber-500',
-        bannerClass: 'border-amber-100 bg-amber-50 text-amber-900',
+        bannerClass: 'border-amber-200 bg-amber-50 text-amber-800',
     },
     failed: {
-        label: 'Failed',
-        badgeClass: 'bg-red-50 text-red-800 border border-red-100',
-        dotClass: 'bg-red-600',
-        bannerClass: 'border-red-100 bg-red-50 text-red-900',
+        label: 'Disconnected',
+        badgeClass: 'bg-red-50 text-red-700 border border-red-100',
+        dotClass: 'bg-red-500',
+        bannerClass: 'border-red-200 bg-red-50 text-red-800',
     }
 };
 
@@ -895,11 +895,15 @@ function getAccountStatus(account, diagnostics) {
         return 'failed';
     }
 
+    // Check Meta strict verification status
+    const isCodeNotVerified = isMeta && diagnostics?.phone_number_access?.code_verification_status === 'NOT_VERIFIED';
+
     const isPending =
         account.status === 'pending' ||
         account.status === 'connecting' ||
         (!isMeta && !isReady) ||
-        (isMeta && !account.whatsapp_business_account_id);
+        (isMeta && !account.whatsapp_business_account_id) ||
+        isCodeNotVerified;
 
     if (isPending) {
         return 'pending';
@@ -929,45 +933,52 @@ function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDi
         : summary
 
     return (
-        <div className="flex flex-col justify-between rounded-[20px] border border-gray-100 bg-white p-4 sm:p-6 shadow-[0_2px_12px_-4px_rgba(0,0,0,0.05)] ring-1 ring-black/5">
-            <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3 sm:gap-4">
-                    <div className="flex h-[40px] w-[40px] sm:h-[52px] sm:w-[52px] shrink-0 items-center justify-center rounded-full bg-gray-50 border border-gray-100 text-gray-900">
-                        <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5 sm:h-6 sm:w-6">
-                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
-                        </svg>
+        <div className="flex flex-col justify-between rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4 mb-4">
+                <div className="flex items-center gap-3.5">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-green-50 border border-green-100 text-green-600">
+                        <MessageSquareText className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                        <p className="truncate text-base sm:text-[22px] font-bold tracking-tight text-gray-950">
+                        <p className="truncate text-[18px] sm:text-[20px] font-bold tracking-tight text-gray-900">
                             {account.display_phone_number || account.phone_number_id || 'WhatsApp number'}
                         </p>
-                        <p className="mt-0.5 flex items-center gap-1 truncate text-xs sm:text-[13px] font-medium text-gray-500">
+                        <p className="mt-0.5 flex items-center gap-1 truncate text-xs font-medium text-gray-500">
                             {account.connection_type === 'qr_session' ? 'QR Session Connection' : `WABA: ${maskId(account.whatsapp_business_account_id) || 'Pending'}`}
                         </p>
                     </div>
                 </div>
-                <span className={`inline-flex shrink-0 items-center gap-1 sm:gap-2 rounded-full px-2 py-0.5 sm:px-3 sm:py-1.5 text-[10px] sm:text-xs font-semibold ${config.badgeClass}`}>
+                <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${config.badgeClass}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${config.dotClass}`} />
                     {statusLabel}
                 </span>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-1.5 sm:gap-3">
-                <StatusTile label="MESSAGING" value={messagingStatus} />
-                <StatusTile label="TEMPLATES" value={account.connection_type === 'qr_session' ? 'Not Required' : templateStatus} />
-                <StatusTile label="INTEGRATION" value={account.connection_type === 'qr_session' ? 'QR Session' : 'Cloud API'} />
+            <div className="flex items-center gap-4 mb-4 text-xs font-medium text-gray-600">
+                <div className="flex items-center gap-1.5 border-r border-gray-200 pr-4">
+                    <span className="uppercase text-[10px] font-bold text-gray-400">Messaging:</span>
+                    <span className="text-gray-900">{messagingStatus}</span>
+                </div>
+                <div className="flex items-center gap-1.5 border-r border-gray-200 pr-4">
+                    <span className="uppercase text-[10px] font-bold text-gray-400">Templates:</span>
+                    <span className="text-gray-900">{account.connection_type === 'qr_session' ? 'N/A' : templateStatus}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <span className="uppercase text-[10px] font-bold text-gray-400">API:</span>
+                    <span className="text-gray-900">{account.connection_type === 'qr_session' ? 'QR' : 'Cloud'}</span>
+                </div>
             </div>
 
-            <div className={`mt-4 flex items-start gap-2 rounded-[8px] sm:rounded-[12px] p-2.5 sm:p-3 text-xs sm:text-[14px] font-medium border ${noticeClass}`}>
-                {ready ? <CheckCircle2 className="mt-0.5 h-4 w-4 sm:h-5 sm:w-5 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 sm:h-5 sm:w-5 shrink-0" />}
+            <div className={`flex items-start gap-2.5 rounded-xl p-3 text-[13px] font-medium border ${noticeClass}`}>
+                {currentStatus === 'connected' ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
                 <div className="min-w-0 flex-1">
-                    <p className="leading-relaxed text-[11px] sm:text-xs md:text-sm">
-                        {displayedSummary || 'Run diagnostics to verify live Meta permissions.'}
+                    <p className="leading-relaxed">
+                        {currentStatus === 'pending' ? 'Number verification is pending. Please complete OTP verification in Meta Business Manager.' : displayedSummary || 'Run diagnostics to verify live Meta permissions.'}
                         {isLongSummary && (
                             <button
                                 type="button"
                                 onClick={() => setShowFullWarning(prev => !prev)}
-                                className="ml-1 text-[10px] sm:text-xs font-bold underline text-blue-600 hover:text-blue-800 inline-block focus:outline-none"
+                                className="ml-1 text-[11px] font-bold underline hover:opacity-80 inline-block focus:outline-none"
                             >
                                 {showFullWarning ? 'Read less' : 'Read more'}
                             </button>
@@ -976,67 +987,42 @@ function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDi
                 </div>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-gray-100">
-                <div className="flex flex-col gap-2">
-                    {reconnectRequired ? (
-                        <div className="flex flex-col gap-1.5 w-full">
-                            <button
-                                type="button"
-                                onClick={onReconnect}
-                                className="inline-flex h-8 sm:h-10 items-center justify-center gap-1.5 rounded-full bg-[#0070d1] px-4 text-[11px] sm:text-xs font-semibold text-white transition-all hover:bg-[#0064b7] w-full"
-                            >
-                                <Smartphone className="h-3.5 w-3.5" />
-                                Reconnect Meta
-                            </button>
-                            <div className="grid grid-cols-2 gap-1.5">
-                                <button
-                                    type="button"
-                                    onClick={onCheck}
-                                    disabled={loading}
-                                    className="inline-flex h-8 sm:h-10 items-center justify-center gap-1.5 rounded-full bg-white border border-gray-200 px-3 text-[11px] sm:text-xs font-semibold text-gray-800 transition-all hover:bg-gray-50 disabled:opacity-60"
-                                >
-                                    {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-500" /> : <ShieldCheck className="h-3.5 w-3.5 text-gray-500" />}
-                                    Verify
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={onDisconnect}
-                                    className="inline-flex h-8 sm:h-10 items-center justify-center gap-1.5 rounded-full bg-white border border-gray-200 px-3 text-[11px] sm:text-xs font-semibold text-red-600 transition-all hover:bg-red-50"
-                                >
-                                    Disconnect
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-2 gap-1.5 w-full sm:flex sm:flex-row sm:justify-center sm:gap-2">
-                            <button
-                                type="button"
-                                onClick={onCheck}
-                                disabled={loading}
-                                className="inline-flex h-8 sm:h-10 items-center justify-center gap-1.5 rounded-full bg-white border border-gray-200 px-3 text-[11px] sm:text-xs font-semibold text-gray-800 transition-all hover:bg-gray-50 disabled:opacity-60 sm:w-auto"
-                            >
-                                {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-500" /> : <ShieldCheck className="h-3.5 w-3.5 text-gray-500" />}
-                                Verify
-                            </button>
-                            {!reconnectRequired && account.connection_type !== 'qr_session' && (
-                                <Link
-                                    to="/templates"
-                                    className="inline-flex h-8 sm:h-10 items-center justify-center gap-1.5 rounded-full bg-black px-3 text-[11px] sm:text-xs font-semibold text-white transition-all hover:bg-gray-800 sm:w-auto"
-                                >
-                                    <MessageSquareText className="h-3.5 w-3.5" />
-                                    Templates
-                                </Link>
-                            )}
-                            <button
-                                type="button"
-                                onClick={onDisconnect}
-                                className="inline-flex h-8 sm:h-10 items-center justify-center gap-1.5 rounded-full bg-white border border-gray-200 px-3 text-[11px] sm:text-xs font-semibold text-red-600 transition-all hover:bg-red-50 sm:w-auto"
-                            >
-                                Disconnect
-                            </button>
-                        </div>
-                    )}
-                </div>
+            <div className="mt-5 flex items-center justify-end gap-2 pt-5 border-t border-gray-100">
+                {reconnectRequired ? (
+                    <button
+                        type="button"
+                        onClick={onReconnect}
+                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-xs font-semibold text-white transition-all hover:bg-blue-700 w-full sm:w-auto"
+                    >
+                        <Smartphone className="h-4 w-4" />
+                        Reconnect Meta
+                    </button>
+                ) : null}
+                <button
+                    type="button"
+                    onClick={onCheck}
+                    disabled={loading}
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-white border border-gray-200 px-4 text-xs font-semibold text-gray-700 transition-all hover:bg-gray-50 disabled:opacity-50 w-full sm:w-auto"
+                >
+                    {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-500" /> : <ShieldCheck className="h-3.5 w-3.5 text-gray-500" />}
+                    Verify Check
+                </button>
+                {!reconnectRequired && account.connection_type !== 'qr_session' && (
+                    <Link
+                        to="/templates"
+                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-white border border-gray-200 px-4 text-xs font-semibold text-gray-700 transition-all hover:bg-gray-50 w-full sm:w-auto"
+                    >
+                        <MessageSquareText className="h-3.5 w-3.5 text-gray-500" />
+                        Templates
+                    </Link>
+                )}
+                <button
+                    type="button"
+                    onClick={onDisconnect}
+                    className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-white border border-gray-200 px-4 text-xs font-semibold text-red-600 transition-all hover:bg-red-50 hover:border-red-200 w-full sm:w-auto"
+                >
+                    Disconnect
+                </button>
             </div>
         </div>
     )

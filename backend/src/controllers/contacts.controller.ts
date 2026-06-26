@@ -2,11 +2,36 @@ import { Request, Response } from 'express';
 import { supabase } from '../config/supabase.js';
 import { getIO } from '../config/socket.js';
 import { enforcePlanResourceLimit } from '../services/billing.service.js';
-import { 
-    normalizeWaIdToPhone, 
-    normalizeIndianPhoneKey, 
-    derivePhoneForStorage 
+import {
+    normalizeWaIdToPhone,
+    normalizeIndianPhoneKey,
+    derivePhoneForStorage
 } from '../utils/format.js';
+
+const CONTACT_SELECT = 'id, name, custom_name, phone, wa_id, wa_key, wa_account_id, tags, custom_fields, created_at, last_active, contact_type, saved_at, saved_by_user_id, save_source';
+const ADMIN_ROLES = new Set(['admin', 'owner']);
+
+function requireContactsAdmin(req: any, res: Response) {
+    if (!ADMIN_ROLES.has(String(req.role || '').toLowerCase())) {
+        res.status(403).json({ error: 'Only admins can perform this action' });
+        return false;
+    }
+    return true;
+}
+
+function normalizeTags(tags: any) {
+    return Array.isArray(tags)
+        ? tags.map((tag: any) => String(tag).trim()).filter(Boolean)
+        : String(tags || '').split(',').map((tag) => tag.trim()).filter(Boolean);
+}
+
+function normalizeCustomFields(customFields: any) {
+    if (!customFields || typeof customFields !== 'object' || Array.isArray(customFields)) return {};
+
+    return Object.fromEntries(Object.entries(customFields)
+        .map(([key, value]) => [String(key).trim(), value == null ? '' : String(value).trim()])
+        .filter(([key]) => Boolean(key)));
+}
 
 export async function getContacts(req: any, res: Response) {
     const organization_id = req.organization_id;
@@ -20,7 +45,7 @@ export async function getContacts(req: any, res: Response) {
     try {
         let query = supabase
             .from('w_contacts')
-            .select('id, name, custom_name, phone, wa_id, wa_key, wa_account_id, tags, custom_fields, created_at, last_active, contact_type, saved_at, saved_by_user_id, save_source')
+            .select(CONTACT_SELECT)
             .eq('organization_id', organization_id)
             .order('created_at', { ascending: false });
 
@@ -94,15 +119,8 @@ export async function createContact(req: any, res: Response) {
 
         const wa_key = normalizeIndianPhoneKey(phoneDigits) || phoneDigits;
         const normalizedPhone = wa_key;
-        const normalizedTags = Array.isArray(tags)
-            ? tags.map((tag: any) => String(tag).trim()).filter(Boolean)
-            : String(tags || '').split(',').map((tag) => tag.trim()).filter(Boolean);
-        
-        const normalizedCustomFields = custom_fields && typeof custom_fields === 'object' && !Array.isArray(custom_fields)
-            ? Object.fromEntries(Object.entries(custom_fields)
-                .map(([key, value]) => [String(key).trim(), value == null ? '' : String(value).trim()])
-                .filter(([key]) => Boolean(key)))
-            : {};
+        const normalizedTags = normalizeTags(tags);
+        const normalizedCustomFields = normalizeCustomFields(custom_fields);
 
         let normalizedAccountId: string | null = null;
         if (wa_account_id) {
@@ -151,7 +169,7 @@ export async function createContact(req: any, res: Response) {
                 saved_by_user_id: req.user?.id || null,
                 save_source: 'manual'
             })
-            .select('id, name, custom_name, phone, wa_id, wa_key, wa_account_id, tags, custom_fields, created_at, last_active, contact_type, saved_at, saved_by_user_id, save_source')
+            .select(CONTACT_SELECT)
             .single();
         if (error) throw error;
 
@@ -160,6 +178,128 @@ export async function createContact(req: any, res: Response) {
     } catch (err: any) {
         console.error('Error creating contact:', err);
         res.status(err.statusCode || 500).json({ error: err.message || 'Failed to create contact', limit: err.limit });
+    }
+}
+
+export async function batchCreateContacts(req: any, res: Response) {
+    const organization_id = req.organization_id;
+    const { contacts = [] } = req.body || {};
+
+    try {
+        if (!organization_id) return res.status(400).json({ error: 'organization_id is required' });
+        if (!Array.isArray(contacts) || contacts.length === 0) return res.status(400).json({ error: 'contacts array is required' });
+        if (contacts.length > 1000) return res.status(413).json({ error: 'Import batch is too large. Send 1000 contacts or fewer per request.' });
+
+        const { limit, used, plan } = await enforcePlanResourceLimit({
+            organization_id,
+            resource: 'contacts',
+            table: 'w_contacts',
+            filters: { contact_type: 'individual' },
+            label: 'Contact',
+        });
+
+        const normalizedByKey = new Map<string, any>();
+        const invalidRows: number[] = [];
+        const duplicateRows: number[] = [];
+
+        for (const [index, c] of contacts.entries()) {
+            const phoneDigits = normalizeWaIdToPhone(c.phone);
+            if (!phoneDigits) {
+                invalidRows.push(index + 1);
+                continue;
+            }
+
+            const wa_key = normalizeIndianPhoneKey(phoneDigits) || phoneDigits;
+            if (normalizedByKey.has(wa_key)) {
+                duplicateRows.push(index + 1);
+                continue;
+            }
+
+            normalizedByKey.set(wa_key, {
+                organization_id,
+                wa_account_id: c.wa_account_id ? String(c.wa_account_id) : null,
+                name: String(c.name || '').trim() || wa_key,
+                custom_name: typeof c.custom_name === 'string' && c.custom_name.trim() ? c.custom_name.trim() : null,
+                phone: wa_key,
+                wa_id: wa_key,
+                wa_key,
+                tags: normalizeTags(c.tags),
+                custom_fields: normalizeCustomFields(c.custom_fields),
+                contact_type: 'individual',
+                saved_at: new Date().toISOString(),
+                saved_by_user_id: req.user?.id || null,
+                save_source: 'manual'
+            });
+        }
+
+        const insertPayloads = Array.from(normalizedByKey.values());
+        if (insertPayloads.length === 0) {
+            return res.status(400).json({ error: 'No valid contacts to import' });
+        }
+
+        const accountIds = Array.from(new Set(insertPayloads.map(row => row.wa_account_id).filter(Boolean)));
+        if (accountIds.length) {
+            const { data: validAccounts, error: accountErr } = await supabase
+                .from('w_wa_accounts')
+                .select('id')
+                .eq('organization_id', organization_id)
+                .in('id', accountIds);
+            if (accountErr) throw accountErr;
+
+            const validAccountIds = new Set((validAccounts || []).map((account: any) => account.id));
+            insertPayloads.forEach(row => {
+                if (row.wa_account_id && !validAccountIds.has(row.wa_account_id)) row.wa_account_id = null;
+            });
+        }
+
+        const incomingKeys = insertPayloads.map(row => row.wa_key);
+        const { data: existingRows, error: existingErr } = await supabase
+            .from('w_contacts')
+            .select('wa_key')
+            .eq('organization_id', organization_id)
+            .in('wa_key', incomingKeys);
+        if (existingErr) throw existingErr;
+
+        const existingKeys = new Set((existingRows || []).map((row: any) => row.wa_key));
+        const newPayloads = insertPayloads.filter(row => !existingKeys.has(row.wa_key));
+        const newContactsCount = newPayloads.length;
+
+        if (limit > 0 && used + newContactsCount > limit) {
+            return res.status(402).json({
+                error: `Batch import would exceed the Contact limit for ${plan?.plan_name} plan (${used + newContactsCount}/${limit}). Upgrade your plan to add more.`,
+                limit: { resource: 'contacts', used, limit, plan },
+            });
+        }
+
+        if (newPayloads.length === 0) {
+            return res.status(201).json({
+                success: true,
+                imported: 0,
+                skipped_existing: existingKeys.size,
+                skipped_duplicate_rows: duplicateRows.length,
+                skipped_invalid_rows: invalidRows.length,
+                contacts: [],
+            });
+        }
+
+        const { data, error } = await supabase
+            .from('w_contacts')
+            .insert(newPayloads)
+            .select(CONTACT_SELECT);
+
+        if (error) throw error;
+
+        res.status(201).json({
+            success: true,
+            imported: data?.length || 0,
+            skipped_existing: existingKeys.size,
+            skipped_duplicate_rows: duplicateRows.length,
+            skipped_invalid_rows: invalidRows.length,
+            contacts: data || [],
+        });
+    } catch (err: any) {
+        console.error('Error batch creating contacts:', err);
+        res.status(err.statusCode || 500).json({ error: err.message || 'Failed to batch create contacts', limit: err.limit });
     }
 }
 
@@ -235,7 +375,7 @@ export async function updateContact(req: any, res: Response) {
             .from('w_contacts')
             .update(updates)
             .eq('id', contactId)
-            .select('id, name, custom_name, phone, wa_id, wa_key, wa_account_id, tags, custom_fields, created_at, last_active, contact_type, saved_at, saved_by_user_id, save_source')
+            .select(CONTACT_SELECT)
             .single();
         if (updErr) throw updErr;
 
@@ -271,7 +411,7 @@ export async function saveContact(req: any, res: Response) {
                 save_source: 'manual',
             })
             .eq('id', contactId)
-            .select('id, name, custom_name, phone, wa_id, wa_key, wa_account_id, tags, custom_fields, created_at, last_active, contact_type, saved_at, saved_by_user_id, save_source')
+            .select(CONTACT_SELECT)
             .single();
         if (updErr) throw updErr;
 
@@ -311,5 +451,56 @@ export async function deleteContact(req: any, res: Response) {
     } catch (err: any) {
         console.error('Error deleting contact:', err);
         res.status(500).json({ error: err.message || 'Failed to delete contact' });
+    }
+}
+
+export async function deleteAllContacts(req: any, res: Response) {
+    const organization_id = req.organization_id;
+
+    try {
+        if (!organization_id) return res.status(400).json({ error: 'organization_id is required' });
+        if (!requireContactsAdmin(req, res)) return;
+
+        const confirmName = String(req.body?.confirm_name || '').trim();
+        const confirmDelete = String(req.body?.confirm_delete || '').trim().toLowerCase();
+        const { data: member, error: memberErr } = await supabase
+            .from('organization_members')
+            .select('name, email')
+            .eq('organization_id', organization_id)
+            .eq('user_id', req.user?.id)
+            .maybeSingle();
+        if (memberErr) throw memberErr;
+
+        const validNames = [
+            member?.name,
+            member?.email,
+            req.user?.user_metadata?.full_name,
+            req.user?.user_metadata?.name,
+            req.user?.email,
+        ].map(value => String(value || '').trim()).filter(Boolean);
+
+        if (!validNames.includes(confirmName) || confirmDelete !== 'delete all contacts') {
+            return res.status(400).json({ error: 'Confirmation text did not match' });
+        }
+
+        const { count, error: countErr } = await supabase
+            .from('w_contacts')
+            .select('id', { count: 'exact', head: true })
+            .eq('organization_id', organization_id)
+            .or('contact_type.eq.individual,contact_type.is.null');
+        if (countErr) throw countErr;
+
+        const { error } = await supabase
+            .from('w_contacts')
+            .delete()
+            .eq('organization_id', organization_id)
+            .or('contact_type.eq.individual,contact_type.is.null');
+        if (error) throw error;
+
+        try { getIO().to(`org:${organization_id}`).emit('contacts_deleted_all', { organization_id, deleted_count: count || 0 }); } catch(e) {}
+        res.json({ success: true, deleted_count: count || 0 });
+    } catch (err: any) {
+        console.error('Error deleting all contacts:', err);
+        res.status(500).json({ error: err.message || 'Failed to delete all contacts' });
     }
 }

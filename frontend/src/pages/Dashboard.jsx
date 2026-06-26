@@ -13,6 +13,7 @@ import {
     FileText,
     Gauge,
     Grid2X2,
+    Image as ImageIcon,
     MessageSquareText,
     PhoneCall,
     RefreshCw,
@@ -28,7 +29,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { formatINRFromPaise } from '../config/whatsappPricing'
-import TourButton from '../onboarding/TourButton'
+
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const API_BASE = `${BACKEND_BASE}/api`
@@ -223,9 +224,9 @@ export default function Dashboard() {
 
                                     {isAccountsOpen && (
                                         <div className="border-t border-gray-100 bg-white/50 px-4 py-2.5 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
-                                            {Array.isArray(model.accounts.connected) && model.accounts.connected.length > 0 ? (
-                                                model.accounts.connected.map(acc => {
-                                                    const isActive = acc.status !== 'disconnected' && acc.status !== 'failed';
+                                            {Array.isArray(model.accounts.connected) && model.accounts.connected.some(acc => acc.status !== 'disconnected' && acc.status !== 'failed') ? (
+                                                model.accounts.connected.filter(acc => acc.status !== 'disconnected' && acc.status !== 'failed').map(acc => {
+                                                    const isActive = true;
                                                     return (
                                                         <div key={acc.id} className="flex items-center justify-between py-1.5 border-b border-gray-50/50 last:border-b-0">
                                                             <div className="flex items-center gap-2.5 min-w-0">
@@ -245,30 +246,21 @@ export default function Dashboard() {
                                                             </div>
 
                                                             <div className="flex items-center gap-1.5">
-                                                                {isActive ? (
-                                                                    <>
-                                                                        <span className="relative flex h-1 w-1">
-                                                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                                                            <span className="relative inline-flex rounded-full h-1 w-1 bg-emerald-500"></span>
-                                                                        </span>
-                                                                        <span className="text-[9px] font-mono tracking-wider uppercase text-gray-500 font-semibold">
-                                                                            Active
-                                                                        </span>
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <span className="relative inline-flex rounded-full h-1 w-1 bg-gray-300"></span>
-                                                                        <span className="text-[9px] font-mono tracking-wider uppercase text-gray-400 font-semibold">
-                                                                            Offline
-                                                                        </span>
-                                                                    </>
-                                                                )}
+                                                                <span className="relative flex h-1 w-1">
+                                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                                    <span className="relative inline-flex rounded-full h-1 w-1 bg-emerald-500"></span>
+                                                                </span>
+                                                                <span className="text-[9px] font-mono tracking-wider uppercase text-gray-500 font-semibold">
+                                                                    Active
+                                                                </span>
                                                             </div>
                                                         </div>
                                                     );
                                                 })
                                             ) : (
-                                                <p className="text-[11px] text-gray-400 py-1">No connected numbers found.</p>
+                                                <div className="py-2 text-center text-[11px] text-gray-400">
+                                                    No active accounts found
+                                                </div>
                                             )}
                                         </div>
                                     )}
@@ -280,6 +272,10 @@ export default function Dashboard() {
                                 <HealthRow icon={AlertTriangle} label="Unread messages" value={fmt(model.conversations.unread)} active={n(model.conversations.unread) === 0} />
                             </div>
                         </Panel>
+                        
+                        <div className="mt-5 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 shadow-sm">
+                            <img src="https://i.pinimg.com/1200x/8f/b0/9b/8fb09bb1139abe85eec8e3fbeab528b2.jpg" alt="Dashboard Illustration" className="w-full h-[400px] object-cover" />
+                        </div>
                     </div>
                 </section>
 
@@ -400,21 +396,19 @@ function FirstRunOnboarding() {
                             Need a new number?
                         </Link>
                     </div>
-                    <img
-                        src="/images/dashboad-scope.png"
-                        alt="Dashboard scope preview"
-                        className="pointer-events-none absolute bottom-5 right-8 hidden w-[260px] object-contain lg:block xl:w-[285px]"
-                        loading="lazy"
-                    />
                 </div>
                 <div className="grid gap-2 p-3 sm:grid-cols-2 sm:p-6">
                     {steps.map(step => (
-                        <div key={step.title} className="rounded-lg border border-gray-200 bg-[#fbfcfd] p-3 sm:p-4">
-                            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-[#0064b7] ring-1 ring-gray-200">
-                                {createElement(step.icon, { className: 'h-4 w-4' })}
-                            </span>
-                            <h3 className="mt-2 sm:mt-3 text-xs sm:text-sm font-semibold text-black">{step.title}</h3>
-                            <p className="mt-0.5 sm:mt-1 text-[11px] sm:text-xs leading-5 text-gray-600">{step.text}</p>
+                        <div key={step.title} className="group rounded-lg border border-gray-200 bg-[#fbfcfd] p-4 transition-colors hover:border-gray-300">
+                            <div className="flex items-start justify-between">
+                                {/* <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-[#0064b7] ring-1 ring-gray-200">
+                                    {createElement(step.icon, { className: 'h-4 w-4' })}
+                                </span> */}
+                                
+                            </div>
+                            <h3 className="mt-3 text-sm font-semibold text-black">{step.title}</h3>
+                            
+                            <p className="mt-1 text-xs leading-5 text-gray-600">{step.text}</p>
                         </div>
                     ))}
                 </div>
@@ -434,37 +428,19 @@ function Header({ range, setRange, isFetching, refetch, freshness }) {
                 <h1 className="mt-0.5 sm:mt-1 text-xl sm:text-[34px] font-bold sm:font-light leading-tight tracking-normal text-black">Dashboard</h1>
                 <p className="mt-0.5 sm:mt-1 text-[11px] sm:text-sm leading-5 text-gray-600">Real WhatsApp performance, customer readiness, and automation health.</p>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
-                <div className="flex items-center justify-between gap-1.5 sm:gap-2 w-full sm:w-auto">
-                    <div data-tour="dashboard-range" className="inline-flex rounded-full border border-gray-200 bg-white p-0.5 sm:p-1 flex-1 sm:flex-initial">
-                        {ranges.map(item => (
-                            <button
-                                key={item.value}
-                                type="button"
-                                onClick={() => setRange(item.value)}
-                                className={`h-8 sm:h-9 flex-1 sm:flex-initial rounded-full px-2.5 sm:px-4 text-xs sm:text-sm font-semibold transition-colors ${range === item.value ? 'bg-[#0070d1] text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-black'}`}
-                            >
-                                {item.label}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="hidden md:block">
-                        <TourButton />
-                    </div>
-                </div>
-                <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-                    <button
-                        type="button"
-                        onClick={() => refetch()}
-                        className="flex-1 sm:flex-initial inline-flex h-7 sm:h-10 items-center justify-center gap-1 sm:gap-2 rounded-full border border-gray-200/80 bg-white px-2.5 sm:px-4 text-[10px] sm:text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-100"
-                    >
-                        <RefreshCw className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${isFetching ? 'animate-spin' : ''}`} />
-                        Refresh
-                    </button>
-                    <span className="flex-1 sm:flex-initial inline-flex h-7 sm:h-10 items-center justify-center gap-1 sm:gap-2 rounded-full border border-emerald-200/80 bg-emerald-50 px-2.5 sm:px-4 text-[10px] sm:text-sm font-medium text-emerald-700 truncate">
-                        <span className="h-1.5 w-1.5 sm:h-2 sm:w-2 rounded-full bg-emerald-500 shrink-0" />
-                        {freshness}
-                    </span>
+            <div className="flex flex-wrap items-center gap-2">
+               
+                <div data-tour="dashboard-range" className="inline-flex rounded-full border border-gray-200 bg-white p-1">
+                    {ranges.map(item => (
+                        <button
+                            key={item.value}
+                            type="button"
+                            onClick={() => setRange(item.value)}
+                            className={`h-9 rounded-full px-4 text-sm font-semibold transition-colors ${range === item.value ? 'bg-[#0070d1] text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-black'}`}
+                        >
+                            {item.label}
+                        </button>
+                    ))}
                 </div>
             </div>
         </div>
@@ -595,46 +571,43 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
     ]
 
     return (
-        <section className="overflow-hidden rounded-2xl border border-[#dbe6f5] bg-white shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
-            <div className="relative overflow-hidden border-b border-[#edf2f8] bg-gradient-to-br from-white via-[#fbfdff] to-[#f7f4ff] px-3.5 py-3.5 sm:px-5 sm:py-5 lg:px-6">
-                <div className="pointer-events-none absolute -right-24 -top-24 h-52 w-52 rounded-full bg-[#7b55de]/10 blur-3xl" />
-                <div className="pointer-events-none absolute left-1/2 top-0 h-32 w-64 -translate-x-1/2 rounded-full bg-[#53b1ff]/10 blur-3xl" />
-                <div className="relative flex flex-col gap-3 lg:gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#0070d1]">
-                        <BarChart3 className="h-4 w-4" />
-                        Usage analytics
+        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+            <div className="border-b border-gray-200 bg-gray-50 px-5 py-5 lg:px-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                        <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[#0064b7]">
+                            <BarChart3 className="h-4 w-4" />
+                            Usage analytics
+                        </div>
+                        <h2 className="mt-1 text-2xl font-semibold leading-tight text-black">Message performance</h2>
+                        {/* <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">
+                            Live WhatsApp delivery, read activity, failure risk, and billing movement in one clean view.
+                        </p> */}
                     </div>
-                    <h2 className="mt-1 text-xl sm:text-[30px] font-semibold leading-tight tracking-normal text-black">Message performance</h2>
-                    <p className="mt-1 max-w-2xl text-xs sm:text-sm leading-4 sm:leading-5 text-gray-600">
-                        Live WhatsApp delivery, read activity, failure risk, and billing movement in one clean view.
-                    </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-                    <span className="inline-flex h-8 sm:h-9 items-center rounded-full border border-gray-200 bg-white/80 px-2.5 sm:px-3 text-xs sm:text-sm font-medium text-gray-800 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                        Workspace
-                    </span>
-                    <span className="inline-flex h-8 sm:h-9 items-center rounded-full border border-gray-200 bg-white/80 px-2.5 sm:px-3 text-xs sm:text-sm font-medium text-gray-500 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-                        All WhatsApp numbers
-                    </span>
-                    <span className="inline-flex h-8 sm:h-9 items-center rounded-full border border-gray-900 bg-black px-2.5 sm:px-3 text-xs sm:text-sm font-semibold text-white">
-                        {rangeLabel}
-                    </span>
-                    <StatusPill label={healthLabel} warning={model.failedRate > 5} />
-                </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex h-9 items-center rounded-full border border-gray-200 bg-white px-3 text-sm font-medium text-gray-800">
+                            Workspace
+                        </span>
+                        <span className="inline-flex h-9 items-center rounded-full border border-gray-200 bg-white px-3 text-sm font-medium text-gray-500">
+                            All WhatsApp numbers
+                        </span>
+                        <span className="inline-flex h-9 items-center rounded-full border border-gray-900 bg-gray-900 px-3 text-sm font-semibold text-white">
+                            {rangeLabel}
+                        </span>
+                        <StatusPill label={healthLabel} warning={model.failedRate > 5} />
+                    </div>
                 </div>
             </div>
 
             <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_340px]">
-                <div className="space-y-3 sm:space-y-4 border-b border-gray-100 bg-gradient-to-b from-white to-[#fbfcfd] p-3.5 sm:p-5 xl:border-b-0 xl:border-r xl:p-6">
-                    <div className="grid gap-2.5 sm:gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+                <div className="space-y-4 border-b border-gray-200 bg-white p-5 xl:border-b-0 xl:border-r xl:p-6">
+                    <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
                         {summaryCards.map(card => (
-                            <div key={card.label} className="group relative overflow-hidden rounded-2xl border border-[#dfe8f6] bg-white p-3 sm:p-4 shadow-[0_8px_24px_rgba(15,23,42,0.05)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#c9ddff] hover:shadow-[0_18px_36px_rgba(15,23,42,0.09)]">
-                                <div className={`pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-gradient-to-br ${card.accent} opacity-10 blur-2xl`} />
-                                <div className="relative">
-                                    <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">{card.label}</p>
-                                    <p className={`mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold leading-none transition-transform duration-300 group-hover:translate-x-0.5 ${card.color}`}>{card.value}</p>
-                                    <p className="mt-1 sm:mt-2 text-xs text-gray-500">{card.detail}</p>
+                            <div key={card.label} className="group overflow-hidden rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-gray-300">
+                                <div>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{card.label}</p>
+                                    <p className={`mt-2 text-2xl font-semibold leading-none ${card.color}`}>{card.value}</p>
+                                    <p className="mt-2 text-xs text-gray-500">{card.detail}</p>
                                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
                                         <div className={`h-full rounded-full bg-gradient-to-r ${card.accent}`} style={{ width: pct(card.progress) }} />
                                     </div>
@@ -643,22 +616,22 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                         ))}
                     </div>
 
-                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-3.5 sm:p-4 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
-                                <p className="text-sm sm:text-base font-semibold text-black">Message activity</p>
-                                <p className="mt-1 text-xs sm:text-sm text-gray-500">{isHourly ? 'Hourly distribution for today.' : 'Daily trend for selected range.'}</p>
+                                <p className="text-base font-semibold text-black">Message activity</p>
+                                {/* <p className="mt-1 text-sm text-gray-500">{isHourly ? 'Hourly distribution for today.' : 'Daily trend for selected range.'}</p> */}
                             </div>
                             <div className="flex items-center gap-2">
                                 <span className="text-xs font-medium text-gray-500">Group by</span>
-                                <span className="inline-flex h-8 items-center rounded-full bg-gray-950 px-3 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(15,23,42,0.18)]">
+                                <span className="inline-flex h-8 items-center rounded-lg bg-gray-950 px-3 text-sm font-semibold text-white">
                                     {isHourly ? '1h' : '1d'}
                                 </span>
                             </div>
                         </div>
 
                         {loading ? (
-                            <div className="mt-4 h-[200px] sm:h-[300px] animate-pulse rounded-lg bg-[#f5f7fa]" />
+                            <div className="mt-4 h-[300px] animate-pulse rounded-lg bg-gray-50" />
                         ) : (
                             <UsageBarChart
                                 bars={visibleBars}
@@ -670,41 +643,21 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                         )}
                     </div>
 
-                    <div className="grid gap-2.5 sm:gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
-                        <div className="rounded-2xl border border-[#dbe6f5] bg-white p-3.5 sm:p-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-                            <div className="flex items-center justify-between gap-3">
-                                <div>
-                                    <p className="text-sm sm:text-base font-semibold text-black">Delivery trend</p>
-                                    <p className="mt-1 text-xs sm:text-sm text-gray-500">Read and inbound movement from synced rows.</p>
-                                </div>
-                                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">{pct(model.readRate)} read</span>
-                            </div>
-                            <UsageTrendCard
-                                primary={primaryLine}
-                                secondary={secondaryLine}
-                                primaryLabel="Read"
-                                secondaryLabel="Inbound"
-                                primaryColor="#0f766e"
-                                secondaryColor="#db2777"
-                            />
-                        </div>
-                        <div className="grid gap-2.5 sm:gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                            {capabilityCards.map(card => (
-                                <UsageCapabilityCard key={card.title} {...card} />
-                            ))}
-                        </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        {capabilityCards.map(card => (
+                            <UsageCapabilityCard key={card.title} {...card} />
+                        ))}
                     </div>
                 </div>
 
-                <aside className="space-y-3 sm:space-y-4 bg-gradient-to-b from-[#f8fbff] to-white p-3.5 sm:p-5 xl:p-6">
-                    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#050505] via-[#111827] to-[#050505] p-3.5 sm:p-5 text-white shadow-[0_18px_45px_rgba(15,23,42,0.18)]">
-                        <div className="pointer-events-none absolute -right-16 -top-16 h-36 w-36 rounded-full bg-[#53b1ff]/20 blur-3xl" />
+                <aside className="space-y-4 bg-gray-50/50 p-5 xl:p-6">
+                    <div className="rounded-lg bg-gray-950 p-5 text-white">
                         <div className="flex items-start justify-between gap-3">
                             <div>
-                                <p className="text-sm text-white/65">Delivery quality</p>
-                                <p className="mt-2 text-3xl sm:text-[44px] font-bold sm:font-light leading-none">{model.quality}<span className="text-xl text-white/45">/100</span></p>
+                                <p className="text-sm text-gray-400">Delivery quality</p>
+                                <p className="mt-2 text-[44px] font-light leading-none">{model.quality}<span className="text-xl text-gray-500">/100</span></p>
                             </div>
-                            <CheckCircle2 className="h-5 w-5 text-[#53b1ff]" />
+                            <CheckCircle2 className="h-5 w-5 text-emerald-400" />
                         </div>
                         <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-x-4 gap-y-3 sm:gap-x-5 sm:gap-y-4">
                             <QualityStat label="Delivered" value={compact(model.delivered)} />
@@ -712,14 +665,14 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                             <QualityStat label="Pending" value={compact(model.pending)} />
                             <QualityStat label="Failed" value={compact(model.failed)} />
                         </div>
-                        <p className="mt-5 text-sm leading-5 text-white/70">
+                        <p className="mt-5 text-sm leading-5 text-gray-400">
                             {model.totalMessages
                                 ? `${pct(model.deliveryRate)} delivery with ${pct(model.readRate)} read rate.`
                                 : `No message activity found for ${rangeLabel.toLowerCase()}.`}
                         </p>
                     </div>
 
-                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-3.5 sm:p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+                    <div className="rounded-lg border border-gray-200 bg-white p-4">
                         <div className="flex items-center justify-between gap-3">
                             <h3 className="text-base font-semibold text-gray-900">Wallet spend</h3>
                             <Gauge className="h-4 w-4 text-gray-400" />
@@ -729,27 +682,24 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                             <span className="font-semibold text-gray-900">{formatINRFromPaise(monthSpendPaise)}</span>
                         </div>
                         <div className="mt-2 h-3 overflow-hidden rounded-full bg-gray-100">
-                            <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-cyan-400 shadow-[0_4px_12px_rgba(16,185,129,0.35)]" style={{ width: pct(spendProgress) }} />
+                            <div className="h-full rounded-full bg-emerald-500" style={{ width: pct(spendProgress) }} />
                         </div>
                         <p className="mt-2 text-xs text-gray-500">Wallet available: {formatINRFromPaise(walletPaise)}</p>
                     </div>
 
-                    <div className="rounded-2xl border border-[#dbe6f5] bg-white p-3.5 sm:p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
-                        <UsageMiniBarsCard label="Request pattern" value={fmt(model.totalMessages)} series={requestSeries} />
-                    </div>
 
                     <div className="grid grid-cols-2 gap-2 text-xs">
                         <UsageRailStat label="Today spend" value={formatINRFromPaise(todaySpendPaise)} />
                         <UsageRailStat label="AI replies" value={compact(model.metrics.aiAgent)} />
                     </div>
+                    
+                    <div className="grid grid-cols-2 gap-2">
+                        <RateCard label="Delivery rate" value={model.deliveryRate} count={fmt(model.delivered)} color="bg-blue-600" />
+                        <RateCard label="Read rate" value={model.readRate} count={fmt(model.read)} color="bg-emerald-500" />
+                        <RateCard label="Pending" value={model.totalMessages ? (model.pending / model.totalMessages) * 100 : 0} count={fmt(model.pending)} color="bg-amber-500" />
+                        <RateCard label="Failure risk" value={model.failedRate} count={`${model.failedRate.toFixed(1)}%`} color="bg-red-500" />
+                    </div>
                 </aside>
-            </div>
-
-            <div className="grid gap-2.5 sm:gap-3 border-t border-[#edf2f8] bg-gradient-to-r from-white via-[#fbfcfd] to-white p-3.5 sm:p-5 sm:grid-cols-2 xl:grid-cols-4">
-                <RateCard label="Delivery rate" value={model.deliveryRate} count={fmt(model.delivered)} color="bg-gradient-to-r from-[#0070d1] to-[#53b1ff]" />
-                <RateCard label="Read rate" value={model.readRate} count={fmt(model.read)} color="bg-gradient-to-r from-emerald-500 to-teal-400" />
-                <RateCard label="Pending" value={model.totalMessages ? (model.pending / model.totalMessages) * 100 : 0} count={fmt(model.pending)} color="bg-gradient-to-r from-amber-400 to-orange-300" />
-                <RateCard label="Failure risk" value={model.failedRate} count={`${model.failedRate.toFixed(1)}%`} color="bg-gradient-to-r from-red-500 to-rose-400" />
             </div>
         </section>
     )
@@ -763,14 +713,13 @@ function UsageBarChart({ bars, max, isHourly, peak, total }) {
                     <p className="text-xs font-medium text-gray-500">Total volume</p>
                     <p className="text-lg sm:text-xl font-semibold text-gray-950">{fmt(total)}</p>
                 </div>
-                <div className="flex items-center gap-1.5 sm:gap-2 rounded-full border border-violet-100 bg-white/90 px-2.5 py-1 sm:py-2 shadow-[0_8px_20px_rgba(109,92,231,0.12)]">
-                    <span className="h-2 w-2 rounded-full bg-[#7b55de] shadow-[0_0_0_4px_rgba(123,85,222,0.12)]" />
+                <div className="flex items-center gap-2 rounded-full border border-blue-100 bg-white px-3 py-2 shadow-sm">
+                    <span className="h-2 w-2 rounded-full bg-blue-500" />
                     <span className="text-xs font-semibold text-gray-600">Peak</span>
-                    <span className="text-sm font-semibold text-[#4c35b5]">{peak ? fmt(peak.total) : 0}</span>
+                    <span className="text-sm font-semibold text-blue-700">{peak ? fmt(peak.total) : 0}</span>
                 </div>
             </div>
-            <div className="relative h-[180px] sm:h-[285px] overflow-hidden rounded-2xl border border-[#dbe6f5] bg-white px-2 sm:px-3 pt-2.5 sm:pt-3 shadow-[inset_0_1px_8px_rgba(15,23,42,0.04)]">
-                <div className="pointer-events-none absolute left-1/2 top-0 h-48 w-64 -translate-x-1/2 rounded-full bg-[#7b55de]/10 blur-3xl" />
+            <div className="relative h-[285px] overflow-hidden rounded-xl border border-gray-200 bg-white px-3 pt-3">
                 <div className="absolute inset-x-3 top-3 border-t border-dashed border-gray-200" />
                 <div className="absolute inset-x-0 top-1/3 border-t border-dashed border-gray-200" />
                 <div className="absolute inset-x-0 top-2/3 border-t border-dashed border-gray-200" />
@@ -789,7 +738,7 @@ function UsageBarChart({ bars, max, isHourly, peak, total }) {
                                     <p className="mt-1 text-gray-600">{fmt(value)} messages</p>
                                 </div>
                                 <div
-                                    className="w-full max-w-8 rounded-t-xl bg-gradient-to-t from-[#5f49d8] via-[#7b55de] to-[#a78bfa] shadow-[0_10px_24px_rgba(123,85,222,0.22)] transition-all duration-300 group-hover:scale-x-110 group-hover:from-[#5138d3] group-hover:to-[#b39cff] group-hover:shadow-[0_16px_30px_rgba(123,85,222,0.32)]"
+                                    className="w-full max-w-8 rounded-t-xl bg-gradient-to-t from-blue-600 to-blue-400 transition-all duration-300 group-hover:scale-x-110 group-hover:from-blue-700 group-hover:to-blue-500"
                                     style={{ height }}
                                     title={`${label}: ${fmt(value)} messages`}
                                 />
@@ -1052,13 +1001,13 @@ function QualityStat({ label, value }) {
 
 function RateCard({ label, value, count, color }) {
     return (
-        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-            <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-medium text-gray-700">{label}</span>
+        <div className="rounded-lg border border-gray-200 bg-white p-3">
+            <div className="flex flex-col gap-1">
+                <span className="text-xs font-medium text-gray-500">{label}</span>
                 <span className="text-sm font-semibold text-black">{count}</span>
             </div>
-            <div className="mt-4 h-2 rounded-full bg-gray-100">
-                <div className={`h-2 rounded-full shadow-[0_4px_12px_rgba(15,23,42,0.12)] ${color}`} style={{ width: pct(value) }} />
+            <div className="mt-3 h-1.5 rounded-full bg-gray-100">
+                <div className={`h-1.5 rounded-full ${color}`} style={{ width: pct(value) }} />
             </div>
         </div>
     )

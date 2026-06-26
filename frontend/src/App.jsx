@@ -25,6 +25,7 @@ import BillingPage from './pages/BillingPage'
 import PaymentSuccessPage from './pages/PaymentSuccessPage'
 import WhatsAppNumberPage from './pages/WhatsAppNumberPage'
 import WhatsAppLinkGenerator from './pages/WhatsAppLinkGenerator'
+import WhatsAppRedirect from './pages/WhatsAppRedirect'
 import CookieConsent from './components/CookieConsent'
 import { loadFacebookSDK } from './services/facebookSdkLoader'
 
@@ -63,6 +64,7 @@ export default function App() {
               <Route path="/signup" element={<Signup />} />
               <Route path="/sso" element={<SSOLogin />} />
               <Route path="/payment-success" element={<PaymentSuccessPage />} />
+              <Route path="/wa/:data" element={<WhatsAppRedirect />} />
               <Route path="/" element={<Layout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />

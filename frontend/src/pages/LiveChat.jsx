@@ -13,6 +13,26 @@ import AudioRecorderOrUploader from '../components/AudioRecorderOrUploader'
 import { useNotificationSound } from '../hooks/useNotificationSound'
 import TourButton from '../onboarding/TourButton'
 import { supabase } from '../supabaseClient'
+import { createAvatar } from '@dicebear/core'
+import { loreleiNeutral } from '@dicebear/collection'
+
+function DiceBearAvatar({ seed, className }) {
+    const avatarDataUri = useMemo(() => {
+        return createAvatar(loreleiNeutral, {
+            seed: seed || 'Unknown',
+            backgroundColor: ['b6e3f4', 'c0aede', 'd1d4f9', 'ffd5dc', 'ffdfbf'],
+        }).toDataUri();
+    }, [seed]);
+
+    return (
+        <img
+            src={avatarDataUri}
+            alt={seed || 'Avatar'}
+            className={className}
+            loading="lazy"
+        />
+    );
+}
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -3023,11 +3043,7 @@ export default function LiveChat() {
                                                 onError={() => clearBrokenProfilePhoto(chat.contactId, chat.profilePhotoUrl)}
                                             />
                                         ) : (
-                                            <div
-                                                className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600 shadow-sm"
-                                            >
-                                                <User className="h-6 w-6" />
-                                            </div>
+                                            <DiceBearAvatar seed={chat.name} className="h-11 w-11 rounded-full object-cover shadow-sm ring-1 ring-gray-200" />
                                         )}
                                         {/* Presence is not reliably available from WhatsApp APIs; hide fake online dot */}
                                     </div>
@@ -3212,9 +3228,7 @@ export default function LiveChat() {
                                             onError={() => clearBrokenProfilePhoto(selectedChat.contactId, selectedChat.profilePhotoUrl)}
                                         />
                                     ) : (
-                                        <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-full bg-rose-100 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0">
-                                            <User className="h-4.5 w-4.5 sm:h-5 sm:w-5" />
-                                        </div>
+                                        <DiceBearAvatar seed={selectedChat?.name} className="h-8 w-8 sm:h-9 sm:w-9 rounded-full object-cover shrink-0 ring-1 ring-gray-200" />
                                     )}
                                     <div className="min-w-0">
                                         <div className="flex items-center gap-1 sm:gap-2">
@@ -3823,9 +3837,7 @@ export default function LiveChat() {
                                                                         onError={() => clearBrokenProfilePhoto(chat.contactId, chat.profilePhotoUrl)}
                                                                     />
                                                                 ) : (
-                                                                    <div className="flex h-11 w-11 items-center justify-center rounded-full border border-rose-200 bg-rose-50 text-rose-600">
-                                                                        <User className="h-6 w-6" />
-                                                                    </div>
+                                                                    <DiceBearAvatar seed={chat.name} className="h-11 w-11 rounded-full object-cover ring-1 ring-gray-200" />
                                                                 )}
                                                                 <div className={`absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white ${selected ? 'bg-green-500 text-white' : 'bg-white text-transparent ring-1 ring-gray-300'}`}>
                                                                     <Check className="h-3.5 w-3.5" />
