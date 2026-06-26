@@ -11,9 +11,9 @@ function resolvePlanName(plan) {
     const p = plan.toLowerCase()
     
     // Check WhatsApp specific plans first to avoid 'monthly'/'quarterly' conflict
-    if (p.includes('whatsapp_starter') || p === 'starter') return 'Starter'
-    if (p.includes('whatsapp_growth') || p === 'growth') return 'Growth'
-    if (p.includes('whatsapp_pro') || p === 'pro') return 'Pro'
+    if (p.includes('whatsapp_starter') || p.includes('wa_starter') || p.includes('wa starter') || p === 'starter') return 'Starter'
+    if (p.includes('whatsapp_growth') || p.includes('wa_growth') || p.includes('wa growth') || p === 'growth') return 'Growth'
+    if (p.includes('whatsapp_pro') || p.includes('wa_pro') || p.includes('wa pro') || p === 'pro') return 'Pro'
     if (p.includes('whatsapp_free') || p === 'free') return 'No active plan'
     if (p.includes('whatsapp_premium') || p.includes('premium')) return 'WhatsApp Premium'
     if (p.includes('whatsapp')) return 'WhatsApp Pro'
