@@ -42,7 +42,7 @@ router.patch(
 );
 
 router.get("/templates", authMiddleware, getTemplates);
-router.get("/templates/library", getTemplateLibrary);
+router.get("/templates/library", authMiddleware, getTemplateLibrary);
 router.post("/templates/validate", authMiddleware, validateTemplate);
 router.post(
   "/templates",
