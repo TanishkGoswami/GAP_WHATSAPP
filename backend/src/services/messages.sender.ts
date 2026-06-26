@@ -308,17 +308,53 @@ export async function sendInteractiveButtons(
 
   const url = `https://graph.facebook.com/v21.0/${fromId}/messages`;
 
-  const payload = {
-    messaging_product: "whatsapp",
-    recipient_type: "individual",
-    to,
-    type: "interactive",
-    interactive: {
+  // Separate buttons by type — URL buttons need a completely different WA API format
+  const urlButtons = (buttons || []).filter((b) => b.type === 'url');
+  const phoneButtons = (buttons || []).filter((b) => b.type === 'phone');
+  const replyButtons = (buttons || []).filter((b) => !b.type || b.type === 'reply');
+
+  let interactivePayload: any;
+
+  if (urlButtons.length > 0) {
+    // WhatsApp cta_url type — supports a single URL CTA button
+    // If there are also reply buttons, we prioritize the URL button
+    const urlBtn = urlButtons[0];
+    interactivePayload = {
+      type: "cta_url",
+      body: { text: body },
+      ...(footer ? { footer: { text: footer } } : {}),
+      action: {
+        name: "cta_url",
+        parameters: {
+          display_text: String(urlBtn.text || "Open Link").slice(0, 20),
+          url: urlBtn.url,
+        },
+      },
+    };
+  } else if (phoneButtons.length > 0) {
+    // WhatsApp phone_number button type
+    interactivePayload = {
       type: "button",
       body: { text: body },
-      footer: footer ? { text: footer } : undefined,
+      ...(footer ? { footer: { text: footer } } : {}),
       action: {
-        buttons: (buttons || []).slice(0, 3).map((b) => ({
+        buttons: phoneButtons.slice(0, 3).map((b) => ({
+          type: "phone_number",
+          phone_number: {
+            display_text: String(b.text || "Call Us").slice(0, 20),
+            phone_number: String(b.phone || b.id || ""),
+          },
+        })),
+      },
+    };
+  } else {
+    // Standard quick-reply buttons
+    interactivePayload = {
+      type: "button",
+      body: { text: body },
+      ...(footer ? { footer: { text: footer } } : {}),
+      action: {
+        buttons: replyButtons.slice(0, 3).map((b) => ({
           type: "reply",
           reply: {
             id: String(b.id || b.text || "").slice(0, 256),
@@ -326,7 +362,15 @@ export async function sendInteractiveButtons(
           },
         })),
       },
-    },
+    };
+  }
+
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive: interactivePayload,
   };
 
   const r = await fetch(url, {
@@ -344,4 +388,3 @@ export async function sendInteractiveButtons(
   }
   return data;
 }
-

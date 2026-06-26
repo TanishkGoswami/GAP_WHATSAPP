@@ -22,6 +22,7 @@ export default function PaymentSuccessPage() {
     const [verifying, setVerifying] = useState(true)
     const [plan, setPlan] = useState(null)
     const [walletRecharge, setWalletRecharge] = useState(null)
+    const [scheduledDowngrade, setScheduledDowngrade] = useState(null)
     const [error, setError] = useState('')
 
     useEffect(() => {
@@ -40,6 +41,7 @@ export default function PaymentSuccessPage() {
                     })
                     if (fnError) throw new Error(await getFunctionErrorMessage(fnError, 'Payment verification failed'))
                     if (data?.plan) setPlan(data.plan)
+                    if (data?.scheduled_downgrade) setScheduledDowngrade(data)
                     if (kind === 'wallet') setWalletRecharge(data)
                     
                     try {
@@ -58,7 +60,7 @@ export default function PaymentSuccessPage() {
         }
 
         verify()
-    }, [refreshProfile])
+    }, [refreshProfile, user?.id])
 
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
@@ -85,7 +87,11 @@ export default function PaymentSuccessPage() {
                     <>
                         <CheckCircle className="w-14 h-14 text-green-500 mx-auto mb-4" />
                         <h2 className="text-2xl font-semibold text-gray-900 mb-2">Payment Successful!</h2>
-                        {plan && (
+                        {scheduledDowngrade ? (
+                            <p className="text-sm text-green-600 font-medium mb-2">
+                                {plan} scheduled from {scheduledDowngrade.effective_at ? new Date(scheduledDowngrade.effective_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'next billing cycle'}
+                            </p>
+                        ) : plan && (
                             <p className="text-sm text-green-600 font-medium mb-2">
                                 {plan} plan activated
                             </p>
@@ -96,13 +102,17 @@ export default function PaymentSuccessPage() {
                             </p>
                         )}
                         <p className="text-sm text-gray-500 mb-8">
-                            {walletRecharge ? 'Your WhatsApp message wallet is ready for campaigns.' : 'Your WhatsApp subscription is now active. Enjoy full access!'}
+                            {walletRecharge
+                                ? 'Your WhatsApp message wallet is ready for campaigns.'
+                                : scheduledDowngrade
+                                    ? 'Your current plan remains active until the renewal date. The lower plan will apply next cycle.'
+                                    : 'Your WhatsApp subscription is now active. Enjoy full access!'}
                         </p>
                         <button
-                            onClick={() => navigate(walletRecharge ? '/billing' : '/dashboard')}
+                            onClick={() => navigate(walletRecharge || scheduledDowngrade ? '/billing' : '/dashboard')}
                             className="w-full py-3 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-800 transition-colors"
                         >
-                            {walletRecharge ? 'Go to Billing' : 'Go to Dashboard'}
+                            {walletRecharge || scheduledDowngrade ? 'Go to Billing' : 'Go to Dashboard'}
                         </button>
                     </>
                 )}

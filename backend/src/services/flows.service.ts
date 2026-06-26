@@ -13,10 +13,10 @@ export type FlowEngineResult = {
         fileName?: string | null;
     }>;
     interactive?: {
-        type: 'button';
+        type: 'button' | 'cta_url';
         body: string;
         footer?: string;
-        buttons: Array<{ id: string; text: string }>;
+        buttons: Array<{ id: string; text: string; type?: 'reply' | 'url' | 'phone'; url?: string; phone?: string }>;
     };
     handoff?: boolean;
     flow_id?: string | null;
@@ -636,7 +636,13 @@ export async function processFlowEngine(
                 type: "button",
                 body,
                 footer,
-                buttons: buttons.map((b: any) => ({ id: b.id || b.text, text: b.text })),
+                buttons: buttons.map((b: any) => ({
+                id: b.id || b.text,
+                text: b.text,
+                type: b.type || 'reply',
+                url: b.url || undefined,
+                phone: b.phone || undefined,
+              })),
               },
             };
           }
@@ -739,6 +745,9 @@ export async function processFlowEngine(
             buttons: buttons.map((b: any) => ({
               id: b.id || b.text,
               text: b.text,
+              type: b.type || 'reply',
+              url: b.url || undefined,
+              phone: b.phone || undefined,
             })),
           },
         };

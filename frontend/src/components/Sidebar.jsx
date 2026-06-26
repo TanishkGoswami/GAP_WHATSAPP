@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { createElement, useEffect, useMemo, useState } from 'react'
 import {
     Blocks,
     ChevronDown,
@@ -44,7 +44,6 @@ const navigation = [
         ]
     },
     { name: 'Broadcasts', href: '/broadcast', icon: Megaphone },
-    { name: 'Billing', href: '/billing', icon: CreditCard },
     { name: 'WA Link Generator', href: '/wa-link-generator', icon: MessageCircle },
 ]
 
@@ -318,6 +317,7 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
                                     </div>
                                     <div className="my-1 h-px bg-gray-100" />
                                     <MenuLink to="/settings" icon={UserCircle} label="Profile" />
+                                    <MenuLink to="/billing" icon={CreditCard} label="Billing" />
                                     <button
                                         type="button"
                                         onClick={handleSignOut}
@@ -422,6 +422,24 @@ export default function Sidebar({ onRequestLogout, isMobileOpen = false, onMobil
                                     <span className="block truncate text-xs text-gray-500">{userEmail || user?.plan || 'No active plan'}</span>
                                 </span>
                             </div>
+                            <div className="mb-2 grid grid-cols-2 gap-2">
+                                <Link
+                                    to="/settings"
+                                    onClick={handleMobileNavigate}
+                                    className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                >
+                                    <UserCircle className="h-4 w-4 text-gray-500" />
+                                    Profile
+                                </Link>
+                                <Link
+                                    to="/billing"
+                                    onClick={handleMobileNavigate}
+                                    className="flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                                >
+                                    <CreditCard className="h-4 w-4 text-gray-500" />
+                                    Billing
+                                </Link>
+                            </div>
                             <button
                                 type="button"
                                 onClick={handleSignOut}
@@ -475,20 +493,15 @@ function NavItem({ item, active, collapsed, onNavigate, attention }) {
 function ExpandableNavItem({ item, active, collapsed, onNavigate }) {
     const location = useLocation()
     const Icon = item.icon
-    const [isOpen, setIsOpen] = useState(() => location.pathname.startsWith(item.href))
+    const [isManuallyOpen, setIsManuallyOpen] = useState(false)
     const isExpanded = !collapsed
-
-    useEffect(() => {
-        if (location.pathname.startsWith(item.href)) {
-            setIsOpen(true)
-        }
-    }, [location.pathname, item.href])
+    const isOpen = active || isManuallyOpen
 
     return (
         <div className="space-y-1">
             <button
                 type="button"
-                onClick={() => setIsOpen(!isOpen)}
+                onClick={() => setIsManuallyOpen(prev => !prev)}
                 data-tour={`nav-${item.href.replace('/', '').replaceAll('/', '-') || 'dashboard'}`}
                 className={clsx(
                     'group flex h-9 w-full items-center rounded-md text-[14px] font-medium transition-colors text-left focus:outline-none',
@@ -528,10 +541,10 @@ function ExpandableNavItem({ item, active, collapsed, onNavigate }) {
     )
 }
 
-function MenuLink({ to, icon: Icon, label }) {
+function MenuLink({ to, icon, label }) {
     return (
         <Link to={to} className="flex items-center gap-2 rounded-md px-2.5 py-2 text-sm text-gray-700 hover:bg-gray-100">
-            <Icon className="h-4 w-4 text-gray-500" />
+            {createElement(icon, { className: 'h-4 w-4 text-gray-500' })}
             {label}
         </Link>
     )

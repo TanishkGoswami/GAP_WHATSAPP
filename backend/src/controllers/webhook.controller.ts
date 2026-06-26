@@ -891,7 +891,7 @@ export async function handleWebhook(req: any, res: Response) {
             }
 
             // 2. Send interactive buttons if present
-            if (flowResult.interactive?.type === "button") {
+            if (flowResult.interactive?.type === "button" || flowResult.interactive?.type === "cta_url") {
               console.log(`🔘 Flow Engine sending real buttons`);
               const { body, buttons, footer } = flowResult.interactive;
               const sendResult = await sendInteractiveButtons(
