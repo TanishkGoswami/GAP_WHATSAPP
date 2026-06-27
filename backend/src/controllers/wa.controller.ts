@@ -120,6 +120,30 @@ export async function connectCallback(req: any, res: Response) {
 
                     await enforceWhatsAppCloudNumberLimit(targetOrgId, phone_number_id);
 
+                    // Register the phone number
+                    try {
+                        const registerUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/${phone_number_id}/register`;
+                        const registerRes = await fetch(registerUrl, {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${finalToken}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                messaging_product: 'whatsapp',
+                                pin: '123456'
+                            })
+                        });
+                        const registerData: any = await registerRes.json();
+                        if (!registerRes.ok || registerData.error) {
+                            console.warn(`Registration API failed for ${phone_number_id}:`, registerData.error);
+                        } else {
+                            console.log(`Successfully registered phone number ${phone_number_id}`);
+                        }
+                    } catch (regErr) {
+                        console.error(`Registration API exception for ${phone_number_id}:`, regErr);
+                    }
+
                     const { data, error } = await supabase.from('w_wa_accounts').upsert({
                         organization_id: targetOrgId,
                         whatsapp_business_account_id: currentWabaId,
