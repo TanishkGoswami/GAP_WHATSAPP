@@ -414,6 +414,80 @@
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08) !important;
   }
 
+  .wa-template-canvas {
+    border-radius: 12px;
+    background-color: #e9e3db;
+    background-image:
+      radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.45) 0 2px, transparent 3px),
+      radial-gradient(circle at 78% 72%, rgba(115, 101, 84, 0.08) 0 3px, transparent 4px),
+      linear-gradient(135deg, rgba(255, 255, 255, 0.18) 25%, transparent 25%);
+    background-size: 34px 34px, 46px 46px, 24px 24px;
+  }
+
+  .meta-library-chat {
+    min-height: 178px;
+    padding: 14px;
+    border: 1px solid #e4ded5;
+    border-radius: 12px;
+    background-color: #e9e3db;
+    background-image:
+      radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.45) 0 2px, transparent 3px),
+      radial-gradient(circle at 78% 72%, rgba(115, 101, 84, 0.08) 0 3px, transparent 4px);
+    background-size: 34px 34px, 46px 46px;
+  }
+
+  .meta-library-header {
+    position: relative;
+    isolation: isolate;
+    background-color: #08051d;
+    background-image: url('/images/header-bg.png');
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: cover;
+  }
+
+  @media (max-width: 1023px) {
+    .meta-library-header {
+      background-position: center;
+      background-size: cover;
+    }
+  }
+
+  @media (max-width: 639px) {
+    .meta-library-header {
+      background-position: center;
+      background-size: cover;
+    }
+  }
+
+  .meta-template-action {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(106, 230, 92, 0.28);
+    background-color: #075b37;
+    background-image: linear-gradient(rgba(2, 55, 31, 0.08), rgba(2, 55, 31, 0.2)), url('/images/button-bg.png');
+    background-position: center;
+    background-size: cover;
+    box-shadow: 0 4px 12px rgba(5, 91, 55, 0.18);
+    transition: transform 160ms ease, filter 160ms ease, box-shadow 160ms ease;
+  }
+
+  .meta-template-action:hover {
+    filter: brightness(1.12);
+    box-shadow: 0 6px 16px rgba(5, 91, 55, 0.24);
+    transform: translateY(-1px);
+  }
+
+  .meta-template-action:active {
+    transform: translateY(0);
+  }
+
+  @media (max-width: 639px) {
+    .template-editor-modal {
+      max-height: 96dvh;
+    }
+  }
+
   .meta-variable-badge {
     display: inline-block;
     background-color: rgba(37, 211, 102, 0.08);
