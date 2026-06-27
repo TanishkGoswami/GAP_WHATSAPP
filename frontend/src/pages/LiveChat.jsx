@@ -3230,7 +3230,7 @@ export default function LiveChat() {
                     ) : (
                         <>
                             {/* Chat Header */}
-                            <div data-tour="chat-header" className="z-10 flex h-14 sm:h-16 shrink-0 items-center justify-between gap-1 sm:gap-2 border-b border-gray-200 bg-[#f0f2f5] px-1.5 sm:px-4">
+                            <div data-tour="chat-header" className="relative z-40 flex h-14 sm:h-16 shrink-0 items-center justify-between gap-1 sm:gap-2 border-b border-gray-200 bg-[#f0f2f5] px-1.5 sm:px-4">
                                 <div className="flex min-w-0 items-center gap-1.5 sm:gap-3">
                                     <button onClick={() => setSelectedChat(null)} className="lg:hidden p-0.5 -ml-1 text-gray-600 hover:bg-gray-200 rounded-lg">
                                         <ChevronLeft className="h-5 w-5 sm:h-6 sm:w-6" />
@@ -3260,14 +3260,18 @@ export default function LiveChat() {
                                                 <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                             </button>
                                         </div>
-                                        <p className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-gray-500">
+                                        <div className="flex min-w-0 items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-gray-500">
                                             <span className="truncate">{formatPhoneForDisplay(selectedChat?.phone || selectedChat?.waId || '')}</span>
                                             {timeRemainingStr && (
                                                 <div className="relative inline-flex" data-time-tooltip>
                                                     <button
                                                         type="button"
+                                                        aria-expanded={showTimeTooltip}
+                                                        aria-label={`WhatsApp 24-hour window: ${timeRemainingStr}`}
                                                         onMouseEnter={() => setShowTimeTooltip(true)}
                                                         onMouseLeave={() => setShowTimeTooltip(false)}
+                                                        onFocus={() => setShowTimeTooltip(true)}
+                                                        onBlur={() => setShowTimeTooltip(false)}
                                                         onClick={(e) => {
                                                             e.stopPropagation()
                                                             setShowTimeTooltip(prev => !prev)
@@ -3288,16 +3292,19 @@ export default function LiveChat() {
 
                                                     {/* META Level Tooltip Popup */}
                                                     {showTimeTooltip && (
-                                                        <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2.5 z-[9999] w-72 rounded-2xl border border-white bg-white/95 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.12)] backdrop-blur-md transition-all duration-300 ease-out animate-in fade-in slide-in-from-top-2">
+                                                        <div
+                                                            role="tooltip"
+                                                            className="absolute left-1/2 top-full z-[9999] mt-2.5 w-[min(20rem,calc(100vw-1.5rem))] -translate-x-1/2 rounded-xl border border-gray-200 bg-white p-3.5 text-left normal-case shadow-[0_14px_40px_rgba(15,23,42,0.18)] sm:p-4"
+                                                        >
                                                             {/* Tiny arrow pointing up */}
-                                                            <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 h-3 w-3 rotate-45 border-t border-l border-white bg-white/95" />
+                                                            <div className="absolute -top-1.5 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-l border-t border-gray-200 bg-white" />
                                                             <div className="flex items-start gap-3">
                                                                 <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${timeRemainingStr === 'Closed' || isCustomerWindowExpired || isUrgentTime ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>
                                                                     <Clock className="h-4.5 w-4.5" />
                                                                 </div>
-                                                                <div className="space-y-1 text-left">
-                                                                    <h4 className="text-xs font-bold text-gray-900 leading-tight">WhatsApp 24h Window</h4>
-                                                                    <p className={`text-[13px] font-bold tracking-tight ${timeRemainingStr === 'Closed' || isCustomerWindowExpired || isUrgentTime ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                                                <div className="min-w-0 flex-1 space-y-1">
+                                                                    <h4 className="text-xs font-bold leading-tight text-gray-900">WhatsApp 24h Window</h4>
+                                                                    <p className={`text-[13px] font-bold leading-5 tracking-tight ${timeRemainingStr === 'Closed' || isCustomerWindowExpired || isUrgentTime ? 'text-rose-600' : 'text-emerald-600'}`}>
                                                                         {(() => {
                                                                             if (timeRemainingStr === 'Closed' || isCustomerWindowExpired) return 'Window Closed';
                                                                             const latestAt = customerWindowState.latestCustomerMessageAt;
@@ -3310,7 +3317,7 @@ export default function LiveChat() {
                                                                             return `${hrs} ${hrs === 1 ? 'Hour' : 'Hours'} ${mins} ${mins === 1 ? 'Minute' : 'Minutes'} Left`;
                                                                         })()}
                                                                     </p>
-                                                                    <p className="text-[11px] font-medium leading-relaxed text-gray-500 normal-case">
+                                                                    <p className="text-[11px] font-medium leading-[1.55] text-gray-600">
                                                                         {timeRemainingStr === 'Closed' || isCustomerWindowExpired
                                                                             ? "This user's 24-hour reply window has closed. You can only send template messages now."
                                                                             : "After this time, you won't be able to send normal messages to this user. You can only reply with approved templates."}
@@ -3321,7 +3328,7 @@ export default function LiveChat() {
                                                     )}
                                                 </div>
                                             )}
-                                        </p>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1 sm:gap-2">
