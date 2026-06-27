@@ -2029,7 +2029,7 @@ export default function LiveChat() {
             const buttons = Array.isArray(template.buttons) ? template.buttons.filter(button => button?.text) : []
 
             return (
-                <div className="w-full min-w-64 max-w-sm overflow-hidden rounded-lg bg-white text-gray-900 shadow-sm border border-gray-100">
+                <div className="flex flex-col w-[300px] sm:w-[320px] max-w-[85vw]">
                     {msg.forwarded && (
                         <div className="px-3 pt-2">
                             <ForwardedIndicator />
@@ -2039,7 +2039,7 @@ export default function LiveChat() {
                         <img
                             src={headerUrl}
                             alt={template.name || 'Template header'}
-                            className="h-48 w-full object-cover"
+                            className="h-48 w-full object-cover rounded-t-[7.5px]"
                             loading="lazy"
                         />
                     )}
@@ -2047,7 +2047,7 @@ export default function LiveChat() {
                         <video
                             src={headerUrl}
                             controls
-                            className="h-48 w-full object-cover"
+                            className="h-48 w-full object-cover rounded-t-[7.5px]"
                         />
                     )}
                     {headerUrl && headerType === 'document' && (
@@ -2055,20 +2055,23 @@ export default function LiveChat() {
                             href={headerUrl}
                             target="_blank"
                             rel="noreferrer"
-                            className="flex items-center gap-2 border-b border-gray-100 px-3 py-3 text-sm font-medium text-indigo-700"
+                            className="flex items-center gap-2 border-b border-[#e9edef] px-3 py-3 text-sm font-medium text-indigo-700"
                         >
                             <FileText className="h-4 w-4" />
                             View document
                         </a>
                     )}
-                    <div className="space-y-3 px-3 py-2.5">
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap">{template.body || msg.text}</p>
+                    <div className="space-y-1 px-2.5 pt-1.5 pb-2">
+                        <p className="whitespace-pre-wrap text-[14.2px] leading-[19px] tracking-normal text-[#111b21]">{template.body || msg.text}</p>
                         {template.footer && (
-                            <p className="text-xs text-gray-500">{template.footer}</p>
+                            <p className="whitespace-pre-wrap text-[13px] leading-[18px] text-[#667781] mt-1">{template.footer}</p>
                         )}
+                        <div className="pt-0.5">
+                            {renderMessageMeta(msg, 'mt-0')}
+                        </div>
                     </div>
                     {buttons.length > 0 && (
-                        <div className="divide-y divide-gray-100 border-t border-gray-100">
+                        <div className="divide-y divide-[#e9edef] border-t border-[#e9edef]">
                             {buttons.map((button, index) => {
                                 const type = String(button.type || '').toUpperCase()
                                 const href = type === 'URL' ? button.url : type === 'PHONE_NUMBER' ? `tel:${button.phone_number || ''}` : ''
@@ -2080,15 +2083,15 @@ export default function LiveChat() {
                                         href={href}
                                         target={type === 'URL' ? '_blank' : undefined}
                                         rel={type === 'URL' ? 'noreferrer' : undefined}
-                                        className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+                                        className="flex items-center justify-center gap-2 px-3 py-2.5 text-[14.5px] text-[#00a884] hover:bg-gray-50 transition-colors"
                                     >
-                                        <Icon className="h-4 w-4" />
+                                        <Icon className="h-[18px] w-[18px]" />
                                         {button.text}
                                     </a>
                                 ) : (
                                     <div
                                         key={`${button.text}-${index}`}
-                                        className="flex items-center justify-center px-3 py-2 text-sm font-semibold text-emerald-700"
+                                        className="flex items-center justify-center px-3 py-2.5 text-[14.5px] text-[#00a884] hover:bg-gray-50 transition-colors cursor-default"
                                     >
                                         {button.text}
                                     </div>
@@ -2096,9 +2099,6 @@ export default function LiveChat() {
                             })}
                         </div>
                     )}
-                    <div className="px-3 pb-2 pt-1">
-                        {renderMessageMeta(msg, 'mt-0')}
-                    </div>
                 </div>
             )
         }
@@ -2197,21 +2197,36 @@ export default function LiveChat() {
 
         const interactive = msg.content?.interactive
         if (interactive?.type === 'button') {
+            const numButtons = interactive.buttons?.length || 0;
             return (
-                <div className="space-y-3">
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{interactive.body || msg.text}</p>
-                    <div className="flex flex-wrap gap-2">
-                        {interactive.buttons?.map((btn) => (
-                            <div
-                                key={btn.id}
-                                className="bg-white border border-indigo-200 text-indigo-600 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm"
-                            >
-                                {btn.text}
-                            </div>
-                        ))}
+                <div className="flex flex-col w-[300px] sm:w-[320px] max-w-[85vw]">
+                    <div className="relative px-2.5 pt-1.5 pb-2">
+                        <div className="space-y-1">
+                            {interactive.header?.text && (
+                                <p className="font-bold text-[14.2px] leading-[19px] text-[#111b21]">{interactive.header.text}</p>
+                            )}
+                            <p className="whitespace-pre-wrap text-[14.2px] leading-[19px] tracking-normal text-[#111b21]">{interactive.body || interactive.body?.text || msg.text}</p>
+                            {interactive.footer && (
+                                <p className="whitespace-pre-wrap text-[13px] leading-[18px] text-[#667781] mt-1">{interactive.footer?.text || interactive.footer}</p>
+                            )}
+                        </div>
+                        <div className="pt-0.5">
+                            {renderMessageMeta(msg, 'mt-0')}
+                        </div>
                     </div>
-                    {interactive.footer && (
-                        <p className="text-[10px] text-gray-400 italic">{interactive.footer}</p>
+                    {numButtons > 0 && (
+                        <div className={`flex bg-white rounded-b-[7.5px] overflow-hidden ${numButtons <= 2 ? 'flex-row' : 'flex-col'}`}>
+                            {interactive.buttons?.map((btn, idx) => (
+                                <div
+                                    key={btn.id}
+                                    className={`flex-1 px-2 py-[11px] text-[15px] tracking-wide text-[#00a884] flex items-center justify-center cursor-default text-center border-t border-[#e9edef] ${
+                                        numButtons <= 2 && idx > 0 ? 'border-l' : ''
+                                    }`}
+                                >
+                                    {btn.text}
+                                </div>
+                            ))}
+                        </div>
                     )}
                 </div>
             )
@@ -2253,7 +2268,7 @@ export default function LiveChat() {
         </div>
     )
 
-    const renderMessageSourceBadge = (msg) => {
+    const renderMessageSourceBadge = (msg, isZeroPadding = false) => {
         if (msg.sender !== 'agent' || msg.forwarded) return null;
 
         const source = msg.automationSource || msg.automation_source || msg.metadata?.automation_source;
@@ -2276,7 +2291,7 @@ export default function LiveChat() {
         }
 
         return (
-            <div className={`mb-0.5 text-[13px] font-medium leading-4 ${colorClass}`}>
+            <div className={`mb-0.5 text-[13px] font-medium leading-4 ${colorClass} ${isZeroPadding ? 'px-2.5 pt-1.5' : ''}`}>
                 {label}
             </div>
         );
@@ -3575,10 +3590,11 @@ export default function LiveChat() {
                             </div>
 
                             {/* Messages Display */}
-                            <div className="relative flex-1 flex flex-col overflow-hidden bg-[#efeae2] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat bg-[length:410px]">
+                            <div className="relative flex-1 flex flex-col overflow-hidden bg-[#efeae2]">
+                                <div className="absolute inset-0 z-0 opacity-40 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat bg-[length:410px]" />
                                 <div
                                     ref={messagesListRef}
-                                    className={`wa-chat-scroll flex-1 overflow-y-auto px-5 py-3 sm:px-8 lg:px-14 xl:px-20 2xl:px-28 transition-opacity duration-200 ${isThreadLoading ? 'opacity-0' : 'opacity-100'}`}
+                                    className={`wa-chat-scroll relative z-10 flex-1 overflow-y-auto px-5 py-3 sm:px-8 lg:px-14 xl:px-20 2xl:px-28 transition-opacity duration-200 ${isThreadLoading ? 'opacity-0' : 'opacity-100'}`}
                                     onScroll={() => {
                                         const el = messagesListRef.current
                                         if (!el) return
@@ -3633,11 +3649,10 @@ export default function LiveChat() {
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <div className={`group relative w-fit max-w-[86%] sm:max-w-[76%] lg:max-w-[64%] xl:max-w-[58%] ${row.msg.content?.template ? 'bg-transparent p-0 shadow-none border-0' : `wa-bubble px-2.5 py-1.5 text-[#111b21] ${row.msg.sender === 'user'
-                                                        ? 'wa-bubble-in'
-                                                        : 'wa-bubble-out'
-                                                        }`
-                                                        }`}>
+                                                    <div className={`group relative w-fit max-w-[86%] sm:max-w-[76%] lg:max-w-[64%] xl:max-w-[58%] wa-bubble text-[#111b21] ${row.msg.sender === 'user'
+                                                        ? `wa-bubble-in ${!row.grouped ? 'wa-bubble-tail-in' : ''}`
+                                                        : `wa-bubble-out ${!row.grouped ? 'wa-bubble-tail-out' : ''}`
+                                                        } ${(row.msg.content?.template || row.msg.content?.interactive?.type === 'button') ? 'p-0' : 'px-2.5 py-1.5'}`}>
                                                         <div className={`absolute top-1 ${row.msg.sender === 'user' ? '-right-9' : '-left-9'} opacity-0 transition-opacity group-hover:opacity-100 ${activeMessageMenuId === row.msg.id ? 'opacity-100' : ''}`} data-message-menu>
                                                             <button
                                                                 type="button"
@@ -3648,10 +3663,10 @@ export default function LiveChat() {
                                                                 <ChevronDown className="h-4 w-4" />
                                                             </button>
                                                         </div>
-                                                        {renderMessageSourceBadge(row.msg)}
+                                                        {renderMessageSourceBadge(row.msg, row.msg.content?.template || row.msg.content?.interactive?.type === 'button')}
                                                         {renderMessageBody(row.msg)}
                                                         {renderReactionsPill(row.msg)}
-                                                        {!row.msg.content?.template && renderMessageMeta(row.msg)}
+                                                        {!(row.msg.content?.template || row.msg.content?.interactive?.type === 'button') && renderMessageMeta(row.msg)}
                                                     </div>
                                                 )}
                                             </div>
@@ -3660,7 +3675,7 @@ export default function LiveChat() {
                                     <div ref={messagesEndRef} />
                                 </div>
                                 {isThreadLoading && (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-[#efeae2] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] bg-repeat bg-[length:410px] z-10">
+                                    <div className="absolute inset-0 flex items-center justify-center bg-[#efeae2]/80 z-20 backdrop-blur-sm">
                                         <div className="flex flex-col items-center justify-center p-4 rounded-2xl bg-white/85 backdrop-blur-md border border-white/60 shadow-lg animate-in fade-in duration-300">
                                             <svg className="animate-spin h-8 w-8 text-emerald-600" viewBox="0 0 24 24" fill="none">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -3923,7 +3938,7 @@ export default function LiveChat() {
                                         </div>
                                     )}
                                     {(!isCustomerWindowExpired || isInternalNote) && (
-                                        <div className="flex flex-1 flex-col overflow-hidden rounded-lg bg-white shadow-[0_1px_1px_rgba(11,20,26,0.08)] transition-all focus-within:ring-1 focus-within:ring-black/10">
+                                        <div className="flex flex-1 flex-col overflow-hidden rounded-[8px] bg-white shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] transition-all focus-within:ring-1 focus-within:ring-black/10">
                                             <input
                                                 ref={fileInputRef}
                                                 type="file"
