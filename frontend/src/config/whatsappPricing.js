@@ -6,7 +6,7 @@ export const BILLING_INTERVALS = [
 export const FALLBACK_PLANS = [
     {
         id: 'starter',
-        name: 'Starter',
+        name: 'WA Starter',
         description: 'Simple WhatsApp workspace for small shops and service businesses.',
         monthly_price_paise: 99900,
         yearly_price_paise: 999000,
@@ -15,7 +15,7 @@ export const FALLBACK_PLANS = [
     },
     {
         id: 'growth',
-        name: 'Growth',
+        name: 'WA Growth',
         description: 'Best plan for growing teams running campaigns and customer support.',
         monthly_price_paise: 199900,
         yearly_price_paise: 1999000,
@@ -25,7 +25,7 @@ export const FALLBACK_PLANS = [
     },
     {
         id: 'pro',
-        name: 'Pro',
+        name: 'WA Pro',
         description: 'Advanced automation, campaigns, AI agents, and reporting.',
         monthly_price_paise: 349900,
         yearly_price_paise: 3499000,
