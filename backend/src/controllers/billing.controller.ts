@@ -23,9 +23,16 @@ const PLAN_PRICES: Record<string, { label: string; prices: Record<number, number
 function normalizePlanId(planId: any): string | null {
     const value = String(planId || '').toLowerCase();
     if (!value) return null;
-    if (value.includes('starter')) return 'starter';
-    if (value.includes('growth')) return 'growth';
-    if (value === 'pro' || value.includes('pro') || value.includes('premium')) return 'pro';
+    
+    const isWhatsApp = value.startsWith('whatsapp_') || value.startsWith('wa_') || value.startsWith('wa ') || ['starter', 'growth', 'pro', 'enterprise'].includes(value);
+    
+    if (isWhatsApp) {
+        if (value.includes('starter')) return 'starter';
+        if (value.includes('growth')) return 'growth';
+        if (value.includes('pro') || value.includes('premium')) return 'pro';
+        if (value.includes('enterprise')) return 'enterprise';
+    }
+    
     if (value.includes('enterprise')) return 'enterprise';
     if (value.includes('all_in_one') || value.includes('ultimate')) return 'all_in_one';
     return PLAN_RANKS[value] ? value : null;
@@ -367,7 +374,7 @@ export const getBillingOverview = async (req: any, res: Response) => {
             console.error('[billing/overview] Failed to fetch owner subscription dates:', subErr);
         }
 
-        const planId = orgData.plan_id || null;
+        const planId = normalizePlanId(orgData.plan_id) || null;
         const currentPlan = planId ? plans.find((plan: any) => plan.id === planId) || null : null;
         let subscription: any = null;
         let subscriptionInvoices: any[] = [];
