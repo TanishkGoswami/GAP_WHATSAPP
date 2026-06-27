@@ -31,6 +31,28 @@ const formatDateToIST = (dateStr) => {
     }
 };
 
+const formatTimeToIST = (dateStr) => {
+    if (!dateStr) return '12:00 PM';
+    try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return '12:00 PM';
+
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+            timeZone: 'Asia/Kolkata'
+        });
+        return formatter.format(date);
+    } catch {
+        return '12:00 PM';
+    }
+};
+
+const extractTemplateVariables = (text) => {
+    const matches = String(text || '').match(/\{\{(\d+)\}\}/g);
+    return matches ? Array.from(new Set(matches)) : [];
+};
 const USE_CASE_LABELS = {
     'All Use Cases': 'All Use Cases',
     'ACCOUNT_UPDATES': 'Account Updates',
@@ -743,7 +765,9 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                 )}
 
                                                 <div className="flex items-center justify-end mt-1 gap-0.5 leading-none">
-                                                    <span className="text-[7.5px] text-gray-450 font-medium">12:00 PM</span>
+                                                    <span className="text-[7.5px] text-gray-450 font-medium">
+                                                        {formatTimeToIST(template.approved_at || template.submitted_at || template.last_updated)}
+                                                    </span>
                                                     <span className={`${template.status === 'APPROVED' ? 'text-[#34b7f1]' : 'text-gray-400'} text-[8px] font-bold`}>✓✓</span>
                                                 </div>
                                             </div>
@@ -765,7 +789,16 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                     {/* Footer — always at bottom */}
                                     <div className="border-t border-gray-100 bg-[#f8fafc] px-4 py-3 flex items-center justify-between text-[10px] text-gray-400 font-semibold">
                                         <span className="uppercase tracking-wider text-[9px] text-gray-500 bg-gray-100/70 border border-gray-150 px-2 py-0.5 rounded-md" style={{ borderRadius: '6px' }}>{template.category}</span>
-                                        <span>Updated {formatDateToIST(template.last_updated)}</span>
+                                        <span>
+                                            {template.status === 'APPROVED' 
+                                                ? `Approved ${formatDateToIST(template.approved_at || template.last_updated)}` 
+                                                : template.status === 'PENDING' 
+                                                ? `Sent ${formatDateToIST(template.submitted_at || template.last_updated)}`
+                                                : template.status === 'REJECTED'
+                                                ? `Rejected ${formatDateToIST(template.rejected_at || template.last_updated)}`
+                                                : `Updated ${formatDateToIST(template.last_updated)}`
+                                            }
+                                        </span>
                                     </div>
                                 </div>
                             );
