@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone, AlertCircle, RefreshCw, UploadCloud, Type, MessageSquareText, MousePointerClick, ChevronDown, Loader2, Check, MessageSquare, Image, ExternalLink, ArrowRight, ShieldCheck, HelpCircle, Tag, Building2, Target } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone, AlertCircle, RefreshCw, UploadCloud, Type, MessageSquareText, MousePointerClick, ChevronDown, Loader2, Check, MessageSquare, Image, ExternalLink, ArrowRight, ShieldCheck, HelpCircle, Tag, Building2, Target, Sparkles, LockKeyhole } from 'lucide-react'
 import Modal from '../components/Modal'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import TourButton from '../onboarding/TourButton'
 import { META_TEMPLATES_LIBRARY } from '../data/metaTemplates'
+import MetaTemplateLibrary from '../components/MetaTemplateLibrary'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -25,7 +26,7 @@ const formatDateToIST = (dateStr) => {
             timeZone: 'Asia/Kolkata'
         });
         return formatter.format(date) + ' IST';
-    } catch (e) {
+    } catch {
         return dateStr;
     }
 };
@@ -43,7 +44,7 @@ const formatTimeToIST = (dateStr) => {
             timeZone: 'Asia/Kolkata'
         });
         return formatter.format(date);
-    } catch (e) {
+    } catch {
         return '12:00 PM';
     }
 };
@@ -52,7 +53,6 @@ const extractTemplateVariables = (text) => {
     const matches = String(text || '').match(/\{\{(\d+)\}\}/g);
     return matches ? Array.from(new Set(matches)) : [];
 };
-
 const USE_CASE_LABELS = {
     'All Use Cases': 'All Use Cases',
     'ACCOUNT_UPDATES': 'Account Updates',
@@ -80,7 +80,6 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
     const [activeStatus, setActiveStatus] = useState('APPROVED') // APPROVED, PENDING, DRAFT
     const [showCategoryDropdown, setShowCategoryDropdown] = useState(false)
 
-    const queryClient = useQueryClient()
     const { data: templates = [], isLoading: loading, isFetching, error: queryError, refetch } = useQuery({
         queryKey: ['whatsapp-templates'],
         queryFn: async () => {
@@ -207,12 +206,45 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
         });
     }, [searchQuery, activeIndustry, libraryTopic, libraryUseCase]);
 
-    // Grouping is no longer strictly needed but we can keep it empty or mock it for compatibility
-    const groupedLibrary = useMemo(() => {
-        return {};
-    }, []);
-
     if (viewMode === 'INDUSTRIES') {
+        return (
+            <>
+                <MetaTemplateLibrary
+                    templates={META_TEMPLATES_LIBRARY}
+                    filteredTemplates={filteredLibrary}
+                    topic={libraryTopic}
+                    setTopic={setLibraryTopic}
+                    industry={activeIndustry}
+                    setIndustry={setActiveIndustry}
+                    useCase={libraryUseCase}
+                    setUseCase={setLibraryUseCase}
+                    search={searchQuery}
+                    setSearch={setSearchQuery}
+                    showFilters={showMobileFilters}
+                    setShowFilters={setShowMobileFilters}
+                    onOpen={setSelectedTemplate}
+                    onUse={handleAddToMyTemplates}
+                />
+                <CreateTemplateModal
+                    isOpen={iscreateOpen}
+                    onClose={() => {
+                        setIsCreateOpen(false)
+                        setPrefilledTemplate(null)
+                    }}
+                    onSuccess={handleCreateSuccess}
+                    apiCall={apiCall}
+                    initialData={prefilledTemplate}
+                />
+                <ViewTemplateModal
+                    template={selectedTemplate}
+                    onClose={() => setSelectedTemplate(null)}
+                    onAddToMyTemplates={handleAddToMyTemplates}
+                />
+            </>
+        )
+    }
+
+    if (viewMode === 'INDUSTRIES_LEGACY') {
         const industryMeta = {
             'General': { color: 'neutral' },
             'Real Estate': { color: 'amber' },
@@ -252,28 +284,29 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
         ];
 
         return (
-            <div className="min-h-[calc(100vh-4rem)] bg-[#f8fafc] pb-10">
+            <div className="min-h-full bg-[#f5f7fa] px-3 py-4 sm:px-6 sm:py-5 lg:px-8">
                 {/* ═══════════════════════════════════════════════════════════════
                     PREMIUM GLOWING HERO HEADER & FILTERS
                 ═══════════════════════════════════════════════════════════════ */}
-                <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/90 backdrop-blur-md px-6 py-5 shadow-sm">
-                    <div className="flex flex-col gap-5">
+                <div className="sticky top-0 z-20 mx-auto max-w-[1680px] rounded-xl border border-[#e8edf3] bg-white/95 p-4 shadow-[0_8px_30px_rgba(15,23,42,0.04)] backdrop-blur-md sm:p-5">
+                    <div className="flex flex-col gap-4">
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                             <div>
-                                <h1 className="text-xl font-extrabold text-gray-900 tracking-tight flex items-center gap-2">
-                                    Explore Meta Templates
-                                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100" style={{ borderRadius: '12px' }}>
+                                <div className="mb-1.5 flex items-center gap-2 text-xs font-semibold text-[#0064b7]">
+                                    <Sparkles className="h-3.5 w-3.5" />
+                                    Ready-to-use message library
+                                </div>
+                                <h1 className="flex flex-wrap items-center gap-2 text-2xl font-light tracking-tight text-black sm:text-[30px]">
+                                    Explore Meta templates
+                                    <span className="rounded-full border border-[#cfe5fb] bg-[#eef7ff] px-2.5 py-1 text-[11px] font-semibold text-[#0064b7]">
                                         {META_TEMPLATES_LIBRARY.length} items
                                     </span>
                                 </h1>
-                                <p className="text-xs text-gray-500 mt-1">Deploy pre-approved marketing, authentication, and utility flows with guaranteed 0-second approval times.</p>
+                                <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-500">Launch trusted WhatsApp conversations faster with templates already reviewed by Meta.</p>
                             </div>
                             <div className="flex items-center gap-2">
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-3.5 py-1.5 text-xs font-bold text-white shadow-md shadow-blue-500/10">
-                                    <span className="relative flex h-2 w-2">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-                                    </span>
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#eaf8f1] px-3 py-1.5 text-xs font-semibold text-[#087a55] ring-1 ring-inset ring-[#c9eddd]">
+                                    <ShieldCheck className="h-3.5 w-3.5" />
                                     Meta Pre-Approved
                                 </span>
                             </div>
@@ -357,7 +390,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                 {/* ═══════════════════════════════════════════════════════════════
                     CARDS GRID
                 ═══════════════════════════════════════════════════════════════ */}
-                <div className="min-w-0 flex-1 px-6 py-8">
+                <div className="mx-auto min-w-0 max-w-[1680px] flex-1 py-5 sm:py-6">
                     {filteredLibrary.length === 0 ? (
                         <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-gray-300 bg-white py-24 text-center max-w-md mx-auto my-12 shadow-sm" style={{ borderRadius: '16px' }}>
                             <div className="h-16 w-16 rounded-full bg-gray-50 flex items-center justify-center mb-4 border border-gray-100" style={{ borderRadius: '50%' }}>
@@ -367,7 +400,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                             <p className="text-xs text-gray-400 mt-2 max-w-[280px] leading-relaxed">We couldn't find any pre-approved templates matching those filters. Try clearing filters or changing your search criteria.</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                             {filteredLibrary.map((item) => {
                                 const bodyComp = item.components?.find(c => c.type === 'BODY');
                                 const buttonsComp = item.components?.find(c => c.type === 'BUTTONS');
@@ -381,7 +414,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                         onClick={() => setSelectedTemplate(item)}
                                         className="group meta-template-card relative flex flex-col justify-between overflow-hidden cursor-pointer"
                                     >
-                                        <div className="p-5 flex flex-col flex-1">
+                                        <div className="flex flex-1 flex-col p-4 sm:p-5">
                                             {/* Category & Badge Row */}
                                             <div className="flex items-center justify-between gap-2 mb-3">
                                                 <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold tracking-wide uppercase ${catStyle}`} style={{ borderRadius: '10px' }}>
@@ -399,8 +432,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                             </p>
 
                                             {/* WhatsApp Mock Chat Bubble Preview */}
-                                            <div className="bg-[#e5ddd5] p-3 flex-1 flex flex-col justify-between relative overflow-hidden border border-gray-250/50 min-h-[160px] shadow-inner mb-4" style={{ borderRadius: '12px' }}>
-                                                <div className="absolute inset-0 opacity-[0.08] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] pointer-events-none" />
+                                            <div className="wa-template-canvas relative mb-1 flex min-h-[178px] flex-1 flex-col justify-between overflow-hidden border border-[#e4ded5] p-3">
 
                                                 <div className="bg-white p-2.5 pb-1.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] max-w-[95%] self-start relative z-10" style={{ borderRadius: '8px 8px 8px 0px' }}>
                                                     {headerComp?.format === 'TEXT' && (
@@ -446,7 +478,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                         </div>
 
                                         {/* Card Footer action bar */}
-                                        <div className="border-t border-gray-100 bg-[#f8fafc] px-4 py-3 flex items-center justify-between gap-3">
+                                        <div className="flex items-center justify-between gap-3 border-t border-gray-100 bg-[#fbfcfd] px-4 py-3">
                                             <span className="text-[9.5px] text-gray-400 font-bold flex items-center gap-1">
                                                 <ShieldCheck className="h-3.5 w-3.5 text-blue-600 shrink-0" />
                                                 Meta Pre-Approved
@@ -457,8 +489,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                     e.stopPropagation();
                                                     handleAddToMyTemplates(item);
                                                 }}
-                                                className="inline-flex h-8 items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-1.5 text-xs font-extrabold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
-                                                style={{ borderRadius: '10px' }}
+                                                className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-full bg-[#0070d1] px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-[#0064b7] active:scale-[0.98]"
                                             >
                                                 <Plus className="h-3.5 w-3.5" />
                                                 Use Layout
@@ -1173,9 +1204,9 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
     if (!isOpen) return null
 
     return (
-        <Modal isOpen={isOpen} onClose={closeModal} title={isPreApproved ? "Use Pre-approved Meta Template" : "Create Message Template"} maxWidth="max-w-5xl">
-            <div className="grid h-[540px] max-h-[calc(78vh-60px)] gap-6 overflow-hidden lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="h-full overflow-y-auto pr-3">
+        <Modal isOpen={isOpen} onClose={closeModal} title={isPreApproved ? "Use Meta template" : "Create message template"} maxWidth="max-w-6xl" panelClassName="template-editor-modal">
+            <div className="grid min-h-0 gap-0 overflow-hidden lg:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="wa-chat-scroll max-h-[calc(100dvh-190px)] overflow-y-auto px-1 pb-4 pr-2 sm:px-2 sm:pr-4 lg:max-h-[calc(100dvh-180px)]">
                     {submitError ? (
                         <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                             <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
@@ -1184,14 +1215,14 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                     ) : null}
 
                     {isPreApproved && (
-                        <div className="mb-5 flex items-start gap-3 rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-xs text-blue-800 shadow-sm animate-in fade-in slide-in-from-top-1 duration-200">
-                            <ShieldCheck className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                        <div className="mb-5 flex items-start gap-3 rounded-xl border border-[#cfe5fb] bg-[#eef7ff] p-4 text-xs text-[#005cae] animate-in fade-in slide-in-from-top-1 duration-200">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-[#0070d1] shadow-sm"><LockKeyhole className="h-4 w-4" /></div>
                             <div>
-                                <span className="font-bold text-sm text-blue-900 flex items-center gap-1">
-                                    Pre-approved Template Lock
+                                <span className="flex items-center gap-1 text-sm font-semibold text-[#003f78]">
+                                    Content protected by Meta
                                 </span>
-                                <p className="mt-1 leading-relaxed opacity-95 text-blue-800">
-                                    To guarantee **instant automated approval** from Meta, the message text, buttons, and settings are locked. Just enter a unique **Template Name** and click **Submit for review**.
+                                <p className="mt-1 leading-relaxed text-[#35698f]">
+                                    Message content and settings stay locked to preserve pre-approval. Choose a unique template name, review the preview, and submit.
                                 </p>
                             </div>
                         </div>
@@ -1386,13 +1417,13 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                     </div>
                 </div>
 
-                <aside className="hidden min-h-0 bg-gray-50/50 p-4 lg:flex lg:flex-col h-full border-l border-gray-100 justify-center items-center">
+                <aside className="order-first mb-5 flex min-h-0 flex-col items-center justify-start rounded-xl border border-[#e8edf3] bg-[#f5f7fa] p-4 lg:order-none lg:sticky lg:top-0 lg:mb-0 lg:ml-3 lg:min-h-[600px] lg:rounded-none lg:border-y-0 lg:border-r-0 lg:p-5">
                     <div className="mb-4 text-center">
                         <div className="text-xs font-bold text-gray-800 tracking-wide">Live Preview</div>
                         <div className="text-[10px] text-gray-400">WhatsApp Mobile View</div>
                     </div>
                     {/* Simulated iPhone Device */}
-                    <div className="relative w-[280px] h-[480px] border-[6px] border-slate-900 bg-slate-900 shadow-xl overflow-hidden" style={{ borderRadius: '36px' }}>
+                    <div className="relative h-[310px] w-full max-w-[300px] overflow-hidden border-[5px] border-slate-900 bg-slate-900 shadow-[0_18px_45px_rgba(15,23,42,0.18)] sm:h-[390px] lg:h-[490px]" style={{ borderRadius: '32px' }}>
                         {/* Speaker/Camera Island */}
                         <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-20 h-4.5 rounded-full bg-black z-30 flex items-center justify-center">
                             <span className="w-1.5 h-1.5 rounded-full bg-gray-800 mr-2" />
@@ -1400,7 +1431,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                         </div>
 
                         {/* Screen Content */}
-                        <div className="h-full w-full bg-[#E5DDD5] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] p-3 pt-9 flex flex-col justify-between overflow-y-auto">
+                        <div className="wa-template-canvas flex h-full w-full flex-col justify-between overflow-y-auto p-3 pt-9">
                             {/* Chat bubble */}
                             <div className="flex-1 flex flex-col justify-start">
                                 <div className="bg-white p-2.5 pb-1.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] max-w-[95%] self-start relative z-10" style={{ borderRadius: '8px 8px 8px 0px' }}>
@@ -1457,22 +1488,25 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                 </aside>
             </div>
 
-            <div className="mt-6 flex flex-col-reverse gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-end">
+            <div className="sticky bottom-0 z-10 -mx-1 mt-0 flex flex-col-reverse gap-3 border-t border-gray-100 bg-white/95 px-1 pt-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+                <p className="hidden text-xs text-gray-500 sm:block">Meta usually reviews submitted templates within 24 hours.</p>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
                 <button
                     onClick={closeModal}
                     disabled={isSubmitting}
-                    className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    className="h-10 rounded-full border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                     Cancel
                 </button>
                 <button
                     disabled={isSubmitting || !canSubmit}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#0070d1] px-5 text-sm font-semibold text-white shadow-sm hover:bg-[#0064b7] disabled:cursor-not-allowed disabled:opacity-50"
                     onClick={handleSubmit}
                 >
                     {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     {isSubmitting ? 'Submitting...' : 'Submit for review'}
                 </button>
+                </div>
             </div>
         </Modal>
     )
