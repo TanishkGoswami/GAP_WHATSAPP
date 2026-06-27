@@ -1,5 +1,7 @@
 import { X, Save } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { FLOW_TEMPLATES } from './flowTemplates';
 
 export default function NodeConfigPanel({ node, onClose, onSave }) {
     const [config, setConfig] = useState(node?.data?.config || {});
@@ -23,12 +25,12 @@ export default function NodeConfigPanel({ node, onClose, onSave }) {
         <>
             {/* Backdrop */}
             <div
-                className="fixed inset-0 bg-black bg-opacity-30 z-40 transition-opacity"
+                className="absolute inset-0 bg-black bg-opacity-30 z-40 transition-opacity"
                 onClick={onClose}
             />
 
             {/* Panel */}
-            <div className="fixed right-0 top-0 bottom-0 w-96 bg-white shadow-2xl z-50 flex flex-col animate-slide-in-right">
+            <div className="absolute right-6 top-6 bottom-6 w-[400px] bg-white shadow-2xl z-50 flex flex-col rounded-2xl overflow-hidden animate-slide-in-right">
                 {/* Header */}
                 <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-6 py-4 flex items-center justify-between">
                     <div>
@@ -90,6 +92,16 @@ function renderConfigForm(nodeType, config, updateConfig) {
             return <LocationConfig config={config} updateConfig={updateConfig} />;
         case 'httpApi':
             return <HTTPAPIConfig config={config} updateConfig={updateConfig} />;
+        case 'ai':
+            return <AIConfig config={config} updateConfig={updateConfig} />;
+        case 'googleSheets':
+            return <GoogleSheetsConfig config={config} updateConfig={updateConfig} />;
+        case 'whatsappFlow':
+            return <WhatsAppFlowConfig config={config} updateConfig={updateConfig} />;
+        case 'appointment':
+            return <AppointmentConfig config={config} updateConfig={updateConfig} />;
+        case 'product':
+            return <ProductConfig config={config} updateConfig={updateConfig} />;
         case 'template':
             return <TemplateConfig config={config} updateConfig={updateConfig} />;
         case 'interactive':
@@ -129,8 +141,8 @@ function StartBotFlowConfig({ config, updateConfig }) {
                     <button
                         onClick={() => updateConfig('matchType', 'exact')}
                         className={`flex-1 px-4 py-2 rounded-lg border ${config.matchType === 'exact'
-                                ? 'bg-blue-500 text-white border-blue-500'
-                                : 'bg-white text-gray-700 border-gray-300'
+                            ? 'bg-blue-500 text-white border-blue-500'
+                            : 'bg-white text-gray-700 border-gray-300'
                             }`}
                     >
                         Exact Match
@@ -138,8 +150,8 @@ function StartBotFlowConfig({ config, updateConfig }) {
                     <button
                         onClick={() => updateConfig('matchType', 'string')}
                         className={`flex-1 px-4 py-2 rounded-lg border ${config.matchType === 'string'
-                                ? 'bg-blue-500 text-white border-blue-500'
-                                : 'bg-white text-gray-700 border-gray-300'
+                            ? 'bg-blue-500 text-white border-blue-500'
+                            : 'bg-white text-gray-700 border-gray-300'
                             }`}
                     >
                         String Match
@@ -278,8 +290,8 @@ function MediaConfig({ config, updateConfig, nodeType }) {
                     <button
                         onClick={() => updateConfig('uploadMethod', 'custom')}
                         className={`flex-1 px-4 py-2 rounded-lg border text-sm ${config.uploadMethod === 'custom'
-                                ? 'bg-purple-500 text-white border-purple-500'
-                                : 'bg-white text-gray-700 border-gray-300'
+                            ? 'bg-purple-500 text-white border-purple-500'
+                            : 'bg-white text-gray-700 border-gray-300'
                             }`}
                     >
                         Custom Field
@@ -287,8 +299,8 @@ function MediaConfig({ config, updateConfig, nodeType }) {
                     <button
                         onClick={() => updateConfig('uploadMethod', 'upload')}
                         className={`flex-1 px-4 py-2 rounded-lg border text-sm ${config.uploadMethod === 'upload'
-                                ? 'bg-purple-500 text-white border-purple-500'
-                                : 'bg-white text-gray-700 border-gray-300'
+                            ? 'bg-purple-500 text-white border-purple-500'
+                            : 'bg-white text-gray-700 border-gray-300'
                             }`}
                     >
                         Upload New
@@ -568,41 +580,158 @@ function ButtonConfig({ config, updateConfig }) {
 
 function TemplateConfig({ config, updateConfig }) {
     const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+    const { apiCall, session } = useAuth();
     const [templates, setTemplates] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const selectedSource = config.templateSource || 'whatsapp';
+    const selectedFlowTemplate = FLOW_TEMPLATES.find((template) => template.id === config.flowTemplateId) || null;
+
+    const setSource = (source) => {
+        updateConfig('templateSource', source);
+
+        if (source === 'flow') {
+            updateConfig('templateName', '');
+            updateConfig('template', selectedFlowTemplate?.name || FLOW_TEMPLATES[0]?.name || '');
+            updateConfig('flowTemplateId', selectedFlowTemplate?.id || FLOW_TEMPLATES[0]?.id || '');
+            updateConfig('language', 'Flow Template');
+            return;
+        }
+
+        updateConfig('flowTemplateId', '');
+        updateConfig('template', config.templateName || '');
+        updateConfig('language', config.language || 'en_US');
+    };
 
     useEffect(() => {
-        fetch(`${API_URL}/api/whatsapp/templates`, {
-            headers: { Authorization: `Bearer ${localStorage.getItem('sb-access-token')}` } // Fallback auth, you may want to adjust this
-        })
-        .then(r => r.json())
-        .then(data => setTemplates(Array.isArray(data) ? data : []))
-        .catch(() => setTemplates([]));
-    }, []);
+        if (!session?.access_token) {
+            setTemplates([]);
+            setLoading(false);
+            setError('');
+            return;
+        }
+
+        let isMounted = true;
+        setLoading(true);
+        setError('');
+
+        apiCall(`${API_URL}/api/whatsapp/templates`)
+            .then(async (response) => {
+                const data = await response.json().catch(() => []);
+                if (!isMounted) return;
+
+                if (!response.ok) {
+                    setTemplates([]);
+                    setError(data?.error || 'Could not load templates.');
+                    return;
+                }
+
+                setTemplates(Array.isArray(data) ? data : []);
+            })
+            .catch(() => {
+                if (!isMounted) return;
+                setTemplates([]);
+                setError('Could not load templates.');
+            })
+            .finally(() => {
+                if (isMounted) {
+                    setLoading(false);
+                }
+            });
+
+        return () => {
+            isMounted = false;
+        };
+    }, [API_URL, apiCall, session?.access_token]);
 
     return (
         <div className="space-y-4">
             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Template Select karo</label>
-                <select
-                    value={config.templateName || ''}
-                    onChange={(e) => {
-                        const selected = templates.find(t => t.name === e.target.value);
-                        updateConfig('templateName', e.target.value);
-                        updateConfig('language', selected?.language || 'en_US');
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                >
-                    <option value="">-- Template choose karo --</option>
-                    {templates.map(t => (
-                        <option key={t.name} value={t.name}>{t.name} ({t.status})</option>
-                    ))}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Template Source</label>
+                <div className="grid grid-cols-2 gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setSource('whatsapp')}
+                        className={`rounded-lg border px-3 py-2 text-sm font-semibold ${selectedSource === 'whatsapp' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 bg-white text-gray-700'}`}
+                    >
+                        WhatsApp Template
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSource('flow')}
+                        className={`rounded-lg border px-3 py-2 text-sm font-semibold ${selectedSource === 'flow' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 bg-white text-gray-700'}`}
+                    >
+                        Flow Template
+                    </button>
+                </div>
             </div>
 
-            {config.templateName && (
+            {selectedSource === 'whatsapp' ? (
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Template Select karo</label>
+                    <select
+                        value={config.templateName || ''}
+                        disabled={loading || !!error}
+                        onChange={(e) => {
+                            const selected = templates.find((template) => template.name === e.target.value);
+                            updateConfig('templateName', e.target.value);
+                            updateConfig('template', e.target.value);
+                            updateConfig('language', selected?.language || config.language || 'en_US');
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:cursor-not-allowed disabled:bg-gray-100"
+                    >
+                        <option value="">
+                            {loading ? 'Loading templates...' : error ? 'Template unavailable' : '-- Template choose karo --'}
+                        </option>
+                        {templates.map((template) => (
+                            <option key={template.name || template.id} value={template.name || template.id}>
+                                {template.name || template.id} {template.status ? `(${template.status})` : ''}
+                            </option>
+                        ))}
+                    </select>
+                    {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+                    {!loading && !error && templates.length === 0 && (
+                        <p className="mt-2 text-xs text-gray-500">No approved Meta templates found for this account.</p>
+                    )}
+                </div>
+            ) : (
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Flow Template Select karo</label>
+                    <select
+                        value={config.flowTemplateId || ''}
+                        onChange={(e) => {
+                            const selected = FLOW_TEMPLATES.find((template) => template.id === e.target.value);
+                            updateConfig('flowTemplateId', e.target.value);
+                            updateConfig('template', selected?.name || '');
+                            updateConfig('templateName', '');
+                            updateConfig('language', 'Flow Template');
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    >
+                        <option value="">-- Flow template choose karo --</option>
+                        {FLOW_TEMPLATES.map((template) => (
+                            <option key={template.id} value={template.id}>
+                                {template.name} · {template.category}
+                            </option>
+                        ))}
+                    </select>
+                    {selectedFlowTemplate && (
+                        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                            <div className="font-semibold">{selectedFlowTemplate.name}</div>
+                            <div className="mt-1 text-xs text-emerald-800">{selectedFlowTemplate.description}</div>
+                            <div className="mt-2 text-[11px] text-emerald-700">
+                                {selectedFlowTemplate.preview.nodes.length} nodes · {selectedFlowTemplate.minutes} min
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {(selectedSource === 'whatsapp' ? config.templateName : selectedFlowTemplate?.name) && (
                 <div className="p-3 bg-indigo-50 rounded-lg">
-                    <p className="text-xs text-indigo-600 font-medium">Selected: {config.templateName}</p>
-                    <p className="text-xs text-gray-500">Language: {config.language}</p>
+                    <p className="text-xs text-indigo-600 font-medium">Selected: {selectedSource === 'whatsapp' ? config.templateName : selectedFlowTemplate?.name}</p>
+                    <p className="text-xs text-gray-500">Type: {selectedSource === 'whatsapp' ? 'WhatsApp Template' : 'Flow Template'}</p>
+                    <p className="text-xs text-gray-500">Language: {config.language || (selectedSource === 'flow' ? 'Flow Template' : 'en_US')}</p>
                 </div>
             )}
 
@@ -707,6 +836,19 @@ function HTTPAPIConfig({ config, updateConfig }) {
         <div className="space-y-4">
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Label
+                </label>
+                <input
+                    type="text"
+                    value={config.label || ''}
+                    onChange={(e) => updateConfig('label', e.target.value)}
+                    placeholder="Check order status"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                     HTTP Method
                 </label>
                 <select
@@ -748,6 +890,255 @@ function HTTPAPIConfig({ config, updateConfig }) {
                     />
                 </div>
             )}
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Headers (JSON)
+                </label>
+                <textarea
+                    value={config.headers || ''}
+                    onChange={(e) => updateConfig('headers', e.target.value)}
+                    placeholder='{"Authorization": "Bearer {{api_token}}"}'
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                    rows={3}
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Save Response To
+                </label>
+                <input
+                    type="text"
+                    value={config.saveResponseTo || ''}
+                    onChange={(e) => updateConfig('saveResponseTo', e.target.value.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase())}
+                    placeholder="api_response"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="mt-1 text-xs text-gray-500">Use later as <span className="font-mono">{'{{api_response}}'}</span>.</p>
+            </div>
+        </div>
+    );
+}
+
+function AIConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Label</label>
+                <input
+                    type="text"
+                    value={config.label || ''}
+                    onChange={(e) => updateConfig('label', e.target.value)}
+                    placeholder="AI knowledge reply"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Instruction / Prompt</label>
+                <textarea
+                    value={config.prompt || ''}
+                    onChange={(e) => updateConfig('prompt', e.target.value)}
+                    placeholder="Answer using the business knowledge base. Keep the reply short and helpful."
+                    rows={5}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Fallback Message</label>
+                <textarea
+                    value={config.fallbackMessage || ''}
+                    onChange={(e) => updateConfig('fallbackMessage', e.target.value)}
+                    placeholder="I could not find that in our knowledge base. I am connecting you to the team."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input
+                    type="checkbox"
+                    checked={config.handoffOnFallback === true}
+                    onChange={(e) => updateConfig('handoffOnFallback', e.target.checked)}
+                />
+                Request human handoff when AI has no answer
+            </label>
+        </div>
+    );
+}
+
+function GoogleSheetsConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Label</label>
+                <input
+                    type="text"
+                    value={config.label || ''}
+                    onChange={(e) => updateConfig('label', e.target.value)}
+                    placeholder="Save lead to sheet"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Action</label>
+                <select
+                    value={config.action || 'append_row'}
+                    onChange={(e) => updateConfig('action', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                >
+                    <option value="append_row">Append row</option>
+                    <option value="update_row">Update row</option>
+                    <option value="find_row">Find row</option>
+                </select>
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Spreadsheet ID or URL</label>
+                <input
+                    type="text"
+                    value={config.spreadsheet || ''}
+                    onChange={(e) => updateConfig('spreadsheet', e.target.value)}
+                    placeholder="https://docs.google.com/spreadsheets/d/..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sheet / Tab Name</label>
+                <input
+                    type="text"
+                    value={config.sheetName || ''}
+                    onChange={(e) => updateConfig('sheetName', e.target.value)}
+                    placeholder="Leads"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                />
+            </div>
+
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Column Mapping (JSON)</label>
+                <textarea
+                    value={config.columnMapping || ''}
+                    onChange={(e) => updateConfig('columnMapping', e.target.value)}
+                    placeholder='{"Name": "{{name}}", "Phone": "{{phone}}", "Message": "{{customer_question}}"}'
+                    rows={5}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 font-mono text-sm"
+                />
+            </div>
+        </div>
+    );
+}
+
+function WhatsAppFlowConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Flow ID</label>
+                <input
+                    type="text"
+                    value={config.flowId || ''}
+                    onChange={(e) => updateConfig('flowId', e.target.value)}
+                    placeholder="Meta WhatsApp Flow ID"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Button Text</label>
+                <input
+                    type="text"
+                    value={config.buttonText || ''}
+                    onChange={(e) => updateConfig('buttonText', e.target.value)}
+                    placeholder="Open form"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+                <textarea
+                    value={config.message || ''}
+                    onChange={(e) => updateConfig('message', e.target.value)}
+                    placeholder="Please fill this form to continue."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500"
+                />
+            </div>
+        </div>
+    );
+}
+
+function AppointmentConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Appointment Type</label>
+                <input
+                    type="text"
+                    value={config.type || ''}
+                    onChange={(e) => updateConfig('type', e.target.value)}
+                    placeholder="Demo call"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Available Slots</label>
+                <textarea
+                    value={config.slots || ''}
+                    onChange={(e) => updateConfig('slots', e.target.value)}
+                    placeholder="Mon-Fri, 10 AM - 6 PM"
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Confirmation Message</label>
+                <textarea
+                    value={config.confirmationMessage || ''}
+                    onChange={(e) => updateConfig('confirmationMessage', e.target.value)}
+                    placeholder="Thanks {{name}}. Our team will confirm your appointment shortly."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+            </div>
+        </div>
+    );
+}
+
+function ProductConfig({ config, updateConfig }) {
+    return (
+        <div className="space-y-4">
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
+                <input
+                    type="text"
+                    value={config.productName || ''}
+                    onChange={(e) => updateConfig('productName', e.target.value)}
+                    placeholder="Premium plan"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Price</label>
+                <input
+                    type="text"
+                    value={config.price || ''}
+                    onChange={(e) => updateConfig('price', e.target.value)}
+                    placeholder="4999"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+            </div>
+            <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Reply Message</label>
+                <textarea
+                    value={config.message || ''}
+                    onChange={(e) => updateConfig('message', e.target.value)}
+                    placeholder="I recommend {{product}} for your requirement."
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                />
+            </div>
         </div>
     );
 }

@@ -4,6 +4,9 @@ import { FileText } from 'lucide-react';
 export default function TemplateMessageNode({ id, data, selected }) {
     const config = data?.config || {};
 
+    const templateLabel = config.templateName || config.template || 'Select template';
+    const templateSource = config.templateSource || 'whatsapp';
+
     return (
         <BaseNode
             id={id}
@@ -14,16 +17,19 @@ export default function TemplateMessageNode({ id, data, selected }) {
             selected={selected}
         >
             <div className="space-y-2">
-                {config.template ? (
+                <div className="text-xs">
+                    <span className="text-gray-500">Source:</span>
+                    <div className="font-medium text-indigo-800 mt-1">
+                        {templateSource === 'flow' ? 'Flow Template' : 'WhatsApp Template'}
+                    </div>
+                </div>
+
+                {templateLabel && (
                     <div className="text-xs">
                         <span className="text-gray-500">Template:</span>
                         <div className="font-medium text-indigo-800 mt-1">
-                            {config.template}
+                            {templateLabel}
                         </div>
-                    </div>
-                ) : (
-                    <div className="text-xs text-gray-400 italic">
-                        Select template
                     </div>
                 )}
 

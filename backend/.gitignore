@@ -28,3 +28,8 @@ build/
 # OS metadata
 .DS_Store
 Thumbs.db
+
+.codex-history
+
+**/baileys_auth_info/
+**/app-state-sync-*

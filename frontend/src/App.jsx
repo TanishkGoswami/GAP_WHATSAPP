@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import { AuthProvider } from './context/AuthContext'
+import { DialogProvider } from './context/DialogContext'
 import Contacts from './pages/Contacts'
 import WhatsAppConnect from './pages/WhatsAppConnect'
 import FlowBuilder from './pages/FlowBuilder'
@@ -14,9 +16,18 @@ import Broadcast from './pages/Broadcast'
 import LiveChat from './pages/LiveChat'
 import BotAgents from './pages/BotAgents'
 import Settings from './pages/Settings'
+import TeamMembers from './pages/TeamMembers'
+import PrivacyPolicy from './pages/PrivacyPolicy'
 import SSOLogin from './pages/SSOLogin'
 import AcceptInvite from './pages/AcceptInvite'
 import HelpCenter from './pages/HelpCenter'
+import BillingPage from './pages/BillingPage'
+import PaymentSuccessPage from './pages/PaymentSuccessPage'
+import WhatsAppNumberPage from './pages/WhatsAppNumberPage'
+import WhatsAppLinkGenerator from './pages/WhatsAppLinkGenerator'
+import WhatsAppRedirect from './pages/WhatsAppRedirect'
+import CookieConsent from './components/CookieConsent'
+import { loadFacebookSDK } from './services/facebookSdkLoader'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,32 +42,52 @@ const queryClient = new QueryClient({
 })
 
 export default function App() {
+  useEffect(() => {
+    // Rollback logic: If cookie consent is disabled, load the Facebook SDK immediately on startup.
+    if (import.meta.env.VITE_ENABLE_COOKIE_CONSENT !== 'true') {
+      loadFacebookSDK().catch((err) => {
+        console.error('Failed to load Facebook SDK automatically:', err);
+      });
+    }
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/agent-login" element={<AgentLogin />} />
-            <Route path="/accept-invite" element={<AcceptInvite />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="/sso" element={<SSOLogin />} />
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Navigate to="/dashboard" replace />} />
-              <Route path="dashboard" element={<Dashboard />} />
-              <Route path="whatsapp-connect" element={<WhatsAppConnect />} />
-              <Route path="contacts" element={<Contacts />} />
-              <Route path="flow-builder" element={<FlowBuilder />} />
-              <Route path="templates" element={<Templates />} />
-              <Route path="broadcast" element={<Broadcast />} />
-              <Route path="live-chat" element={<LiveChat />} />
-              <Route path="bot-agents" element={<BotAgents />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="help" element={<HelpCenter />} />
-            </Route>
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+      <DialogProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+              <Route path="/agent-login" element={<AgentLogin />} />
+              <Route path="/accept-invite" element={<AcceptInvite />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/sso" element={<SSOLogin />} />
+              <Route path="/payment-success" element={<PaymentSuccessPage />} />
+              <Route path="/wa/:data" element={<WhatsAppRedirect />} />
+              <Route path="/" element={<Layout />}>
+                <Route index element={<Navigate to="/dashboard" replace />} />
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="whatsapp-connect" element={<WhatsAppConnect />} />
+                <Route path="whatsapp-number" element={<WhatsAppNumberPage />} />
+                <Route path="contacts" element={<Contacts />} />
+                <Route path="flow-builder" element={<FlowBuilder />} />
+                <Route path="templates" element={<Templates />} />
+                <Route path="templates/industries" element={<Templates defaultView="INDUSTRIES" />} />
+                <Route path="broadcast" element={<Broadcast />} />
+                <Route path="live-chat" element={<LiveChat />} />
+                <Route path="bot-agents" element={<BotAgents />} />
+                <Route path="billing" element={<BillingPage />} />
+                <Route path="settings" element={<Settings />} />
+                <Route path="team-members" element={<TeamMembers />} />
+                <Route path="help" element={<HelpCenter />} />
+                <Route path="wa-link-generator" element={<WhatsAppLinkGenerator />} />
+              </Route>
+            </Routes>
+            {import.meta.env.VITE_ENABLE_COOKIE_CONSENT === 'true' && <CookieConsent />}
+          </BrowserRouter>
+        </AuthProvider>
+      </DialogProvider>
     </QueryClientProvider>
   )
 }
