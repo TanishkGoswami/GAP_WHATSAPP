@@ -6,6 +6,143 @@ import {
     DEFAULT_BILLING_CURRENCY 
 } from '../utils/billing.js';
 
+const PLAN_RANKS: Record<string, number> = {
+    starter: 10,
+    growth: 20,
+    pro: 30,
+    enterprise: 40,
+    all_in_one: 40,
+};
+
+const PLAN_PRICES: Record<string, { label: string; prices: Record<number, number> }> = {
+    starter: { label: 'Starter', prices: { 1: 99900, 12: 999000 } },
+    growth: { label: 'Growth', prices: { 1: 199900, 12: 1999000 } },
+    pro: { label: 'Pro', prices: { 1: 349900, 12: 3499000 } },
+};
+
+function normalizePlanId(planId: any): string | null {
+    const value = String(planId || '').toLowerCase();
+    if (!value) return null;
+    if (value.includes('starter')) return 'starter';
+    if (value.includes('growth')) return 'growth';
+    if (value === 'pro' || value.includes('pro') || value.includes('premium')) return 'pro';
+    if (value.includes('enterprise')) return 'enterprise';
+    if (value.includes('all_in_one') || value.includes('ultimate')) return 'all_in_one';
+    return PLAN_RANKS[value] ? value : null;
+}
+
+function getHighestRankedPlanId(...planIds: any[]): string | null {
+    return planIds
+        .map(normalizePlanId)
+        .filter((planId): planId is string => !!planId && !!PLAN_RANKS[planId])
+        .sort((a, b) => PLAN_RANKS[b] - PLAN_RANKS[a])[0] || null;
+}
+
+function addMonths(date: Date, months: number): Date {
+    const next = new Date(date);
+    next.setMonth(next.getMonth() + months);
+    return next;
+}
+
+function toValidDate(value: any): Date | null {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getPlanAmount(planId: string, interval: number): number {
+    const plan = PLAN_PRICES[planId];
+    if (!plan) return 0;
+    return plan.prices[interval] ?? plan.prices[1] ?? 0;
+}
+
+function getBillingInterval(interval: number): 'monthly' | 'yearly' {
+    return interval >= 12 ? 'yearly' : 'monthly';
+}
+
+function calculateProration(params: {
+    currentPlanId: string;
+    targetPlanId: string;
+    interval: number;
+    currentPlanPricePaise?: number;
+    periodStart?: string | null;
+    periodEnd?: string | null;
+}) {
+    const now = new Date();
+    const periodStart = toValidDate(params.periodStart) || now;
+    const periodEnd = toValidDate(params.periodEnd) || addMonths(now, params.interval);
+    const fullPeriodMs = Math.max(1, periodEnd.getTime() - periodStart.getTime());
+    const remainingMs = Math.max(0, periodEnd.getTime() - now.getTime());
+    const remainingRatio = Math.min(1, remainingMs / fullPeriodMs);
+    const currentFullPricePaise = Number(params.currentPlanPricePaise || getPlanAmount(params.currentPlanId, params.interval));
+    const targetFullPricePaise = getPlanAmount(params.targetPlanId, params.interval);
+    const unusedCurrentCreditPaise = Math.round(currentFullPricePaise * remainingRatio);
+    const proratedTargetCostPaise = Math.round(targetFullPricePaise * remainingRatio);
+
+    return {
+        period_start: periodStart.toISOString(),
+        period_end: periodEnd.toISOString(),
+        remaining_ratio: remainingRatio,
+        current_full_price_paise: currentFullPricePaise,
+        target_full_price_paise: targetFullPricePaise,
+        unused_current_credit_paise: unusedCurrentCreditPaise,
+        prorated_target_cost_paise: proratedTargetCostPaise,
+        total_payable_paise: Math.max(0, proratedTargetCostPaise - unusedCurrentCreditPaise),
+        carry_forward_credit_paise: Math.max(0, unusedCurrentCreditPaise - proratedTargetCostPaise),
+    };
+}
+
+function getRazorpayCredentialPairs() {
+    const mode = (process.env.RAZORPAY_MODE || 'live').toLowerCase();
+    const pairs = [
+        {
+            label: 'live',
+            keyId: process.env.RAZORPAY_LIVE_KEY_ID,
+            keySecret: process.env.RAZORPAY_LIVE_KEY_SECRET,
+        },
+        {
+            label: 'test',
+            keyId: process.env.RAZORPAY_TEST_KEY_ID,
+            keySecret: process.env.RAZORPAY_TEST_KEY_SECRET,
+        },
+        {
+            label: 'default',
+            keyId: process.env.RAZORPAY_KEY_ID,
+            keySecret: process.env.RAZORPAY_KEY_SECRET,
+        },
+    ].filter(pair => pair.keyId && pair.keySecret);
+
+    if (mode === 'test') return pairs.sort((a, b) => Number(b.label === 'test') - Number(a.label === 'test'));
+    if (mode === 'live') return pairs.sort((a, b) => Number(b.label === 'live') - Number(a.label === 'live'));
+    return pairs;
+}
+
+async function createRazorpayPaymentLink(payload: Record<string, any>) {
+    const credentialPairs = getRazorpayCredentialPairs();
+    if (!credentialPairs.length) throw new Error('Razorpay is not configured');
+
+    let lastError = 'Failed to create Razorpay payment link';
+    for (const pair of credentialPairs) {
+        const auth = Buffer.from(`${pair.keyId}:${pair.keySecret}`).toString('base64');
+        const response = await fetch('https://api.razorpay.com/v1/payment_links', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Basic ${auth}`,
+            },
+            body: JSON.stringify(payload),
+        });
+        const data: any = await response.json();
+        if (response.ok) return data;
+
+        lastError = data.error?.description || data.error?.reason || lastError;
+        if (!/auth/i.test(lastError)) throw new Error(lastError);
+        console.warn(`[billing/change-plan] Razorpay ${pair.label} credentials failed authentication`);
+    }
+
+    throw new Error(lastError);
+}
+
 export const getBillingOverview = async (req: any, res: Response) => {
     const orgId = req.organization_id;
     const userId = req.user?.id;
@@ -43,7 +180,7 @@ export const getBillingOverview = async (req: any, res: Response) => {
         ] = await Promise.all([
             supabase
                 .from('organizations')
-                .select('id, name, plan_id, plan_status, plan_start_date, plan_end_date, billing_cycle, max_users, max_contacts')
+                .select('id, name, plan_id, plan_status, plan_start_date, plan_end_date, billing_cycle, max_users, max_contacts, scheduled_plan_id, scheduled_change_type, scheduled_effective_at, scheduled_change_requested_at, scheduled_change_metadata')
                 .eq('id', orgId)
                 .maybeSingle(),
             supabase
@@ -232,10 +369,60 @@ export const getBillingOverview = async (req: any, res: Response) => {
 
         const planId = orgData.plan_id || null;
         const currentPlan = planId ? plans.find((plan: any) => plan.id === planId) || null : null;
+        let subscription: any = null;
+        let subscriptionInvoices: any[] = [];
+        let subscriptionCreditBalancePaise = 0;
+
+        try {
+            const ownerUserId = userId || (await supabase
+                .from('organization_members')
+                .select('user_id')
+                .eq('organization_id', orgId)
+                .eq('role', 'owner')
+                .maybeSingle()).data?.user_id;
+
+            if (ownerUserId) {
+                const [
+                    subscriptionResult,
+                    invoicesResult,
+                    creditLedgerResult
+                ] = await Promise.all([
+                    supabase
+                        .from('app_user_subscriptions')
+                        .select('user_id, plan_id, plan_label, plan_price_paise, plan_duration_days, started_at, expires_at, status, billing_interval, scheduled_plan_id, scheduled_change_type, scheduled_effective_at, scheduled_change_requested_at, scheduled_change_metadata, updated_at')
+                        .eq('user_id', ownerUserId)
+                        .maybeSingle(),
+                    supabase
+                        .from('subscription_invoices')
+                        .select('id, type, status, current_plan_id, target_plan_id, billing_interval, subtotal_paise, credit_applied_paise, total_paise, currency, period_start, period_end, gateway_payment_link_id, metadata, created_at, paid_at')
+                        .eq('user_id', ownerUserId)
+                        .order('created_at', { ascending: false })
+                        .limit(10),
+                    supabase
+                        .from('subscription_credit_ledger')
+                        .select('amount_paise')
+                        .eq('user_id', ownerUserId)
+                ]);
+
+                if (!subscriptionResult.error) subscription = subscriptionResult.data;
+                if (!invoicesResult.error) subscriptionInvoices = invoicesResult.data || [];
+                if (!creditLedgerResult.error) {
+                    subscriptionCreditBalancePaise = (creditLedgerResult.data || []).reduce(
+                        (sum: number, row: any) => sum + Number(row.amount_paise || 0),
+                        0
+                    );
+                }
+            }
+        } catch (subscriptionErr) {
+            console.error('[billing/overview] Failed to fetch subscription plan-change state:', subscriptionErr);
+        }
 
         res.json({
             organization: orgData,
             current_plan: currentPlan,
+            subscription,
+            subscription_credit_balance_paise: subscriptionCreditBalancePaise,
+            recent_subscription_invoices: subscriptionInvoices,
             plans,
             wallet: walletData || {
                 organization_id: orgId,
@@ -264,6 +451,276 @@ export const getBillingOverview = async (req: any, res: Response) => {
     } catch (err: any) {
         console.error('[billing/overview] Error:', err);
         res.status(500).json({ error: err.message || 'Failed to fetch billing overview' });
+    }
+};
+
+export const changeSubscriptionPlan = async (req: any, res: Response) => {
+    const orgId = req.organization_id;
+    const userId = req.user?.id;
+    const { planId, currentPlanId, interval = 1, customerName, customerEmail, customerContact } = req.body || {};
+    const targetPlanId = normalizePlanId(planId);
+
+    try {
+        if (!orgId) return res.status(400).json({ error: 'organization_id is required' });
+        if (!userId) return res.status(401).json({ error: 'Authenticated user is required' });
+        if (!targetPlanId || !PLAN_RANKS[targetPlanId]) {
+            return res.status(400).json({ error: 'Invalid target plan' });
+        }
+
+        const [{ data: org }, { data: sub }, { data: targetPlan }] = await Promise.all([
+            supabase
+                .from('organizations')
+                .select('id, plan_id, plan_start_date, plan_end_date, billing_cycle')
+                .eq('id', orgId)
+                .maybeSingle(),
+            supabase
+                .from('app_user_subscriptions')
+                .select('user_id, plan_id, plan_price_paise, started_at, expires_at')
+                .eq('user_id', userId)
+                .maybeSingle(),
+            supabase
+                .from('whatsapp_subscription_plans')
+                .select('id, name')
+                .eq('id', targetPlanId)
+                .maybeSingle()
+        ]);
+
+        const activePlanId = getHighestRankedPlanId(currentPlanId, org?.plan_id, sub?.plan_id, req.user?.user_metadata?.plan);
+        const activeRank = activePlanId ? PLAN_RANKS[activePlanId] || 0 : 0;
+        const targetRank = PLAN_RANKS[targetPlanId] || 0;
+
+        if (activePlanId === targetPlanId) {
+            return res.json({ success: true, no_change: true, message: 'You are already on this plan.' });
+        }
+
+        const nowIso = new Date().toISOString();
+        const months = Number(interval) >= 12 ? 12 : 1;
+
+        if (targetRank > activeRank && activePlanId) {
+            const proration = calculateProration({
+                currentPlanId: activePlanId,
+                targetPlanId,
+                interval: months,
+                currentPlanPricePaise: Number(sub?.plan_price_paise || 0),
+                periodStart: org?.plan_start_date || sub?.started_at || null,
+                periodEnd: org?.plan_end_date || sub?.expires_at || null,
+            });
+            const idempotencyKey = `upgrade:${userId}:${activePlanId}:${targetPlanId}:${months}:${proration.period_end}`;
+
+            const { data: existingInvoice } = await supabase
+                .from('subscription_invoices')
+                .select('*')
+                .eq('idempotency_key', idempotencyKey)
+                .maybeSingle();
+
+            if (existingInvoice?.metadata?.short_url && existingInvoice.status === 'pending_payment') {
+                return res.json({
+                    success: true,
+                    payment_link: existingInvoice.metadata.short_url,
+                    invoice_id: existingInvoice.id,
+                    invoice_preview: existingInvoice.metadata?.proration,
+                });
+            }
+
+            const { data: invoice, error: invoiceErr } = await supabase
+                .from('subscription_invoices')
+                .insert({
+                    user_id: userId,
+                    organization_id: orgId,
+                    subscription_user_id: sub?.user_id || null,
+                    type: 'upgrade',
+                    status: 'draft',
+                    current_plan_id: activePlanId,
+                    target_plan_id: targetPlanId,
+                    billing_interval: getBillingInterval(months),
+                    period_start: proration.period_start,
+                    period_end: proration.period_end,
+                    subtotal_paise: proration.prorated_target_cost_paise,
+                    credit_applied_paise: proration.unused_current_credit_paise,
+                    total_paise: proration.total_payable_paise,
+                    currency: 'INR',
+                    idempotency_key: idempotencyKey,
+                    gateway: 'razorpay',
+                    metadata: { proration },
+                })
+                .select()
+                .single();
+
+            if (invoiceErr) throw invoiceErr;
+
+            const targetLabel = targetPlan?.name || PLAN_PRICES[targetPlanId]?.label || targetPlanId;
+            const activeLabel = PLAN_PRICES[activePlanId]?.label || activePlanId;
+            const origin = req.headers.origin || 'https://wb.getaipilot.in';
+            const razorpayData = await createRazorpayPaymentLink({
+                amount: proration.total_payable_paise,
+                currency: 'INR',
+                accept_partial: false,
+                description: `WhatsApp ${activeLabel} to ${targetLabel} prorated upgrade`,
+                customer: {
+                    name: customerName || req.user?.user_metadata?.full_name || 'Customer',
+                    email: customerEmail || req.user?.email,
+                    contact: customerContact,
+                },
+                notify: { sms: false, email: true },
+                reminder_enable: true,
+                notes: {
+                    user_id: userId,
+                    organization_id: orgId,
+                    plan: targetPlanId,
+                    interval: String(months),
+                    product: 'whatsapp',
+                    change_type: 'upgrade',
+                    invoice_id: invoice.id,
+                },
+                callback_url: `${origin}/payment-success`,
+                callback_method: 'get',
+            });
+
+            await Promise.all([
+                supabase
+                    .from('subscription_invoices')
+                    .update({
+                        status: 'pending_payment',
+                        gateway_payment_link_id: razorpayData.id,
+                        metadata: { proration, short_url: razorpayData.short_url },
+                        updated_at: nowIso,
+                    })
+                    .eq('id', invoice.id),
+                supabase
+                    .from('subscription_payment_transactions')
+                    .insert({
+                        invoice_id: invoice.id,
+                        user_id: userId,
+                        organization_id: orgId,
+                        gateway: 'razorpay',
+                        gateway_payment_link_id: razorpayData.id,
+                        status: 'pending',
+                        amount_paise: proration.total_payable_paise,
+                        idempotency_key: `payment-link:${razorpayData.id}`,
+                        raw_payload: razorpayData,
+                    }),
+                supabase
+                    .from('whatsapp_payments')
+                    .insert({
+                        user_id: userId,
+                        razorpay_payment_link_id: razorpayData.id,
+                        plan: targetLabel,
+                        plan_id: targetPlanId,
+                        amount: proration.total_payable_paise,
+                        interval_months: months,
+                        status: 'pending',
+                        invoice_id: invoice.id,
+                        change_type: 'upgrade',
+                        idempotency_key: idempotencyKey,
+                    })
+            ]);
+
+            return res.json({
+                success: true,
+                payment_link: razorpayData.short_url,
+                invoice_id: invoice.id,
+                invoice_preview: proration,
+            });
+        }
+
+        if (targetRank >= activeRank) {
+            return res.status(409).json({ error: 'Unable to determine an active lower plan for upgrade proration.' });
+        }
+
+        const effectiveAt = (toValidDate(sub?.expires_at || org?.plan_end_date) || addMonths(new Date(), months)).toISOString();
+        const metadata = {
+            from_plan_id: activePlanId,
+            to_plan_id: targetPlanId,
+            requested_interval_months: months,
+            requested_at: nowIso,
+            source: 'billing_api',
+        };
+
+        await Promise.all([
+            supabase
+                .from('app_user_subscriptions')
+                .update({
+                    status: 'scheduled_downgrade',
+                    scheduled_plan_id: targetPlanId,
+                    scheduled_change_type: 'downgrade',
+                    scheduled_effective_at: effectiveAt,
+                    scheduled_change_requested_at: nowIso,
+                    scheduled_change_metadata: metadata,
+                    updated_at: nowIso,
+                })
+                .eq('user_id', userId),
+            supabase
+                .from('organizations')
+                .update({
+                    scheduled_plan_id: targetPlanId,
+                    scheduled_change_type: 'downgrade',
+                    scheduled_effective_at: effectiveAt,
+                    scheduled_change_requested_at: nowIso,
+                    scheduled_change_metadata: metadata,
+                    updated_at: nowIso,
+                })
+                .eq('id', orgId)
+        ]);
+
+        res.json({
+            success: true,
+            scheduled_downgrade: true,
+            plan: targetPlan?.name || targetPlanId,
+            effective_at: effectiveAt,
+            message: `${targetPlan?.name || targetPlanId} will start from your next billing cycle.`,
+        });
+    } catch (err: any) {
+        console.error('[billing/change-plan] Error:', err);
+        res.status(500).json({ error: err.message || 'Failed to change subscription plan' });
+    }
+};
+
+export const cancelScheduledPlanChange = async (req: any, res: Response) => {
+    const orgId = req.organization_id;
+    const userId = req.user?.id;
+
+    try {
+        if (!orgId) return res.status(400).json({ error: 'organization_id is required' });
+        if (!userId) return res.status(401).json({ error: 'Authenticated user is required' });
+
+        const nowIso = new Date().toISOString();
+
+        await Promise.all([
+            supabase
+                .from('app_user_subscriptions')
+                .update({
+                    status: 'active',
+                    scheduled_plan_id: null,
+                    scheduled_change_type: null,
+                    scheduled_effective_at: null,
+                    scheduled_change_requested_at: null,
+                    scheduled_change_metadata: {},
+                    updated_at: nowIso,
+                })
+                .eq('user_id', userId)
+                .eq('scheduled_change_type', 'downgrade'),
+            supabase
+                .from('organizations')
+                .update({
+                    scheduled_plan_id: null,
+                    scheduled_change_type: null,
+                    scheduled_effective_at: null,
+                    scheduled_change_requested_at: null,
+                    scheduled_change_metadata: {},
+                    updated_at: nowIso,
+                })
+                .eq('id', orgId)
+                .eq('scheduled_change_type', 'downgrade')
+        ]);
+
+        res.json({
+            success: true,
+            canceled: true,
+            message: 'Scheduled downgrade has been cancelled. Your current plan will continue.',
+        });
+    } catch (err: any) {
+        console.error('[billing/cancel-scheduled-change] Error:', err);
+        res.status(500).json({ error: err.message || 'Failed to cancel scheduled plan change' });
     }
 };
 

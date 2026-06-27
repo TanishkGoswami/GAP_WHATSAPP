@@ -225,9 +225,7 @@ export default function Dashboard() {
                                     {isAccountsOpen && (
                                         <div className="border-t border-gray-100 bg-white/50 px-4 py-2.5 space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
                                             {Array.isArray(model.accounts.connected) && model.accounts.connected.some(acc => acc.status !== 'disconnected' && acc.status !== 'failed') ? (
-                                                model.accounts.connected.filter(acc => acc.status !== 'disconnected' && acc.status !== 'failed').map(acc => {
-                                                    const isActive = true;
-                                                    return (
+                                                model.accounts.connected.filter(acc => acc.status !== 'disconnected' && acc.status !== 'failed').map(acc => (
                                                         <div key={acc.id} className="flex items-center justify-between py-1.5 border-b border-gray-50/50 last:border-b-0">
                                                             <div className="flex items-center gap-2.5 min-w-0">
                                                                 <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-gray-200/40 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.02)] text-gray-500">
@@ -255,8 +253,7 @@ export default function Dashboard() {
                                                                 </span>
                                                             </div>
                                                         </div>
-                                                    );
-                                                })
+                                                    ))
                                             ) : (
                                                 <div className="py-2 text-center text-[11px] text-gray-400">
                                                     No active accounts found
@@ -429,7 +426,18 @@ function Header({ range, setRange, isFetching, refetch, freshness }) {
                 <p className="mt-0.5 sm:mt-1 text-[11px] sm:text-sm leading-5 text-gray-600">Real WhatsApp performance, customer readiness, and automation health.</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-               
+                <button
+                    type="button"
+                    onClick={() => refetch()}
+                    disabled={isFetching}
+                    className="inline-flex h-10 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-50 hover:text-black disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Refresh dashboard data"
+                    title={freshness}
+                >
+                    <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">{isFetching ? 'Refreshing' : freshness}</span>
+                </button>
+
                 <div data-tour="dashboard-range" className="inline-flex rounded-full border border-gray-200 bg-white p-1">
                     {ranges.map(item => (
                         <button
@@ -543,8 +551,6 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
     const walletPaise = n(overview?.wallet?.balance_paise)
     const availablePaise = Math.max(1, walletPaise + monthSpendPaise)
     const spendProgress = Math.min(100, Math.round((monthSpendPaise / availablePaise) * 100))
-    const primaryLine = timeline.map(point => n(point.read) || n(point.outbound))
-    const secondaryLine = timeline.map(point => n(point.inbound))
     const readSeries = timeline.map(point => n(point.read))
     const requestSeries = timeline.map(point => n(point.total))
     const summaryCards = [

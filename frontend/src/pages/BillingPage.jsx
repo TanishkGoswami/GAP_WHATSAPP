@@ -30,6 +30,30 @@ function isCurrentPlan(currentPlan, plan) {
     return currentPlan?.id === plan?.id || currentPlan?.name === plan?.name
 }
 
+function getPlanRank(planOrId) {
+    const id = String(planOrId?.id || planOrId || '').toLowerCase()
+    if (id.includes('starter')) return 10
+    if (id.includes('growth')) return 20
+    if (id.includes('pro')) return 30
+    if (id.includes('enterprise')) return 40
+    return Number(planOrId?.plan_rank || planOrId?.sort_order || 0)
+}
+
+function getPlanActionLabel({ current, isDowngrade, scheduled, planName }) {
+    if (current) return 'Current Plan'
+    if (scheduled) return 'Downgrade scheduled'
+    return `${isDowngrade ? 'Downgrade' : 'Upgrade'} to ${planName}`
+}
+
+function formatPlanDate(value) {
+    if (!value) return ''
+    return new Date(value).toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+    })
+}
+
 function isPaidSubscriptionPlan(plan) {
     const id = String(plan?.id || '').toLowerCase()
     const name = String(plan?.name || '').toLowerCase()
@@ -76,6 +100,26 @@ export default function BillingPage() {
     const [isMessageBillingOpen, setIsMessageBillingOpen] = useState(false)
     const [isCustomMode, setIsCustomMode] = useState(false)
     const [customAmount, setCustomAmount] = useState('')
+    const [pendingDowngradePlan, setPendingDowngradePlan] = useState(null)
+    const [notice, setNotice] = useState(null)
+    const [isCancelingScheduledChange, setIsCancelingScheduledChange] = useState(false)
+
+    const refreshBillingOverview = async () => {
+        const res = await apiCall(`${API_BASE}/billing/overview`)
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(data?.error || 'Failed to load billing')
+        setOverview(data)
+        try {
+            localStorage.setItem(`gap_billing_overview_${user?.id || 'default'}`, JSON.stringify(data))
+        } catch (e) {
+            console.warn('Failed to cache billing:', e)
+        }
+        return data
+    }
+
+    const showNotice = ({ type = 'info', title, message }) => {
+        setNotice({ type, title, message })
+    }
 
     useEffect(() => {
         let cancelled = false
@@ -110,6 +154,7 @@ export default function BillingPage() {
     const categorySpend = overview?.spend?.categories || []
     const currentPlan = overview?.current_plan || null
     const wallet = overview?.wallet || { balance_paise: 0, currency: 'INR', low_balance_threshold_paise: 10000 }
+    const subscriptionInvoices = overview?.recent_subscription_invoices || []
     const walletTransactions = (overview?.recent_wallet_transactions || overview?.recent_transactions || [])
         .filter(tx => !['message_debit', 'failed_debit'].includes(String(tx.type || '')))
     const messageChargeRows = overview?.recent_message_charges?.length
@@ -134,6 +179,11 @@ export default function BillingPage() {
                 charged_amount_paise: Math.abs(Number(tx.charged_amount_paise || 0)),
             })))
     const messageChargesTotalPaise = messageCharges.reduce((sum, charge) => sum + Number(charge.charged_amount_paise || 0), 0)
+    const activePlanId = currentPlan?.id || overview?.subscription?.plan_id || overview?.organization?.plan_id || user?.plan
+    const activePlanRank = getPlanRank(activePlanId)
+    const scheduledPlanId = overview?.subscription?.scheduled_plan_id || overview?.organization?.scheduled_plan_id
+    const scheduledEffectiveAt = overview?.subscription?.scheduled_effective_at || overview?.organization?.scheduled_effective_at
+    const scheduledPlan = scheduledPlanId ? plans.find(plan => plan.id === scheduledPlanId) : null
 
     const rateMap = useMemo(() => {
         return rateCards.reduce((acc, rate) => {
@@ -142,40 +192,114 @@ export default function BillingPage() {
         }, {})
     }, [rateCards])
 
-    const handleUpgrade = async (plan) => {
+    const submitPlanChange = async (plan) => {
         if (!plan?.id || plan.id === 'enterprise' || isCurrentPlan(currentPlan, plan)) return
+        const targetRank = getPlanRank(plan)
+        const isDowngrade = activePlanRank > 0 && targetRank > 0 && targetRank < activePlanRank
 
         try {
             setUpgrading(plan.id)
-            const { data, error: fnError } = await supabase.functions.invoke('create-whatsapp-payment-link', {
-                body: {
+            const res = await apiCall(`${API_BASE}/billing/change-plan`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     planId: plan.id,
                     interval,
-                    userId: user?.id,
+                    currentPlanId: activePlanId,
                     customerName: user?.user_metadata?.full_name || user?.email?.split('@')[0],
                     customerEmail: user?.email,
-                },
+                }),
             })
+            const data = await res.json().catch(() => ({}))
 
-            if (fnError) throw new Error(await getFunctionErrorMessage(fnError, 'Failed to create payment link'))
+            if (!res.ok) throw new Error(data?.error || (isDowngrade ? 'Failed to schedule downgrade' : 'Failed to create payment link'))
+            if (data?.scheduled_downgrade) {
+                showNotice({
+                    type: 'success',
+                    title: 'Downgrade scheduled',
+                    message: data.message || `${plan.name} next billing cycle se apply hoga.`,
+                })
+                await refreshBillingOverview()
+                return true
+            }
+            if (data?.activated) {
+                showNotice({
+                    type: 'success',
+                    title: 'Plan activated',
+                    message: `${data.plan || plan.name} plan available credit se activate ho gaya.`,
+                })
+                await refreshBillingOverview()
+                refreshProfile?.()
+                return true
+            }
             if (data?.success && data?.payment_link) {
                 window.location.href = data.payment_link
-                return
+                return true
             }
             throw new Error(data?.error || 'Failed to create payment link')
         } catch (err) {
             console.error('Upgrade error:', err)
-            alert(err.message || 'Something went wrong. Please try again.')
+            showNotice({
+                type: 'error',
+                title: 'Plan change failed',
+                message: err.message || 'Something went wrong. Please try again.',
+            })
+            return false
         } finally {
             setUpgrading(null)
             refreshProfile?.()
         }
     }
 
+    const handleUpgrade = async (plan) => {
+        const targetRank = getPlanRank(plan)
+        const isDowngrade = activePlanRank > 0 && targetRank > 0 && targetRank < activePlanRank
+
+        if (isDowngrade) {
+            setPendingDowngradePlan(plan)
+            return
+        }
+
+        await submitPlanChange(plan)
+    }
+
+    const handleCancelScheduledChange = async () => {
+        try {
+            setIsCancelingScheduledChange(true)
+            const res = await apiCall(`${API_BASE}/billing/cancel-scheduled-change`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+            })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data?.error || 'Failed to cancel scheduled downgrade')
+
+            showNotice({
+                type: 'success',
+                title: 'Downgrade cancelled',
+                message: data.message || 'Aapka current plan continue rahega.',
+            })
+            await refreshBillingOverview()
+            refreshProfile?.()
+        } catch (err) {
+            console.error('Cancel scheduled change error:', err)
+            showNotice({
+                type: 'error',
+                title: 'Cancel failed',
+                message: err.message || 'Scheduled downgrade cancel nahi ho paya. Please try again.',
+            })
+        } finally {
+            setIsCancelingScheduledChange(false)
+        }
+    }
+
     const handleWalletRecharge = async (amountPaise) => {
         const organizationId = overview?.organization?.id || wallet?.organization_id
         if (!organizationId) {
-            alert('Organization not found. Please refresh and try again.')
+            showNotice({
+                type: 'error',
+                title: 'Organization missing',
+                message: 'Organization not found. Please refresh and try again.',
+            })
             return
         }
 
@@ -199,7 +323,11 @@ export default function BillingPage() {
             throw new Error(data?.error || 'Failed to create recharge link')
         } catch (err) {
             console.error('Wallet recharge error:', err)
-            alert(err.message || 'Could not start wallet recharge.')
+            showNotice({
+                type: 'error',
+                title: 'Recharge failed',
+                message: err.message || 'Could not start wallet recharge.',
+            })
         } finally {
             setRecharging(null)
         }
@@ -208,11 +336,19 @@ export default function BillingPage() {
     const handleCustomSubmit = async () => {
         const amt = parseFloat(customAmount)
         if (isNaN(amt) || amt <= 0) {
-            alert('Please enter a valid amount.')
+            showNotice({
+                type: 'error',
+                title: 'Invalid amount',
+                message: 'Please enter a valid amount.',
+            })
             return
         }
         if (amt < 100) {
-            alert('Minimum recharge amount is ₹100.')
+            showNotice({
+                type: 'error',
+                title: 'Minimum recharge',
+                message: 'Minimum recharge amount is ₹100.',
+            })
             return
         }
         const amountPaise = Math.round(amt * 100)
@@ -250,6 +386,42 @@ export default function BillingPage() {
                         <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                         <span>{error}</span>
                     </div>
+                )}
+
+                {notice && (
+                    <BillingNotice
+                        notice={notice}
+                        onClose={() => setNotice(null)}
+                    />
+                )}
+
+                {scheduledPlan && (
+                    <section className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-wide">Scheduled plan change</p>
+                                <h2 className="mt-1 text-base font-semibold">
+                                    {scheduledPlan.name} starts from {formatPlanDate(scheduledEffectiveAt) || 'next renewal'}
+                                </h2>
+                                <p className="mt-1 text-sm leading-5">
+                                    Tab tak aapka current {currentPlan?.name || user?.plan || 'plan'} active rahega. Downgrade immediate feature cut nahi karta.
+                                </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex w-fit rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                                    Pending downgrade
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={handleCancelScheduledChange}
+                                    disabled={isCancelingScheduledChange}
+                                    className="inline-flex h-8 items-center justify-center rounded-full bg-amber-900 px-3 text-xs font-semibold text-white transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    {isCancelingScheduledChange ? 'Cancelling...' : 'Cancel downgrade'}
+                                </button>
+                            </div>
+                        </div>
+                    </section>
                 )}
 
                 <section className="grid grid-cols-2 gap-2.5 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -553,7 +725,10 @@ export default function BillingPage() {
                         {plans.map(plan => {
                             const price = getPlanPrice(plan, interval)
                             const monthlyEquivalent = getMonthlyEquivalent(plan, interval)
-                            const current = isCurrentPlan(currentPlan, plan)
+                            const current = isCurrentPlan(currentPlan, plan) || String(activePlanId || '').toLowerCase().includes(String(plan.id).toLowerCase())
+                            const targetRank = getPlanRank(plan)
+                            const isDowngrade = activePlanRank > 0 && targetRank > 0 && targetRank < activePlanRank
+                            const scheduled = scheduledPlanId === plan.id
                             const badge = plan.badge || getPlanBadge(plan.id)
                             return (
                                 <article
@@ -579,15 +754,27 @@ export default function BillingPage() {
                                     </div>
                                     <button
                                         type="button"
-                                        disabled={current || upgrading === plan.id}
+                                        disabled={current || scheduled || upgrading === plan.id}
                                         onClick={() => handleUpgrade(plan)}
                                         className={`mt-5 w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:cursor-default disabled:opacity-60 ${plan.id === 'growth'
                                             ? 'bg-white text-[#075E54] hover:bg-emerald-50'
                                             : 'bg-[#128C7E] text-white hover:bg-[#075E54]'
                                             }`}
                                     >
-                                        {upgrading === plan.id ? 'Processing...' : current ? 'Current Plan' : `Upgrade to ${plan.name}`}
+                                        {upgrading === plan.id
+                                            ? 'Processing...'
+                                            : getPlanActionLabel({ current, isDowngrade, scheduled, planName: plan.name })}
                                     </button>
+                                    {isDowngrade && !scheduled && !current ? (
+                                        <p className={`mt-2 text-xs leading-5 ${plan.id === 'growth' ? 'text-emerald-100' : 'text-gray-500'}`}>
+                                            Downgrade immediately charge nahi karega. Ye next billing cycle se apply hoga.
+                                        </p>
+                                    ) : null}
+                                    {scheduled ? (
+                                        <p className={`mt-2 rounded-lg px-3 py-2 text-xs font-medium ${plan.id === 'growth' ? 'bg-white/10 text-emerald-50' : 'bg-amber-50 text-amber-700'}`}>
+                                            Scheduled from {formatPlanDate(scheduledEffectiveAt) || 'next renewal'}.
+                                        </p>
+                                    ) : null}
                                     <ul className="mt-5 space-y-3">
                                         {normalizePlanFeatures(plan).slice(0, 7).map(feature => (
                                             <li key={feature} className="flex gap-2 text-sm">
@@ -777,8 +964,54 @@ export default function BillingPage() {
 
                 <section className="rounded-xl border border-gray-200 bg-white">
                     <div className="border-b border-gray-100 p-5">
+                        <h2 className="text-base font-semibold text-gray-950">Subscription Plan Activity</h2>
+                        <p className="mt-1 text-sm text-gray-500">Plan upgrades, prorated invoices, credits, aur scheduled downgrades yahan track honge.</p>
+                    </div>
+                    <div className="divide-y divide-gray-100">
+                        {scheduledPlan ? (
+                            <div className="flex items-center justify-between gap-4 p-4">
+                                <div>
+                                    <p className="text-sm font-semibold text-gray-900">Scheduled downgrade to {scheduledPlan.name}</p>
+                                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                                        <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                                            Pending next cycle
+                                        </span>
+                                        <span className="text-xs text-gray-500">
+                                            Current plan continues until {formatPlanDate(scheduledEffectiveAt) || 'renewal date'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-sm font-semibold text-gray-950">No charge now</p>
+                                    <p className="mt-1 text-xs text-gray-500">{formatPlanDate(scheduledEffectiveAt) || 'Next cycle'}</p>
+                                    <button
+                                        type="button"
+                                        onClick={handleCancelScheduledChange}
+                                        disabled={isCancelingScheduledChange}
+                                        className="mt-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                        {isCancelingScheduledChange ? 'Cancelling...' : 'Cancel'}
+                                    </button>
+                                </div>
+                            </div>
+                        ) : null}
+
+                        {subscriptionInvoices.length === 0 && !scheduledPlan ? (
+                            <p className="p-5 text-sm text-gray-500">Abhi plan invoice ya scheduled plan change history empty hai.</p>
+                        ) : subscriptionInvoices.map(invoice => (
+                            <SubscriptionInvoiceRow
+                                key={invoice.id}
+                                invoice={invoice}
+                                plans={plans}
+                            />
+                        ))}
+                    </div>
+                </section>
+
+                <section className="rounded-xl border border-gray-200 bg-white">
+                    <div className="border-b border-gray-100 p-5">
                         <h2 className="text-base font-semibold text-gray-950">Recent Wallet Transactions</h2>
-                        <p className="mt-1 text-sm text-gray-500">Sirf wallet recharge, refund, adjustment ya payment entries. Broadcast/message usage upar separate section me hai.</p>
+                        <p className="mt-1 text-sm text-gray-500">Sirf message wallet recharge, refund, adjustment ya payment entries. Subscription plan payments upar separate section me hain.</p>
                     </div>
                     <div className="divide-y divide-gray-100">
                         {walletTransactions.length === 0 ? (
@@ -943,6 +1176,23 @@ export default function BillingPage() {
                     </div>
                 </section>
             </div>
+
+            {pendingDowngradePlan && (
+                <DowngradePlanModal
+                    plan={pendingDowngradePlan}
+                    currentPlanName={currentPlan?.name || user?.plan || 'current plan'}
+                    effectiveDate={scheduledEffectiveAt || overview?.subscription?.expires_at || overview?.organization?.plan_end_date}
+                    isProcessing={upgrading === pendingDowngradePlan.id}
+                    onClose={() => {
+                        if (!upgrading) setPendingDowngradePlan(null)
+                    }}
+                    onConfirm={async () => {
+                        const plan = pendingDowngradePlan
+                        const success = await submitPlanChange(plan)
+                        if (success) setPendingDowngradePlan(null)
+                    }}
+                />
+            )}
         </div>
     )
 }
@@ -955,6 +1205,65 @@ function getMessageChargeTitle(charge) {
     if (source === 'ai_agent') return `AI agent ${category} charge`
     if (source === 'manual') return `Manual message ${category} charge`
     return `WhatsApp ${category} charge`
+}
+
+function getPlanDisplayName(planId, plans = []) {
+    const normalized = String(planId || '').toLowerCase()
+    return plans.find(plan => String(plan.id).toLowerCase() === normalized)?.name
+        || FALLBACK_PLANS.find(plan => String(plan.id).toLowerCase() === normalized)?.name
+        || (planId ? String(planId).replaceAll('_', ' ') : 'Plan')
+}
+
+function SubscriptionInvoiceRow({ invoice, plans }) {
+    const status = String(invoice.status || 'draft')
+    const isPaid = status === 'paid'
+    const isPending = status === 'pending_payment'
+    const isFailed = ['failed', 'void'].includes(status)
+    const targetPlanName = getPlanDisplayName(invoice.target_plan_id, plans)
+    const currentPlanName = getPlanDisplayName(invoice.current_plan_id, plans)
+    const proration = invoice.metadata?.proration || {}
+
+    return (
+        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+                <p className="text-sm font-semibold text-gray-900">
+                    {invoice.type === 'upgrade'
+                        ? `${currentPlanName} to ${targetPlanName} upgrade`
+                        : `${targetPlanName} subscription`}
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                        isPaid
+                            ? 'bg-green-50 text-green-700 ring-green-600/20'
+                            : isPending
+                                ? 'bg-amber-50 text-amber-700 ring-amber-600/20'
+                                : isFailed
+                                    ? 'bg-red-50 text-red-700 ring-red-600/10'
+                                    : 'bg-gray-50 text-gray-600 ring-gray-200'
+                    }`}>
+                        {status.replaceAll('_', ' ')}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                        {invoice.created_at ? new Date(invoice.created_at).toLocaleDateString('en-IN') : 'Recorded'}
+                    </span>
+                </div>
+                {Number(invoice.credit_applied_paise || 0) > 0 ? (
+                    <p className="mt-1 text-xs text-gray-500">
+                        Credit applied: {formatINRFromPaise(invoice.credit_applied_paise)}
+                        {proration.remaining_ratio ? ` • ${(proration.remaining_ratio * 100).toFixed(0)}% cycle remaining` : ''}
+                    </p>
+                ) : null}
+            </div>
+            <div className="text-left sm:text-right">
+                <p className={`text-sm font-semibold ${isFailed ? 'line-through text-gray-400' : 'text-gray-950'}`}>
+                    {formatINRFromPaise(invoice.total_paise)}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                    Subtotal {formatINRFromPaise(invoice.subtotal_paise)}
+                </p>
+            </div>
+        </div>
+    )
 }
 
 function Tick() {
@@ -971,4 +1280,102 @@ function Cross() {
             <X className="h-4 w-4 stroke-[2]" />
         </span>
     );
+}
+
+function BillingNotice({ notice, onClose }) {
+    const isError = notice.type === 'error'
+
+    return (
+        <div className={`flex items-start justify-between gap-3 rounded-xl border p-4 text-sm shadow-sm ${isError ? 'border-red-200 bg-red-50 text-red-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+            <div className="flex min-w-0 items-start gap-3">
+                {isError ? (
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                ) : (
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                )}
+                <div className="min-w-0">
+                    <p className="font-semibold">{notice.title}</p>
+                    {notice.message ? <p className="mt-0.5 leading-5 opacity-90">{notice.message}</p> : null}
+                </div>
+            </div>
+            <button
+                type="button"
+                onClick={onClose}
+                className={`shrink-0 rounded-full p-1 transition ${isError ? 'hover:bg-red-100' : 'hover:bg-emerald-100'}`}
+                aria-label="Close notification"
+            >
+                <X className="h-4 w-4" />
+            </button>
+        </div>
+    )
+}
+
+function DowngradePlanModal({ plan, currentPlanName, effectiveDate, isProcessing, onClose, onConfirm }) {
+    const effectiveLabel = formatPlanDate(effectiveDate) || 'next billing cycle'
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/55 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="downgrade-plan-title">
+            <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
+                <div className="flex items-start justify-between gap-4 border-b border-gray-100 p-5">
+                    <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Scheduled downgrade</p>
+                        <h2 id="downgrade-plan-title" className="mt-1 text-xl font-semibold text-gray-950">
+                            Downgrade to {plan.name}?
+                        </h2>
+                        <p className="mt-2 text-sm leading-6 text-gray-600">
+                            Aapka {currentPlanName} access abhi continue rahega. {plan.name} plan {effectiveLabel} se start hoga.
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={isProcessing}
+                        className="rounded-full p-2 text-gray-400 transition hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="Close downgrade modal"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+
+                <div className="space-y-3 p-5">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                        <p className="font-semibold">No immediate refund or feature cut</p>
+                        <p className="mt-1 leading-5">
+                            Downgrade next renewal par apply hoga. Current billing period tak existing limits aur features active rahenge.
+                        </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                            <p className="text-xs font-medium text-gray-500">Current access</p>
+                            <p className="mt-1 font-semibold text-gray-950">{currentPlanName}</p>
+                        </div>
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                            <p className="text-xs font-medium text-gray-500">Starts from</p>
+                            <p className="mt-1 font-semibold text-gray-950">{effectiveLabel}</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex flex-col-reverse gap-2 border-t border-gray-100 bg-gray-50 p-4 sm:flex-row sm:justify-end">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        disabled={isProcessing}
+                        className="inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                        Keep current plan
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onConfirm}
+                        disabled={isProcessing}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#128C7E] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#075E54] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        {isProcessing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                        Schedule downgrade
+                    </button>
+                </div>
+            </div>
+        </div>
+    )
 }
