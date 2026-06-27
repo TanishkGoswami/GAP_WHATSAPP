@@ -1208,7 +1208,17 @@ function getMessageChargeTitle(charge) {
 }
 
 function getPlanDisplayName(planId, plans = []) {
-    const normalized = String(planId || '').toLowerCase()
+    const value = String(planId || '').toLowerCase()
+    const isWhatsApp = value.startsWith('whatsapp_') || value.startsWith('wa_') || value.startsWith('wa ') || ['starter', 'growth', 'pro', 'enterprise'].includes(value)
+
+    let normalized = value
+    if (isWhatsApp) {
+        if (value.includes('starter')) normalized = 'starter'
+        else if (value.includes('growth')) normalized = 'growth'
+        else if (value.includes('pro') || value.includes('premium')) normalized = 'pro'
+        else if (value.includes('enterprise')) normalized = 'enterprise'
+    }
+
     return plans.find(plan => String(plan.id).toLowerCase() === normalized)?.name
         || FALLBACK_PLANS.find(plan => String(plan.id).toLowerCase() === normalized)?.name
         || (planId ? String(planId).replaceAll('_', ' ') : 'Plan')
