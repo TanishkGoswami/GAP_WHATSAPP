@@ -1215,7 +1215,7 @@ function getPlanDisplayName(planId, plans = []) {
     if (isWhatsApp) {
         if (value.includes('starter')) normalized = 'starter'
         else if (value.includes('growth')) normalized = 'growth'
-        else if (value.includes('pro') || value.includes('premium')) normalized = 'pro'
+        else if (value.includes('pro')) normalized = 'pro'
         else if (value.includes('enterprise')) normalized = 'enterprise'
     }
 

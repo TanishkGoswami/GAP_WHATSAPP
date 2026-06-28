@@ -513,6 +513,17 @@ export default function Broadcast() {
             }
         });
         finalMapping._template_body = selectedTemplate?.components?.find(c => c.type === 'BODY')?.text || `[Template: ${campaign.template_name}]`;
+        finalMapping._template_footer = selectedTemplate?.components?.find(c => c.type === 'FOOTER')?.text || '';
+        const buttonsComp = selectedTemplate?.components?.find(c => c.type === 'BUTTONS');
+        if (buttonsComp && Array.isArray(buttonsComp.buttons)) {
+            finalMapping._template_buttons = buttonsComp.buttons.map((btn, index) => ({
+                index: String(btn.index !== undefined ? btn.index : index),
+                type: btn.type,
+                text: btn.text,
+                url: btn.url,
+                phone_number: btn.phone_number
+            }));
+        }
         finalMapping._template_category = selectedTemplateCategory;
         if (needsHeaderMedia) {
             finalMapping._header_media_type = selectedHeaderFormat.toLowerCase();
