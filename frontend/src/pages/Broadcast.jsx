@@ -158,6 +158,7 @@ export default function Broadcast() {
     const [activeTab, setActiveTab] = useState('new') // 'new' | 'history'
     const [campaignsList, setCampaignsList] = useState([])
     const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+    const [historyLoadState, setHistoryLoadState] = useState('idle')
     const [expandedCampaignId, setExpandedCampaignId] = useState(null)
 
     const [currentStep, setCurrentStep] = useState(1)
@@ -237,13 +238,24 @@ export default function Broadcast() {
     }, [token]);
 
     const fetchCampaignHistory = (silent = false) => {
-        if (!silent) setIsLoadingHistory(true);
+        if (!silent) {
+            setIsLoadingHistory(true);
+            setHistoryLoadState('loading');
+        }
         apiCall(`${API_URL}/api/broadcasts/campaigns`)
-            .then(res => res.json())
+            .then(async res => {
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data?.error || `Could not load campaigns (${res.status})`);
+                return data;
+            })
             .then(data => {
                 setCampaignsList(data.campaigns || []);
+                setHistoryLoadState('success');
             })
-            .catch(console.error)
+            .catch(error => {
+                console.error(error);
+                if (!silent) setHistoryLoadState('error');
+            })
             .finally(() => {
                 if (!silent) setIsLoadingHistory(false);
             });
@@ -709,8 +721,15 @@ export default function Broadcast() {
                             Refresh Data
                         </button>
                     </div>
-                    {isLoadingHistory && campaignsList.length === 0 ? (
+                    {(historyLoadState === 'idle' || isLoadingHistory) && campaignsList.length === 0 ? (
                         <div className="p-16 text-center flex justify-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500" /></div>
+                    ) : historyLoadState === 'error' && campaignsList.length === 0 ? (
+                        <div className="p-16 text-center">
+                            <p className="text-sm text-gray-500">Couldn&apos;t load campaigns.</p>
+                            <button type="button" onClick={() => fetchCampaignHistory(false)} className="mt-3 rounded-lg px-4 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50">
+                                Retry
+                            </button>
+                        </div>
                     ) : campaignsList.length === 0 ? (
                         <div className="p-16 text-center flex flex-col items-center justify-center">
                             <div className="w-16 h-16 bg-indigo-50 text-indigo-300 rounded-2xl flex items-center justify-center mb-4"><Calendar className="w-8 h-8" /></div>

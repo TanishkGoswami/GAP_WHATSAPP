@@ -39,6 +39,7 @@ export default function WhatsAppConnect() {
     const { alertDialog, confirmDialog } = useDialog()
     const [accounts, setAccounts] = useState([])
     const [loadingAccounts, setLoadingAccounts] = useState(true)
+    const [accountsLoadError, setAccountsLoadError] = useState('')
     const [billing, setBilling] = useState(null)
     const [embedStatus, setEmbedStatus] = useState('idle')
     const [embedError, setEmbedError] = useState('')
@@ -136,19 +137,22 @@ export default function WhatsAppConnect() {
 
     const fetchAccounts = async () => {
         setLoadingAccounts(true)
+        setAccountsLoadError('')
         try {
             const res = await fetch(`${API_BASE}/whatsapp/accounts`, {
                 headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
             })
             const data = await res.json().catch(() => [])
+            if (!res.ok) throw new Error(data?.error || `Could not load accounts (${res.status})`)
             const list = Array.isArray(data) ? data : []
             setAccounts(list)
             list.filter(acc => acc.connection_type === 'meta_cloud_api' || acc.whatsapp_business_account_id)
                 .slice(0, 3)
                 .forEach(acc => runAccountDiagnostics(acc.id, { silent: true }))
             return list
-        } catch {
+        } catch (error) {
             setAccounts([])
+            setAccountsLoadError(error?.message || 'Could not load connected WhatsApp numbers.')
             return []
         } finally {
             setLoadingAccounts(false)
@@ -636,6 +640,14 @@ export default function WhatsAppConnect() {
                             <div className="flex min-h-32 items-center justify-center text-sm text-gray-500">
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                 Loading accounts...
+                            </div>
+                        ) : accountsLoadError ? (
+                            <div className="flex min-h-32 flex-col items-center justify-center text-center">
+                                <p className="text-sm font-semibold text-gray-900">Couldn&apos;t load connected numbers</p>
+                                <p className="mt-1 text-xs text-gray-500">{accountsLoadError}</p>
+                                <button type="button" onClick={fetchAccounts} className="mt-3 rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-50">
+                                    Retry
+                                </button>
                             </div>
                         ) : (
                             <div className="rounded-lg border border-dashed border-[#b9dcfb] bg-[#eef7ff] p-4 sm:p-6 text-center">
