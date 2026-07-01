@@ -15,6 +15,7 @@ import TourButton from '../onboarding/TourButton'
 import { supabase } from '../supabaseClient'
 import { createAvatar } from '@dicebear/core'
 import { loreleiNeutral } from '@dicebear/collection'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 function DiceBearAvatar({ seed, className }) {
     const avatarDataUri = useMemo(() => {
@@ -125,9 +126,61 @@ function ForwardedIndicator() {
     );
 }
 
+function LiveChatLoadingSkeleton({ sidebarWidth, isDesktop }) {
+    return (
+        <div className="flex h-full min-h-0 overflow-hidden bg-white" role="status" aria-label="Loading live chat">
+            <div
+                className="flex w-full shrink-0 flex-col border-r border-gray-200 bg-white lg:w-auto"
+                style={{ width: isDesktop ? `${sidebarWidth}px` : undefined }}
+            >
+                <div className="border-b border-gray-200 p-3">
+                    <div className="mb-3 h-4 w-28 animate-pulse rounded bg-gray-200" />
+                    <div className="h-10 animate-pulse rounded-full bg-gray-100" />
+                </div>
+                <div className="space-y-1 p-3">
+                    {Array.from({ length: 7 }, (_, index) => (
+                        <div key={index} className="flex items-center gap-3 border-b border-gray-100 py-3">
+                            <div className="h-11 w-11 shrink-0 animate-pulse rounded-full bg-gray-200" />
+                            <div className="min-w-0 flex-1 space-y-2">
+                                <div className="h-3 w-2/5 animate-pulse rounded bg-gray-200" />
+                                <div className="h-3 w-4/5 animate-pulse rounded bg-gray-100" />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+            <div className="hidden flex-1 items-center justify-center bg-[#f5f1eb] lg:flex">
+                <div className="space-y-3 text-center">
+                    <div className="mx-auto h-16 w-16 animate-pulse rounded-full bg-white/80" />
+                    <div className="mx-auto h-3 w-44 animate-pulse rounded bg-white/90" />
+                </div>
+            </div>
+            <span className="sr-only">Loading WhatsApp accounts and conversations</span>
+        </div>
+    )
+}
+
+function ChatListLoadingSkeleton() {
+    return (
+        <div className="space-y-1 p-3" role="status" aria-label="Loading conversations">
+            {Array.from({ length: 7 }, (_, index) => (
+                <div key={index} className="flex items-center gap-3 border-b border-gray-100 py-3">
+                    <div className="h-11 w-11 shrink-0 animate-pulse rounded-full bg-gray-200" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                        <div className="h-3 w-2/5 animate-pulse rounded bg-gray-200" />
+                        <div className="h-3 w-4/5 animate-pulse rounded bg-gray-100" />
+                    </div>
+                </div>
+            ))}
+            <span className="sr-only">Loading conversations</span>
+        </div>
+    )
+}
+
 export default function LiveChat() {
     const navigate = useNavigate()
-    const { user, session, loginType, memberProfile, userRole } = useAuth()
+    const { user, session, loginType, memberProfile, userRole, isProfileLoading } = useAuth()
+    const queryClient = useQueryClient()
     const { alertDialog, confirmDialog } = useDialog()
     const isAdmin = userRole === 'admin' || userRole === 'owner'
     const { playNotification } = useNotificationSound()
@@ -137,6 +190,9 @@ export default function LiveChat() {
         'X-Auth-Portal': loginType || 'owner'
     }), [session, loginType]);
     const [chats, setChats] = useState([])
+    const [chatsLoadState, setChatsLoadState] = useState('loading')
+    const [nextConversationCursor, setNextConversationCursor] = useState(null)
+    const [isLoadingMoreChats, setIsLoadingMoreChats] = useState(false)
     const chatsRef = useRef([])
     const [chatSearch, setChatSearch] = useState('')
     const [chatFilter, setChatFilter] = useState('all')
@@ -160,6 +216,7 @@ export default function LiveChat() {
     const userRef = useRef(user)
     const authHeadersRef = useRef(authHeaders)
     const fetchChatsInFlightRef = useRef(false)
+    const chatRefreshTimerRef = useRef(null)
     const fetchMessagesInFlightRef = useRef(new Set())
     const lastActiveSyncRef = useRef(0)
     const lastChatListSyncRef = useRef(0)
@@ -281,8 +338,8 @@ export default function LiveChat() {
     const [selectedBotId, setSelectedBotId] = useState(null)
     const [showBotMenu, setShowBotMenu] = useState(false)
 
-    // Connection State
-    const [isConnected, setIsConnected] = useState(false);
+    // Connection state is explicit so an unresolved request is never rendered as disconnected.
+    const [connectionState, setConnectionState] = useState('loading');
     const [qrCode, setQrCode] = useState('');
     const [connectionStatus, setConnectionStatus] = useState('Connecting...');
 
@@ -452,6 +509,70 @@ export default function LiveChat() {
     // Account Selection
     const [connectedAccounts, setConnectedAccounts] = useState([]);
     const [selectedAccount, setSelectedAccount] = useState(() => localStorage.getItem('selected_wa_account_id') || 'All');
+    const organizationId = memberProfile?.organization_id || null
+    const accountsQueryKey = useMemo(
+        () => ['whatsapp-accounts', organizationId],
+        [organizationId]
+    )
+    const {
+        data: accountRecords,
+        error: accountsError,
+        isFetching: areAccountsFetching,
+        isFetchedAfterMount: areAccountsFetchedAfterMount,
+        isPending: areAccountsPending,
+        refetch: refetchAccounts,
+    } = useQuery({
+        queryKey: accountsQueryKey,
+        enabled: Boolean(session?.access_token && organizationId && !isProfileLoading),
+        staleTime: 5 * 60 * 1000,
+        gcTime: 10 * 60 * 1000,
+        placeholderData: previousData => previousData,
+        refetchOnMount: 'always',
+        retry: 2,
+        retryDelay: attempt => Math.min(500 * (2 ** attempt), 3000),
+        queryFn: async ({ signal }) => {
+            const response = await fetch(`${API_BASE}/whatsapp/accounts`, {
+                headers: authHeaders,
+                signal,
+            })
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}))
+                throw new Error(body?.error || `Unable to load WhatsApp accounts (${response.status})`)
+            }
+            const data = await response.json()
+            if (!Array.isArray(data)) throw new Error('Invalid WhatsApp accounts response')
+            return data
+        },
+    })
+
+    useEffect(() => {
+        if (!session?.access_token || isProfileLoading || !organizationId) {
+            setConnectionState('loading')
+            setConnectedAccounts([])
+            return
+        }
+        if ((areAccountsPending && !accountRecords) ||
+            ((accountRecords?.length || 0) === 0 && (!areAccountsFetchedAfterMount || areAccountsFetching))) {
+            setConnectionState('loading')
+            return
+        }
+        if (accountsError && (!accountRecords || accountRecords.length === 0)) {
+            setConnectionState('error')
+            return
+        }
+
+        const accountIds = (accountRecords || [])
+            .map(account => account.display_phone_number || account.phone_number_id || account.whatsapp_business_account_id)
+            .filter(Boolean)
+        setConnectedAccounts(accountIds)
+        setConnectionState(accountIds.length > 0 ? 'connected' : 'disconnected')
+    }, [accountRecords, accountsError, areAccountsFetchedAfterMount, areAccountsFetching, areAccountsPending, isProfileLoading, organizationId, session?.access_token])
+
+    useEffect(() => {
+        if (!session?.access_token) {
+            queryClient.removeQueries({ queryKey: ['whatsapp-accounts'] })
+        }
+    }, [queryClient, session?.access_token])
 
     useEffect(() => {
         const handleSelectedAccountChange = (event) => {
@@ -515,8 +636,8 @@ export default function LiveChat() {
         // Prefer saved contact name, but never show raw provider identifiers.
         const rawName = String(contact?.name || '').trim()
         let safeName = rawName && !rawName.includes('@') ? rawName : ''
-        // If "name" is only digits, it’s effectively just an id/phone; don't show it as a name.
-        if (safeName && /^\d+$/.test(safeName)) safeName = ''
+        // Providers sometimes persist a formatted phone number in the name field.
+        if (safeName && /^\+?[\d\s()-]+$/.test(safeName)) safeName = ''
 
         const raw = safeName || contact?.phone || contact?.wa_id || ''
         if (!raw) return 'Unknown'
@@ -863,16 +984,18 @@ export default function LiveChat() {
         setIsAgentStatusModalOpen(false);
     };
 
-    const fetchChats = async () => {
+    const fetchChats = async ({ cursor = null } = {}) => {
         if (!session?.access_token) return;
         if (fetchChatsInFlightRef.current) return;
         fetchChatsInFlightRef.current = true;
+        if (cursor) setIsLoadingMoreChats(true)
+        if (!cursor && chatsRef.current.length === 0) setChatsLoadState('loading')
         try {
             // Pass current WA Account filter if selected
-            let url = `${API_BASE}/conversations`;
-            if (user?.id) url += `?user_id=${user.id}`;
+            let url = `${API_BASE}/conversations?limit=50`;
+            if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
             if (selectedAccount !== 'All') {
-                url += `${url.includes('?') ? '&' : '?'}wa_account_id=${encodeURIComponent(selectedAccount)}`;
+                url += `&wa_account_id=${encodeURIComponent(selectedAccount)}`;
             }
 
             const res = await fetch(url, {
@@ -880,7 +1003,8 @@ export default function LiveChat() {
             });
             if (res.ok) {
                 const data = await res.json();
-                const formatted = data.map(conv => ({
+                const conversations = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : [])
+                const formatted = conversations.map(conv => ({
                     id: conv.id, // Conversation ID
                     contactId: conv.contact?.id,
                     name: getDisplayName(conv.contact),
@@ -897,6 +1021,8 @@ export default function LiveChat() {
                     status: conv.status,
                     tags: conv.labels || [],
                     assigned_to: conv.assigned_to,
+                    botEnabled: conv.bot_enabled !== false,
+                    assignedBotId: conv.assigned_bot_id || null,
                     profilePhotoUrl: getProfilePhotoUrl(conv.contact),
                     type: 'text'
                 }));
@@ -906,16 +1032,33 @@ export default function LiveChat() {
                     const bTime = b.lastMessageAt ? b.lastMessageAt.getTime() : 0;
                     return bTime - aTime;
                 });
-                setChats(formatted);
+                if (cursor) {
+                    setChats(previous => {
+                        const byId = new Map(previous.map(chat => [chat.id, chat]))
+                        formatted.forEach(chat => byId.set(chat.id, chat))
+                        return Array.from(byId.values()).sort((a, b) => {
+                            const aTime = a.lastMessageAt ? a.lastMessageAt.getTime() : 0
+                            const bTime = b.lastMessageAt ? b.lastMessageAt.getTime() : 0
+                            return bTime - aTime
+                        })
+                    })
+                } else {
+                    setChats(formatted);
+                }
+                setNextConversationCursor(data?.next_cursor || null)
+                setChatsLoadState('success')
                 fetchMissingProfilePhotos(formatted);
             } else {
                 const body = await res.text().catch(() => '')
                 console.error('Failed to fetch chats:', res.status, body)
+                if (chatsRef.current.length === 0) setChatsLoadState('error')
             }
         } catch (e) {
             console.error("Failed to fetch chats", e);
+            if (chatsRef.current.length === 0) setChatsLoadState('error')
         } finally {
             fetchChatsInFlightRef.current = false;
+            setIsLoadingMoreChats(false)
             lastChatListSyncRef.current = Date.now();
         }
     };
@@ -938,23 +1081,24 @@ export default function LiveChat() {
 
     // Fetch bot status for current conversation
     const fetchConversationBotStatus = async (conversationId) => {
-        if (!session?.access_token) return;
-        try {
-            const res = await fetch(`${API_BASE}/conversations`, {
-                headers: authHeaders
-            });
-            if (res.ok) {
-                const data = await res.json();
-                const conv = data.find(c => c.id === conversationId);
-                if (conv) {
-                    setBotEnabled(conv.bot_enabled !== false);
-                    setSelectedBotId(conv.assigned_bot_id || null);
-                }
-            }
-        } catch (e) {
-            console.error("Failed to fetch bot status", e);
+        const conversation = chatsRef.current.find(chat => chat.id === conversationId)
+        if (conversation) {
+            setBotEnabled(conversation.botEnabled !== false)
+            setSelectedBotId(conversation.assignedBotId || null)
         }
     };
+
+    const scheduleChatRefresh = () => {
+        if (chatRefreshTimerRef.current) return
+        chatRefreshTimerRef.current = window.setTimeout(() => {
+            chatRefreshTimerRef.current = null
+            void fetchChats()
+        }, 250)
+    }
+
+    useEffect(() => () => {
+        if (chatRefreshTimerRef.current) window.clearTimeout(chatRefreshTimerRef.current)
+    }, [])
 
     // Toggle bot for current conversation
     const toggleBotForConversation = async (enabled, botId = null) => {
@@ -1138,44 +1282,17 @@ export default function LiveChat() {
     }
 
     useEffect(() => {
+        if (!session?.access_token || !organizationId || isProfileLoading) return
+
+        // Inbox-critical data starts together once authenticated tenant context exists.
         fetchChats();
-        fetchBots(); // Also fetch available bots
-        if (session?.access_token) {
-            fetchAutoAssignSettings();
-            fetchOrgAgents();
-        }
-
-
-        // Fetch Meta Cloud API connected accounts from the database
-        const fetchMetaAccounts = async () => {
-            if (!session?.access_token) return;
-            try {
-                const res = await fetch(`${API_BASE}/whatsapp/accounts`, {
-                    headers: authHeaders
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (Array.isArray(data) && data.length > 0) {
-                        setIsConnected(true);
-                        setConnectedAccounts(prev => {
-                            const newAccounts = [...prev];
-                            data.forEach(acc => {
-                                // Meta API uses display_phone_number or phone_number_id
-                                const accId = acc.display_phone_number || acc.phone_number_id || acc.whatsapp_business_account_id;
-                                if (accId && !newAccounts.includes(accId)) {
-                                    newAccounts.push(accId);
-                                }
-                            });
-                            return newAccounts;
-                        });
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to fetch meta accounts:", err);
-            }
-        };
-        fetchMetaAccounts();
-    }, [user, session, selectedAccount]); // Re-fetch when user loads/filters/connects
+        // Secondary controls hydrate independently and never block the inbox shell.
+        void Promise.allSettled([
+            fetchBots(),
+            fetchAutoAssignSettings(),
+            fetchOrgAgents(),
+        ]);
+    }, [organizationId, isProfileLoading, session?.access_token, selectedAccount]); // Re-fetch when tenant/account context changes
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -1304,7 +1421,7 @@ export default function LiveChat() {
                 }
 
                 // Trigger UI updates instantly
-                fetchChats();
+                scheduleChatRefresh();
                 if (activeChat && idsEqual(activeChat.id, convId)) {
                     fetchMessages(activeChat, { limit: 50, silent: true });
                 }
@@ -1315,7 +1432,7 @@ export default function LiveChat() {
                 table: 'w_conversations',
                 filter: `organization_id=eq.${memberProfile.organization_id}`
             }, () => {
-                fetchChats();
+                scheduleChatRefresh();
             })
             .subscribe();
 
@@ -1445,9 +1562,7 @@ export default function LiveChat() {
                 // If the sidebar doesn't know this conversation yet, refresh from server
                 // so we get correct name/contact/tags/unread.
                 if (!conversationExists) {
-                    setTimeout(() => {
-                        fetchChats()
-                    }, 250)
+                    scheduleChatRefresh()
                 }
             }
 
@@ -1591,17 +1706,14 @@ export default function LiveChat() {
 
         socket.on('connected_account', (account) => {
             console.log("Account connected:", account);
-            setIsConnected(true);
-            setConnectedAccounts(prev => {
-                if (!prev.includes(account)) return [...prev, account];
-                return prev;
-            });
+            // REST is the connection source of truth; refresh it instead of deriving
+            // disconnected/connected UI from transport lifecycle events.
+            void refetchAccounts()
         });
 
         socket.on('qr', (qr) => {
             console.log("QR Code received");
             setQrCode(qr);
-            setIsConnected(false);
             setConnectionStatus('Scan QR Code');
         });
 
@@ -1609,22 +1721,18 @@ export default function LiveChat() {
             console.log("Status update:", status);
             setConnectionStatus(status);
             if (status === 'connected') {
-                setIsConnected(true);
                 setQrCode('');
-            } else if (status === 'connecting') {
-                // Keep current state
-            } else {
-                setIsConnected(false);
+                void refetchAccounts()
             }
         });
 
         socket.on('session_not_found', () => {
             // Do not auto-request QR here. Only request when user clicks "Generate QR Code".
             console.log("Session not found. Waiting for user to request QR.");
-            setIsConnected(false);
             setQrCode('');
-            setConnectedAccounts([]);
             setConnectionStatus('idle');
+            // The REST account query remains authoritative; a missing Baileys session must
+            // not erase a valid Meta Cloud API account from the inbox.
         });
 
         // Initialize Session (join once)
@@ -1654,7 +1762,7 @@ export default function LiveChat() {
             socket.off('status');
             socket.off('session_not_found');
         };
-    }, [memberProfile?.organization_id, playNotification]);
+    }, [memberProfile?.organization_id, playNotification, refetchAccounts]);
 
     useEffect(() => {
         if (!session?.access_token) return
@@ -2881,8 +2989,36 @@ export default function LiveChat() {
         ? messages.find(m => idsEqual(m.id, activeMessageMenuId))
         : null;
 
-    // Render Simplified Connect Prompt if no accounts connected
-    if (!isConnected && connectedAccounts.length === 0) {
+    if (connectionState === 'loading') {
+        return <LiveChatLoadingSkeleton sidebarWidth={sidebarWidth} isDesktop={isDesktop} />
+    }
+
+    if (connectionState === 'error') {
+        return (
+            <div className="flex h-full min-h-0 flex-col items-center justify-center bg-white p-8 text-center" role="alert">
+                <div className="mb-4 rounded-full bg-red-50 p-4">
+                    <AlertCircle className="h-10 w-10 text-red-600" />
+                </div>
+                <h2 className="mb-2 text-xl font-bold text-gray-900">We couldn&apos;t load your WhatsApp connection</h2>
+                <p className="mb-6 max-w-sm text-sm text-gray-500">
+                    {accountsError?.message || 'Please check your connection and try again.'}
+                </p>
+                <button
+                    type="button"
+                    onClick={() => {
+                        setConnectionState('loading')
+                        void refetchAccounts()
+                    }}
+                    className="rounded-xl bg-gray-900 px-6 py-2.5 text-sm font-bold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+                >
+                    Retry
+                </button>
+            </div>
+        )
+    }
+
+    // The connect prompt appears only after the authoritative REST check confirms no account.
+    if (connectionState === 'disconnected' && connectedAccounts.length === 0) {
         return (
             <div className="flex h-full min-h-0 flex-col items-center justify-center bg-white p-8 text-center">
                 <div className="bg-green-50 p-4 rounded-full mb-4">
@@ -3030,7 +3166,20 @@ export default function LiveChat() {
                     </div>
 
                     <div className="flex-1 overflow-y-auto custom-scrollbar">
-                        {chats.length === 0 ? (
+                        {chatsLoadState === 'loading' && chats.length === 0 ? (
+                            <ChatListLoadingSkeleton />
+                        ) : chatsLoadState === 'error' && chats.length === 0 ? (
+                            <div className="p-8 text-center">
+                                <p className="mb-3 text-sm text-gray-500">Couldn&apos;t load conversations.</p>
+                                <button
+                                    type="button"
+                                    onClick={() => fetchChats()}
+                                    className="rounded-lg px-4 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"
+                                >
+                                    Retry
+                                </button>
+                            </div>
+                        ) : chats.length === 0 ? (
                             <div className="p-8 text-center text-gray-400 text-sm">
                                 No chats yet. Messages you receive will appear here.
                             </div>
@@ -3039,7 +3188,8 @@ export default function LiveChat() {
                                 No chats match this filter.
                             </div>
                         ) : (
-                            visibleChats.map(chat => (
+                            <>
+                            {visibleChats.map(chat => (
                                 <div
                                     key={chat.id}
                                     onClick={() => setSelectedChat(chat)}
@@ -3086,11 +3236,6 @@ export default function LiveChat() {
                                                 </button>
                                             </div>
                                         </div>
-                                        {formatPhoneForDisplay(chat.phone || chat.waId) ? (
-                                            <div className="text-[11px] text-gray-400 font-mono truncate -mt-0.5 mb-0.5">
-                                                {formatPhoneForDisplay(chat.phone || chat.waId)}
-                                            </div>
-                                        ) : null}
                                         <p className={`mb-1 truncate text-xs ${selectedChat?.id === chat.id ? 'text-gray-600' : 'text-gray-500'}`}>{chat.lastMessage}</p>
                                         <div className="flex items-center gap-1.5">
                                             {(Array.isArray(chat.tags) ? chat.tags : []).filter(tag => {
@@ -3203,7 +3348,21 @@ export default function LiveChat() {
                                         </div>
                                     )}
                                 </div>
-                            )))}
+                            ))}
+                            {nextConversationCursor && (
+                                <div className="border-t border-gray-100 p-3 text-center">
+                                    <button
+                                        type="button"
+                                        disabled={isLoadingMoreChats}
+                                        onClick={() => fetchChats({ cursor: nextConversationCursor })}
+                                        className="rounded-lg px-4 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-60"
+                                    >
+                                        {isLoadingMoreChats ? 'Loading more chats…' : 'Load more chats'}
+                                    </button>
+                                </div>
+                            )}
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -3867,7 +4026,6 @@ export default function LiveChat() {
                                                             </div>
                                                             <div className="min-w-0 flex-1">
                                                                 <div className="truncate text-sm font-semibold text-gray-900">{chat.name}</div>
-                                                                <div className="truncate text-[11px] font-mono text-gray-400">{formatPhoneForDisplay(chat.phone || chat.waId)}</div>
                                                                 <div className="truncate text-xs text-gray-500">{chat.lastMessage}</div>
                                                             </div>
                                                         </button>

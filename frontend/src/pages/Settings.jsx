@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { useNotificationSound } from '../hooks/useNotificationSound'
 import TourButton from '../onboarding/TourButton'
+import { useQueryClient } from '@tanstack/react-query'
 
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 const DESKTOP_NOTIFICATION_KEY = 'gap_desktop_notifications_enabled'
@@ -31,6 +32,7 @@ const readStoredText = (key, fallback) => {
 
 export default function Settings() {
     const { session, userRole, loginType, apiCall, user, memberProfile } = useAuth()
+    const queryClient = useQueryClient()
     const avatarColor = memberProfile?.avatar_color || user?.user_metadata?.avatar_color || '#4f46e5'
     const { alertDialog, confirmDialog } = useDialog()
     const [billingOverview, setBillingOverview] = useState(null)
@@ -48,11 +50,13 @@ export default function Settings() {
     const [searchParams, setSearchParams] = useSearchParams()
     const activeTab = searchParams.get('tab') || 'general'
     const setActiveTab = (tab) => {
+        if (tab === 'knowledge' && documents.length === 0) setIsLoadingKnowledge(true)
+        if (tab === 'account' && accounts.length === 0) setIsLoadingAccounts(true)
         setSearchParams({ tab })
     }
     const [documents, setDocuments] = useState([])
     const [knowledgeStats, setKnowledgeStats] = useState({ total_documents: 0, total_characters: 0 })
-    const [isLoadingKnowledge, setIsLoadingKnowledge] = useState(false)
+    const [isLoadingKnowledge, setIsLoadingKnowledge] = useState(activeTab === 'knowledge')
     const [isUploadingKnowledge, setIsUploadingKnowledge] = useState(false)
     const [knowledgeError, setKnowledgeError] = useState('')
     const [knowledgeSuccess, setKnowledgeSuccess] = useState('')
@@ -67,7 +71,7 @@ export default function Settings() {
     const [resendingMemberId, setResendingMemberId] = useState(null)
     const [accounts, setAccounts] = useState([])
     const [selectedAccountId, setSelectedAccountId] = useState('')
-    const [isLoadingAccounts, setIsLoadingAccounts] = useState(false)
+    const [isLoadingAccounts, setIsLoadingAccounts] = useState(true)
     const [isLoadingProfile, setIsLoadingProfile] = useState(false)
     const [isSavingProfile, setIsSavingProfile] = useState(false)
     const [profileError, setProfileError] = useState('')
@@ -415,6 +419,9 @@ export default function Settings() {
                 })
             }
             await fetchAccounts()
+            await queryClient.invalidateQueries({
+                queryKey: ['whatsapp-accounts', memberProfile?.organization_id || null],
+            })
         } catch (e) {
             console.error('Failed to disconnect account', e)
             setProfileError(e?.message || 'Failed to disconnect account.')

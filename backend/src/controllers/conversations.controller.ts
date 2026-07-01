@@ -1,26 +1,67 @@
 import { Response } from 'express';
 import { supabase } from '../config/supabase.js';
 import { getIO } from '../config/socket.js';
-import { getCachedProfilePhotoUrl } from '../services/whatsapp.service.js';
 import { derivePhoneForStorage, normalizeIndianPhoneKey, isUuid } from '../utils/format.js';
+
+const DEFAULT_CONVERSATION_PAGE_SIZE = 50;
+const MAX_CONVERSATION_PAGE_SIZE = 100;
+
+function decodeConversationCursor(value: unknown): { lastMessageAt: string; id: string } | null {
+    if (!value) return null;
+    try {
+        const parsed = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
+        if (!parsed?.lastMessageAt || !isUuid(parsed?.id) || Number.isNaN(Date.parse(parsed.lastMessageAt))) return null;
+        return { lastMessageAt: new Date(parsed.lastMessageAt).toISOString(), id: parsed.id };
+    } catch {
+        return null;
+    }
+}
+
+function encodeConversationCursor(conversation: any): string | null {
+    if (!conversation?.last_message_at || !conversation?.id) return null;
+    return Buffer.from(JSON.stringify({
+        lastMessageAt: conversation.last_message_at,
+        id: conversation.id,
+    }), 'utf8').toString('base64url');
+}
 
 export async function getConversations(req: any, res: Response) {
     const organization_id = req.organization_id;
     const wa_account_id = req.query.wa_account_id as string;
     const user_id = req.user.id;
     const user_role = req.role;
+    const requestedLimit = Number.parseInt(String(req.query.limit || DEFAULT_CONVERSATION_PAGE_SIZE), 10);
+    const pageSize = Number.isFinite(requestedLimit)
+        ? Math.min(Math.max(requestedLimit, 1), MAX_CONVERSATION_PAGE_SIZE)
+        : DEFAULT_CONVERSATION_PAGE_SIZE;
+    const cursorValue = req.query.cursor;
+    const cursor = decodeConversationCursor(cursorValue);
 
     if (!organization_id) return res.status(403).json({ error: 'No organization linked to this account' });
+    if (cursorValue && !cursor) return res.status(400).json({ error: 'Invalid conversation cursor' });
 
     try {
         let query = supabase
             .from('w_conversations')
             .select(`
-                *,
+                id,
+                contact_id,
+                wa_account_id,
+                last_message_preview,
+                last_message_at,
+                unread_count,
+                status,
+                labels,
+                assigned_to,
+                assigned_agent_id,
+                bot_enabled,
+                assigned_bot_id,
                 contact:w_contacts(id, name, custom_name, phone, wa_id, wa_key, created_at, tags, custom_fields, saved_at, saved_by_user_id, save_source)
             `)
             .eq("organization_id", organization_id)
-            .order("last_message_at", { ascending: false });
+            .order("last_message_at", { ascending: false, nullsFirst: false })
+            .order("id", { ascending: false })
+            .limit(pageSize + 1);
 
         if (user_role === 'agent') {
             query = query.eq('assigned_agent_id', user_id);
@@ -71,8 +112,16 @@ export async function getConversations(req: any, res: Response) {
             }
         }
 
+        if (cursor) {
+            query = query.or(
+                `last_message_at.lt.${cursor.lastMessageAt},and(last_message_at.eq.${cursor.lastMessageAt},id.lt.${cursor.id})`
+            );
+        }
+
         let { data: conversations, error } = await query;
         if (error) throw error;
+        const hasMore = (conversations?.length || 0) > pageSize;
+        if (hasMore) conversations = conversations!.slice(0, pageSize);
 
         let readStatesMap = new Map();
         if (user_id && conversations?.length) {
@@ -87,31 +136,19 @@ export async function getConversations(req: any, res: Response) {
             }
         }
 
-        const unreadCountMap = new Map<string, number>();
-        if (conversations?.length) {
-            const conversationIds = conversations.map((c: any) => c.id);
-            const { data: unreadRows, error: unreadErr } = await supabase
-                .from('w_messages')
-                .select('conversation_id')
-                .in('conversation_id', conversationIds)
-                .in('direction', ['inbound', 'in'])
-                .neq('status', 'read');
+        // unread_count is maintained with the conversation and avoids returning every
+        // unread message row across the network for an inbox page.
+        const unreadCountMap = new Map<string, number>(
+            (conversations || []).map((conversation: any) => [
+                conversation.id,
+                Math.max(Number(conversation.unread_count) || 0, 0),
+            ])
+        );
 
-            if (unreadErr) {
-                console.warn('⚠️ Failed to compute unread counts:', unreadErr.message || unreadErr);
-            } else if (Array.isArray(unreadRows)) {
-                for (const row of unreadRows) {
-                    const cid = (row as any)?.conversation_id;
-                    if (!cid) continue;
-                    unreadCountMap.set(cid, (unreadCountMap.get(cid) || 0) + 1);
-                }
-            }
-        }
-
-        const result = await Promise.all(conversations.map(async (c: any) => {
+        const result = (conversations || []).map((c: any) => {
             const lastReadAt = readStatesMap.get(c.id);
             const userHasRead = lastReadAt ? new Date(lastReadAt) >= new Date(c.last_message_at) : false;
-            const unread_for_user = unreadCountMap.get(c.id) || 0;
+            const unread_for_user = userHasRead ? 0 : (unreadCountMap.get(c.id) || 0);
             const next = { ...c };
 
             if (next?.contact) {
@@ -124,22 +161,8 @@ export async function getConversations(req: any, res: Response) {
                     next.contact.wa_key = normalizeIndianPhoneKey(next.contact.wa_id) || null;
                 }
                 const storedPhoto = next.contact.custom_fields?.profile_photo_url || null;
-                next.contact.profile_photo_url = storedPhoto || await getCachedProfilePhotoUrl(next.contact.wa_id || next.contact.phone);
-                if (next.contact.profile_photo_url && next.contact.profile_photo_url !== storedPhoto && next.contact.id) {
-                    supabase
-                        .from('w_contacts')
-                        .update({
-                            custom_fields: {
-                                ...(next.contact.custom_fields && typeof next.contact.custom_fields === 'object' ? next.contact.custom_fields : {}),
-                                profile_photo_url: next.contact.profile_photo_url,
-                                profile_photo_checked_at: new Date().toISOString()
-                            }
-                        })
-                        .eq('id', next.contact.id)
-                        .then(({ error }: { error: any }) => {
-                            if (error) console.warn('Failed to persist profile photo URL:', error.message);
-                        });
-                }
+                // Missing photos are refreshed by the existing background photo endpoint.
+                next.contact.profile_photo_url = storedPhoto;
             }
 
             return {
@@ -147,9 +170,10 @@ export async function getConversations(req: any, res: Response) {
                 user_has_read: userHasRead,
                 unread_for_user
             };
-        }));
+        });
 
-        res.json(result);
+        const nextCursor = hasMore ? encodeConversationCursor(result[result.length - 1]) : null;
+        res.json({ items: result, next_cursor: nextCursor, has_more: hasMore });
     } catch (err: any) {
         console.error("Error fetching conversations:", err);
         res.status(500).json({ error: err.message });

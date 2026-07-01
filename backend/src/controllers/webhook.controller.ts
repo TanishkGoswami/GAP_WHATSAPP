@@ -1072,8 +1072,14 @@ export async function handleWebhook(req: any, res: Response) {
           });
         }
 
-        // AI Agent fallback — sirf tab jab flow ne consume nahi kiya aur type text hai
-        if (!flowConsumedMessage && type === "text" && text) {
+        // Meta template quick replies arrive as `button`, while list/button
+        // selections arrive as `interactive`. Their normalized text should
+        // reach the AI fallback when no Flow Builder flow consumed the reply.
+        const isAgentEligible =
+          (type === "text" || type === "button" || type === "interactive") &&
+          Boolean(text?.trim());
+
+        if (!flowConsumedMessage && isAgentEligible) {
           webhookLog("bot_agent.process.queue", {
             requestId,
             conversation_id: conv.id,
@@ -1182,6 +1188,7 @@ export async function handleWebhook(req: any, res: Response) {
             type,
             hasText: !!text,
             flowConsumedMessage,
+            isAgentEligible,
           });
         }
       } catch (botErr: any) {
