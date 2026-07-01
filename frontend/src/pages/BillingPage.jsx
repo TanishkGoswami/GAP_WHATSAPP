@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Check, ChevronDown, CreditCard, Hexagon, Loader2, Megaphone, ReceiptText, ShieldCheck, Wallet, Plus, ArrowRight, X } from 'lucide-react'
+import {
+    AlertCircle, Check, ChevronDown, CreditCard, Hexagon, Loader2,
+    Megaphone, ReceiptText, ShieldCheck, Wallet, Plus, ArrowRight, X,
+    Send, Zap, Crown, ThumbsUp, MessageSquare, Bot, Workflow, Tag,
+    Calendar, BarChart3, FileDown, Code2, Users2, Headphones
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../supabaseClient'
@@ -74,6 +79,93 @@ async function getFunctionErrorMessage(error, fallback) {
     }
     return error?.message || fallback
 }
+
+const comparisonFeatures = [
+    {
+        name: 'Automation Flows',
+        icon: MessageSquare,
+        starter: '5 flows',
+        growth: 'Unlimited',
+        pro: 'Unlimited',
+        highlightGrowth: true,
+    },
+    {
+        name: 'AI Agents Included',
+        icon: Bot,
+        starter: '—',
+        growth: '5 agents',
+        pro: 'Unlimited',
+        highlightGrowth: true,
+    },
+    {
+        name: 'Visual Flow Builder',
+        icon: Workflow,
+        starter: 'tick',
+        growth: 'tick',
+        pro: 'tick',
+    },
+    {
+        name: 'Custom Fields, Tags & Attributes',
+        icon: Tag,
+        starter: 'Basic',
+        growth: 'Advanced',
+        pro: 'Advanced',
+        highlightGrowth: true,
+    },
+    {
+        name: 'Connected WhatsApp numbers',
+        icon: Megaphone,
+        starter: '1 number',
+        growth: '1 number',
+        pro: '2 numbers',
+        highlightGrowth: true,
+    },
+    {
+        name: 'Campaign Scheduler',
+        icon: Calendar,
+        starter: 'cross',
+        growth: 'cross',
+        pro: 'tick',
+    },
+    {
+        name: 'Analytics Dashboard',
+        icon: BarChart3,
+        starter: 'Basic',
+        growth: 'Standard',
+        pro: 'Advanced',
+        highlightGrowth: true,
+    },
+    {
+        name: 'Export (CSV)',
+        icon: FileDown,
+        starter: 'cross',
+        growth: 'cross',
+        pro: 'tick',
+    },
+    {
+        name: 'Developer API & Webhooks',
+        icon: Code2,
+        starter: 'cross',
+        growth: 'cross',
+        pro: 'tick',
+    },
+    {
+        name: 'Team Inbox Seats',
+        icon: Users2,
+        starter: '5 agents',
+        growth: '5 agents',
+        pro: '10 agents',
+        highlightGrowth: true,
+    },
+    {
+        name: 'Support',
+        icon: Headphones,
+        starter: 'Standard',
+        growth: 'Priority',
+        pro: 'VIP Support',
+        highlightGrowth: true,
+    },
+]
 
 export default function BillingPage() {
     const { user, refreshProfile, apiCall } = useAuth()
@@ -790,171 +882,246 @@ export default function BillingPage() {
                 </section>
 
                 {/* ═══════════════════════════════════════════════════════════════
-                    COMPREHENSIVE PLANS COMPARISON SECTION
+                    COMPREHENSIVE PLANS COMPARISON SECTION (REDESIGNED)
                 ═══════════════════════════════════════════════════════════════ */}
-                <section className="space-y-6">
-                    <div className="text-center space-y-3 mt-8 mb-4">
-                        <span className="text-[11px] font-extrabold text-emerald-600 uppercase tracking-widest flex items-center justify-center gap-2">
-                            <Hexagon className="h-4 w-4 text-emerald-600 stroke-[2.5]" />
-                            Full Comparison
-                        </span>
-                        <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight leading-snug">
-                            Every feature, every plan—checks<br className="hidden sm:inline" /> for included, crosses for not yet
+                <section className="space-y-4 py-4">
+                    <div className="text-center space-y-2 mb-4">
+                        <div className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20 mx-auto">
+                            <span className="text-emerald-500 font-bold">✨</span>
+                            Choose the plan that grows with you
+                        </div>
+                        <h2 className="text-2xl font-black text-gray-900 tracking-tight leading-snug">
+                            Compare Plans. Pick Your Perfect Fit.
                         </h2>
-                        <p className="text-sm text-gray-500 max-w-2xl mx-auto font-medium">
-                            Full matrix on desktop—checks for included, crosses for not yet.
+                        <p className="text-xs text-gray-500 max-w-xl mx-auto font-medium">
+                            All plans include core features to help you connect, automate, and grow.
                         </p>
                     </div>
 
-                    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+                    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg shadow-gray-100/30">
                         <div className="overflow-x-auto">
-                            <table className="w-full min-w-[700px] border-collapse text-left">
+                            <table className="w-full min-w-[700px] border-separate border-spacing-0 text-left">
                                 <thead>
-                                    <tr className="border-b border-gray-200">
-                                        <th className="p-5 text-xs font-bold text-gray-400 uppercase tracking-wider w-2/5">Capability</th>
-                                        <th className="p-5 text-center text-xs font-bold text-gray-900 uppercase tracking-wider w-1/5">Starter</th>
-                                        <th className="p-5 text-center text-xs font-bold bg-emerald-50/50 text-[#075E54] uppercase tracking-wider w-1/5 relative">
-                                            <span className="block font-black">Growth</span>
-                                            <span className="block text-[8px] font-extrabold text-emerald-600 tracking-widest mt-0.5">RECOMMENDED</span>
+                                    <tr>
+                                        {/* Column 1: Features Header */}
+                                        <th className="py-3 px-4 text-xs font-bold text-gray-400 uppercase tracking-wider w-2/5 border-b border-gray-100">
+                                            Features
                                         </th>
-                                        <th className="p-5 text-center text-xs font-bold text-gray-900 uppercase tracking-wider w-1/5">Pro</th>
+                                        
+                                        {/* Column 2: Starter Header */}
+                                        <th className="py-3 px-4 text-center w-1/5 border-b border-gray-100">
+                                            <div className="space-y-1.5">
+                                                <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                                                    <Send className="h-4 w-4" />
+                                                </div>
+                                                <div>
+                                                    <span className="block text-sm font-bold text-gray-900">Starter</span>
+                                                    <span className="block text-[9px] font-medium text-gray-400">Perfect for getting started</span>
+                                                </div>
+                                            </div>
+                                        </th>
+
+                                        {/* Column 3: Growth Header (Highlighted) */}
+                                        <th className="py-3 px-4 text-center bg-emerald-50/5 border-t-2 border-l-2 border-r-2 border-emerald-500 rounded-t-xl relative w-1/5">
+                                            <div className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm">
+                                                <Check className="h-3 w-3 stroke-[3.5]" />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                                                    <Zap className="h-4 w-4 fill-amber-500" />
+                                                </div>
+                                                <div>
+                                                    <span className="block text-sm font-black text-emerald-800">Growth</span>
+                                                    <span className="block text-[9px] font-bold text-emerald-600">Recommended for you</span>
+                                                </div>
+                                            </div>
+                                        </th>
+
+                                        {/* Column 4: Pro Header */}
+                                        <th className="py-3 px-4 text-center w-1/5 border-b border-gray-100">
+                                            <div className="space-y-1.5">
+                                                <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-full bg-orange-50 text-orange-600">
+                                                    <Crown className="h-4 w-4 fill-orange-500" />
+                                                </div>
+                                                <div>
+                                                    <span className="block text-sm font-bold text-gray-900">Pro</span>
+                                                    <span className="block text-[9px] font-medium text-gray-400">For advanced businesses</span>
+                                                </div>
+                                            </div>
+                                        </th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {/* Category 1 */}
-                                    <tr className="bg-gray-50/50">
-                                        <td colSpan="4" className="px-5 py-3 text-xs font-extrabold text-gray-500 uppercase tracking-wider">
-                                            Service, Campaigns & Account
+                                
+                                <tbody>
+                                    {comparisonFeatures.map((feature, idx) => {
+                                        const FeatureIcon = feature.icon;
+                                        
+                                        const renderCellVal = (val, isGrowth = false) => {
+                                            if (val === 'tick') {
+                                                return (
+                                                    <div className="inline-flex items-center justify-center rounded-full bg-emerald-500 p-0.5 text-white shadow-sm">
+                                                        <Check className="h-2.5 w-2.5 stroke-[4]" />
+                                                    </div>
+                                                );
+                                            }
+                                            if (val === 'cross') {
+                                                return <span className="text-gray-300 font-bold text-base">×</span>;
+                                            }
+                                            if (val === '—') {
+                                                return <span className="text-gray-300 font-bold text-base">—</span>;
+                                            }
+                                            return (
+                                                <span className={`text-xs ${isGrowth && feature.highlightGrowth ? 'text-emerald-600 font-extrabold' : 'text-gray-600 font-medium'}`}>
+                                                    {val}
+                                                </span>
+                                            );
+                                        };
+
+                                        return (
+                                            <tr key={idx} className="hover:bg-gray-50/20 transition-colors">
+                                                {/* Feature Name and Icon */}
+                                                <td className="px-4 py-2 border-b border-gray-100">
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className="flex h-6 w-6 items-center justify-center rounded bg-gray-50 text-gray-500">
+                                                            <FeatureIcon className="h-3.5 w-3.5 stroke-[2]" />
+                                                        </div>
+                                                        <span className="text-xs font-semibold text-gray-700">{feature.name}</span>
+                                                    </div>
+                                                </td>
+
+                                                {/* Starter Value */}
+                                                <td className="px-4 py-2 text-center border-b border-gray-100">
+                                                    {renderCellVal(feature.starter)}
+                                                </td>
+
+                                                {/* Growth Value (Highlighted) */}
+                                                <td className="px-4 py-2 text-center bg-emerald-50/5 border-l-2 border-r-2 border-emerald-500 border-b border-emerald-100/30">
+                                                    {renderCellVal(feature.growth, true)}
+                                                </td>
+
+                                                {/* Pro Value */}
+                                                <td className="px-4 py-2 text-center border-b border-gray-100">
+                                                    {renderCellVal(feature.pro)}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+
+                                    {/* Pricing Row */}
+                                    <tr>
+                                        {/* Empty Features Cell */}
+                                        <td className="px-4 py-3 border-b border-gray-100"></td>
+
+                                        {/* Starter Price */}
+                                        <td className="px-4 py-3 text-center border-b border-gray-100">
+                                            {(() => {
+                                                const starterPlan = plans.find(p => p.id === 'starter') || FALLBACK_PLANS[0];
+                                                const monthlyEquivalent = getMonthlyEquivalent(starterPlan, interval);
+                                                return (
+                                                    <div className="space-y-0.5">
+                                                        <span className="block text-lg font-black text-gray-950">{formatINRFromPaise(monthlyEquivalent)}</span>
+                                                        <span className="block text-[9px] font-semibold text-gray-400">/month</span>
+                                                    </div>
+                                                );
+                                            })()}
                                         </td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Unlimited free service conversations</td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Unlimited campaigns (subject to Facebook Business Manager verification)</td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Contact list limit</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">1,000</td>
-                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">10,000</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">50,000</td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Connected WhatsApp numbers</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">1 number</td>
-                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">1 number</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">2 numbers</td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Broadcast multi-media messages</td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Carousel feature</td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Dedicated onboarding help</td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Blue tick application process help</td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
+
+                                        {/* Growth Price (Highlighted) */}
+                                        <td className="px-4 py-3 text-center bg-emerald-50/5 border-l-2 border-r-2 border-emerald-500 border-b border-emerald-100/30">
+                                            {(() => {
+                                                const growthPlan = plans.find(p => p.id === 'growth') || FALLBACK_PLANS[1];
+                                                const monthlyEquivalent = getMonthlyEquivalent(growthPlan, interval);
+                                                return (
+                                                    <div className="space-y-0.5">
+                                                        <span className="block text-lg font-black text-emerald-600">{formatINRFromPaise(monthlyEquivalent)}</span>
+                                                        <span className="block text-[9px] font-bold text-emerald-500">/month</span>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </td>
+
+                                        {/* Pro Price */}
+                                        <td className="px-4 py-3 text-center border-b border-gray-100">
+                                            {(() => {
+                                                const proPlan = plans.find(p => p.id === 'pro') || FALLBACK_PLANS[2];
+                                                const monthlyEquivalent = getMonthlyEquivalent(proPlan, interval);
+                                                return (
+                                                    <div className="space-y-0.5">
+                                                        <span className="block text-lg font-black text-gray-950">{formatINRFromPaise(monthlyEquivalent)}</span>
+                                                        <span className="block text-[9px] font-semibold text-gray-400">/month</span>
+                                                    </div>
+                                                );
+                                            })()}
+                                        </td>
                                     </tr>
 
-                                    {/* Category 2 */}
-                                    <tr className="bg-gray-50/50">
-                                        <td colSpan="4" className="px-5 py-3 text-xs font-extrabold text-gray-500 uppercase tracking-wider">
-                                            Automation & AI
-                                        </td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Max automation flows</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">5 flows</td>
-                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">Unlimited</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Unlimited</td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">AI agents included</td>
-                                        <td className="px-5 py-4 text-center"><Cross /></td>
-                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">5 agents</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Unlimited</td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Visual chatbot flow builder</td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Tick /></td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Custom fields, tags & attributes</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Basic</td>
-                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">Advanced</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Advanced</td>
-                                    </tr>
+                                    {/* Action Buttons Row */}
+                                    <tr>
+                                        {/* Empty Features Cell */}
+                                        <td className="px-4 py-3"></td>
 
-                                    {/* Category 3 */}
-                                    <tr className="bg-gray-50/50">
-                                        <td colSpan="4" className="px-5 py-3 text-xs font-extrabold text-gray-500 uppercase tracking-wider">
-                                            Campaign Tools & Analytics
+                                        {/* Starter Action */}
+                                        <td className="px-4 py-3 text-center align-middle">
+                                            {(() => {
+                                                const starterPlan = plans.find(p => p.id === 'starter') || FALLBACK_PLANS[0];
+                                                const current = isCurrentPlan(currentPlan, starterPlan) || String(activePlanId || '').toLowerCase().includes('starter');
+                                                const targetRank = getPlanRank(starterPlan);
+                                                const isDowngrade = activePlanRank > 0 && targetRank > 0 && targetRank < activePlanRank;
+                                                const scheduled = scheduledPlanId === starterPlan.id;
+                                                return (
+                                                    <button
+                                                        type="button"
+                                                        disabled={current || scheduled || upgrading === starterPlan.id}
+                                                        onClick={() => handleUpgrade(starterPlan)}
+                                                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-[10px] font-bold text-gray-700 hover:bg-gray-50 transition disabled:opacity-60"
+                                                    >
+                                                        {upgrading === starterPlan.id ? '...' : getPlanActionLabel({ current, isDowngrade, scheduled, planName: 'Starter' })}
+                                                    </button>
+                                                );
+                                            })()}
                                         </td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Campaign scheduler</td>
-                                        <td className="px-5 py-4 text-center"><Cross /></td>
-                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Cross /></td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Detailed analytics dashboard</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Basic</td>
-                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">Standard</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Advanced</td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Contact list exports (CSV)</td>
-                                        <td className="px-5 py-4 text-center"><Cross /></td>
-                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Cross /></td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Developer API & Webhooks</td>
-                                        <td className="px-5 py-4 text-center"><Cross /></td>
-                                        <td className="px-5 py-4 text-center bg-emerald-50/20"><Cross /></td>
-                                        <td className="px-5 py-4 text-center"><Tick /></td>
-                                    </tr>
 
-                                    {/* Category 4 */}
-                                    <tr className="bg-gray-50/50">
-                                        <td colSpan="4" className="px-5 py-3 text-xs font-extrabold text-gray-500 uppercase tracking-wider">
-                                            Team & Support
+                                        {/* Growth Action (Highlighted) */}
+                                        <td className="px-4 py-3 text-center align-middle bg-emerald-50/5 border-l-2 border-r-2 border-b-2 border-emerald-500 rounded-b-xl">
+                                            {(() => {
+                                                const growthPlan = plans.find(p => p.id === 'growth') || FALLBACK_PLANS[1];
+                                                const current = isCurrentPlan(currentPlan, growthPlan) || String(activePlanId || '').toLowerCase().includes('growth');
+                                                const targetRank = getPlanRank(growthPlan);
+                                                const isDowngrade = activePlanRank > 0 && targetRank > 0 && targetRank < activePlanRank;
+                                                const scheduled = scheduledPlanId === growthPlan.id;
+                                                return (
+                                                    <button
+                                                        type="button"
+                                                        disabled={current || scheduled || upgrading === growthPlan.id}
+                                                        onClick={() => handleUpgrade(growthPlan)}
+                                                        className="w-full rounded-lg bg-[#128C7E] hover:bg-[#075E54] text-white px-3 py-1.5 text-[10px] font-bold transition shadow disabled:opacity-60"
+                                                    >
+                                                        {upgrading === growthPlan.id ? '...' : getPlanActionLabel({ current, isDowngrade, scheduled, planName: 'Growth' })}
+                                                    </button>
+                                                );
+                                            })()}
                                         </td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Team inbox seats (Agents)</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">5 agents</td>
-                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">5 agents</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">10 agents</td>
-                                    </tr>
-                                    <tr className="hover:bg-slate-50/50 transition-colors duration-150">
-                                        <td className="px-5 py-4 text-sm font-semibold text-gray-700">Customer support level</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Standard support</td>
-                                        <td className="px-5 py-4 text-center text-sm font-black text-[#075E54] bg-emerald-50/20">Priority support</td>
-                                        <td className="px-5 py-4 text-center text-sm font-bold text-gray-600">Dedicated VIP support</td>
+
+                                        {/* Pro Action */}
+                                        <td className="px-4 py-3 text-center align-middle">
+                                            {(() => {
+                                                const proPlan = plans.find(p => p.id === 'pro') || FALLBACK_PLANS[2];
+                                                const current = isCurrentPlan(currentPlan, proPlan) || String(activePlanId || '').toLowerCase().includes('pro');
+                                                const targetRank = getPlanRank(proPlan);
+                                                const isDowngrade = activePlanRank > 0 && targetRank > 0 && targetRank < activePlanRank;
+                                                const scheduled = scheduledPlanId === proPlan.id;
+                                                return (
+                                                    <button
+                                                        type="button"
+                                                        disabled={current || scheduled || upgrading === proPlan.id}
+                                                        onClick={() => handleUpgrade(proPlan)}
+                                                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-[10px] font-bold text-gray-700 hover:bg-gray-50 transition disabled:opacity-60"
+                                                    >
+                                                        {upgrading === proPlan.id ? '...' : getPlanActionLabel({ current, isDowngrade, scheduled, planName: 'Pro' })}
+                                                    </button>
+                                                );
+                                            })()}
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
