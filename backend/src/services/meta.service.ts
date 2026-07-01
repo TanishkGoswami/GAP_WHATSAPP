@@ -107,6 +107,22 @@ export function getMetaErrorMessage(data: any, fallback: string) {
     return parts.join(' | ') || fallback;
 }
 
+export async function subscribeMetaAppToWaba(wabaId: string, token: string) {
+    if (!wabaId || !token) throw new Error('WABA ID and access token are required to enable webhooks.');
+
+    const response = await fetch(
+        `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(wabaId)}/subscribed_apps`,
+        {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` }
+        }
+    );
+    const data: any = await response.json();
+    if (!response.ok || data.error || data.success !== true) {
+        throw new Error(getMetaErrorMessage(data, `Meta could not enable webhooks for WABA ${wabaId}.`));
+    }
+}
+
 export function buildAccountReadinessSummary(account: any) {
     const isMeta = Boolean(account?.whatsapp_business_account_id || account?.access_token_encrypted);
     if (!isMeta) {
@@ -153,6 +169,7 @@ export async function getMetaAccountDiagnostics(account: any) {
         token_permissions: null,
         phone_number_access: null,
         waba_access: null,
+        webhook_subscription: null,
         issue_codes: [],
         reconnect_required: false,
         meta_errors: [],
@@ -224,6 +241,29 @@ export async function getMetaAccountDiagnostics(account: any) {
             }
         } catch (err: any) {
             addDiagnosticIssue(diagnostics, 'waba_access_check_failed', `Could not validate WABA phone list: ${err.message}`);
+        }
+
+        try {
+            const subscriptionRes = await fetch(
+                `https://graph.facebook.com/${GRAPH_API_VERSION}/${account.whatsapp_business_account_id}/subscribed_apps?access_token=${encodeURIComponent(token)}`
+            );
+            const subscriptionJson: any = await subscriptionRes.json();
+            diagnostics.webhook_subscription = subscriptionJson;
+            const appId = process.env.META_APP_ID;
+            const isSubscribed = subscriptionRes.ok &&
+                !subscriptionJson.error &&
+                Array.isArray(subscriptionJson.data) &&
+                subscriptionJson.data.some((app: any) => !appId || String(app.id) === String(appId));
+            if (!isSubscribed) {
+                addDiagnosticIssue(
+                    diagnostics,
+                    'webhook_not_subscribed',
+                    subscriptionJson.error?.message || 'This Meta app is not subscribed to the WABA. Reconnect the account to restore inbound webhooks.',
+                    subscriptionJson.error
+                );
+            }
+        } catch (err: any) {
+            addDiagnosticIssue(diagnostics, 'webhook_subscription_check_failed', `Could not validate webhook subscription: ${err.message}`);
         }
     } else {
         addDiagnosticIssue(diagnostics, 'waba_missing', 'Missing whatsapp_business_account_id on this account.');

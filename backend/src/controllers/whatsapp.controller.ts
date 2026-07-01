@@ -16,6 +16,7 @@ import {
   fetchMetaBusinessProfile,
   uploadMetaProfilePicture,
   updateMetaBusinessProfile,
+  subscribeMetaAppToWaba,
 } from '../services/meta.service.js';
 
 const GRAPH_API_VERSION = process.env.META_API_VERSION || "v20.0";
@@ -150,10 +151,10 @@ export async function addMetaAccount(req: any, res: Response) {
     req.body;
   const orgId = req.organization_id;
 
-  if (!phone_number_id || !access_token) {
+  if (!phone_number_id || !waba_id || !access_token) {
     return res
       .status(400)
-      .json({ error: "phone_number_id and access_token are required" });
+      .json({ error: "phone_number_id, waba_id and access_token are required" });
   }
 
   try {
@@ -193,6 +194,10 @@ export async function addMetaAccount(req: any, res: Response) {
     const normalizedPhoneNumberId = String(phone_number_id).trim();
 
     await enforceWhatsAppCloudNumberLimit(orgId, normalizedPhoneNumberId);
+    await subscribeMetaAppToWaba(
+      String(waba_id).trim(),
+      String(access_token).trim(),
+    );
 
     const { data, error } = await supabase
       .from("w_wa_accounts")

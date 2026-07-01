@@ -55,6 +55,19 @@ app.use(cors({
     allowedHeaders: corsAllowedHeaders
 }));
 
+// CSV-backed campaigns can contain up to 10K recipients. Keep the larger body
+// allowance scoped to broadcast routes instead of widening every API endpoint.
+app.use(
+    '/api/broadcasts',
+    express.json({
+        limit: process.env.BROADCAST_JSON_LIMIT || '5mb',
+        verify: (req: any, _res, buf) => {
+            req.rawBody = buf;
+        },
+    }),
+    broadcastRoutes,
+);
+
 app.use(
     express.json({
         verify: (req: any, _res, buf) => {
@@ -66,7 +79,6 @@ app.use(
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 app.use('/api/billing', billingRoutes);
-app.use('/api/broadcasts', broadcastRoutes);
 app.use('/api/contacts', contactsRoutes);
 app.use('/api/conversations', conversationsRoutes);
 app.use('/api/agents', agentsRoutes);
