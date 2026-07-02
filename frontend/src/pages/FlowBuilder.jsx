@@ -7,6 +7,31 @@ import { useDialog } from '../context/DialogContext';
 import { FLOW_TEMPLATE_CATEGORIES, FLOW_TEMPLATES, buildFlowFromTemplate } from '../components/flow-builder/flowTemplates';
 import TourButton from '../onboarding/TourButton';
 
+function FlowBuilderLoading() {
+    return (
+        <div className="space-y-5 p-3 sm:p-5 lg:p-6" role="status" aria-label="Loading flows">
+            <div className="flex items-center justify-between gap-4">
+                <div className="space-y-2">
+                    <div className="h-7 w-40 animate-pulse rounded bg-gray-200" />
+                    <div className="h-4 w-72 max-w-[70vw] animate-pulse rounded bg-gray-100" />
+                </div>
+                <div className="h-10 w-32 animate-pulse rounded-xl bg-gray-200" />
+            </div>
+            <div className="grid gap-4 xl:grid-cols-2">
+                <div className="h-36 animate-pulse rounded-2xl bg-blue-50" />
+                <div className="h-36 animate-pulse rounded-2xl bg-gray-100" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+                {Array.from({ length: 3 }, (_, index) => <div key={index} className="h-24 animate-pulse rounded-2xl bg-gray-100" />)}
+            </div>
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }, (_, index) => <div key={index} className="h-52 animate-pulse rounded-2xl bg-gray-100" />)}
+            </div>
+            <span className="sr-only">Loading flow builder</span>
+        </div>
+    );
+}
+
 export default function FlowBuilder() {
     const { session } = useAuth();
     const { alertDialog, confirmDialog } = useDialog();
@@ -18,6 +43,7 @@ export default function FlowBuilder() {
     const [newFlowAccountScope, setNewFlowAccountScope] = useState('all');
     const [newFlowAccountIds, setNewFlowAccountIds] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [flowsError, setFlowsError] = useState('');
     const [runsModalFlow, setRunsModalFlow] = useState(null);
     const [flowRuns, setFlowRuns] = useState([]);
     const [runsLoading, setRunsLoading] = useState(false);
@@ -28,6 +54,7 @@ export default function FlowBuilder() {
     const [templateDraft, setTemplateDraft] = useState(() => getDefaultTemplateDraft(FLOW_TEMPLATES[0]));
     const [templateStarStats, setTemplateStarStats] = useState({});
     const [waAccounts, setWaAccounts] = useState([]);
+    const [waAccountsLoading, setWaAccountsLoading] = useState(true);
     const [selectedWaAccount, setSelectedWaAccount] = useState(() => localStorage.getItem('selected_wa_account_id') || 'All');
 
     const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
@@ -111,12 +138,14 @@ export default function FlowBuilder() {
     const fetchFlows = async () => {
         try {
             setLoading(true);
+            setFlowsError('');
             const res = await axios.get(`${API_URL}/api/flows`, {
                 headers: { 'Authorization': `Bearer ${session?.access_token}` }
             });
             setFlows(res.data);
         } catch (error) {
             console.error('Failed to fetch flows:', error);
+            setFlowsError(error?.response?.data?.error || 'Could not load flows.');
         } finally {
             setLoading(false);
         }
@@ -212,6 +241,7 @@ export default function FlowBuilder() {
     };
 
     const fetchWaAccounts = async () => {
+        setWaAccountsLoading(true);
         try {
             const res = await axios.get(`${API_URL}/api/whatsapp/accounts`, {
                 headers: { 'Authorization': `Bearer ${session?.access_token}` }
@@ -220,6 +250,8 @@ export default function FlowBuilder() {
         } catch (error) {
             console.error('Failed to fetch WhatsApp accounts:', error);
             setWaAccounts([]);
+        } finally {
+            setWaAccountsLoading(false);
         }
     };
 
@@ -304,6 +336,24 @@ export default function FlowBuilder() {
 
     if (editingFlow) {
         return <FlowEditor flow={editingFlow} waAccounts={waAccounts} onClose={() => { setEditingFlow(null); fetchFlows(); }} />;
+    }
+
+    if (loading || waAccountsLoading) {
+        return <FlowBuilderLoading />;
+    }
+
+    if (flowsError) {
+        return (
+            <div className="flex min-h-[60vh] items-center justify-center p-6">
+                <div className="max-w-sm rounded-2xl border border-red-200 bg-white p-6 text-center shadow-sm">
+                    <h2 className="text-base font-bold text-gray-950">Couldn&apos;t load flows</h2>
+                    <p className="mt-2 text-sm text-gray-500">{flowsError}</p>
+                    <button type="button" onClick={fetchFlows} className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
     }
 
     return (

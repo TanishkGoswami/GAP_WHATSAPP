@@ -144,8 +144,11 @@ export async function handleWebhook(req: any, res: Response) {
 
   try {
     const body = req.body;
-    const entry = body?.entry?.[0];
-    const change = entry?.changes?.[0];
+    const deliveries = (body?.entry || []).flatMap((entry: any) =>
+      (entry?.changes || []).map((change: any) => ({ entry, change })),
+    );
+
+    for (const { entry, change } of deliveries) {
     const value = change?.value;
     const metadata = value?.metadata; // has phone_number_id
 
@@ -164,7 +167,7 @@ export async function handleWebhook(req: any, res: Response) {
 
     if (!value) {
       webhookLog("payload.no_value.stop", { requestId });
-      return;
+      continue;
     }
 
     if (
@@ -217,7 +220,7 @@ export async function handleWebhook(req: any, res: Response) {
 
       if (!templateName && !templateId) {
         webhookLog("template.status.no_identity.stop", { requestId });
-        return;
+        continue;
       }
 
       let query = supabase
@@ -238,7 +241,7 @@ export async function handleWebhook(req: any, res: Response) {
           templateLanguage,
           wabaId: wabaId || null,
         });
-        return;
+        continue;
       }
 
       if (existing) {
@@ -289,7 +292,7 @@ export async function handleWebhook(req: any, res: Response) {
           value,
         );
       }
-      return;
+      continue;
     }
 
     // 1. Identify Organization & Account
@@ -341,7 +344,7 @@ export async function handleWebhook(req: any, res: Response) {
     if (!organization_id) {
       if (phone_number_id === "123456123") {
         console.log("✅ Received Test Webhook from Meta Developer Portal. Webhook connection is successful!");
-        return;
+        continue;
       }
 
       webhookError("account.mapping.missing", new Error("Phone number ID is not mapped to an organization"), {
@@ -352,16 +355,18 @@ export async function handleWebhook(req: any, res: Response) {
       console.error(
         `❌ Webhook Error: Phone ID ${phone_number_id} not mapped to any organization.`,
       );
-      return;
+      continue;
     }
 
     // 2. Handle Messages (Inbound)
-    if (value.messages?.length) {
-      const msg = value.messages[0];
+    for (const msg of value.messages || []) {
       const contacts = value.contacts || [];
 
       const from = msg.from; // wa_id
-      const profileName = contacts[0]?.profile?.name || null;
+      const profileName =
+        contacts.find((contact: any) => contact?.wa_id === from)?.profile?.name ||
+        contacts[0]?.profile?.name ||
+        null;
       const wa_message_id = msg.id;
 
       let type = msg.type;
@@ -448,7 +453,7 @@ export async function handleWebhook(req: any, res: Response) {
           }
         }
         webhookLog("reaction.stop", { requestId, targetWaId });
-        return;
+        continue;
       }
 
       // REPLACED: Updated type extraction logic for interactive/buttons
@@ -1072,8 +1077,14 @@ export async function handleWebhook(req: any, res: Response) {
           });
         }
 
-        // AI Agent fallback — sirf tab jab flow ne consume nahi kiya aur type text hai
-        if (!flowConsumedMessage && type === "text" && text) {
+        // Meta template quick replies arrive as `button`, while list/button
+        // selections arrive as `interactive`. Their normalized text should
+        // reach the AI fallback when no Flow Builder flow consumed the reply.
+        const isAgentEligible =
+          (type === "text" || type === "button" || type === "interactive") &&
+          Boolean(text?.trim());
+
+        if (!flowConsumedMessage && isAgentEligible) {
           webhookLog("bot_agent.process.queue", {
             requestId,
             conversation_id: conv.id,
@@ -1182,6 +1193,7 @@ export async function handleWebhook(req: any, res: Response) {
             type,
             hasText: !!text,
             flowConsumedMessage,
+            isAgentEligible,
           });
         }
       } catch (botErr: any) {
@@ -1200,8 +1212,7 @@ export async function handleWebhook(req: any, res: Response) {
     }
 
     // 3. Handle Status Updates (Sent/Delivered/Read)
-    if (value.statuses?.length) {
-      const status = value.statuses[0];
+    for (const status of value.statuses || []) {
       const wa_message_id = status.id;
       const newStatus = status.status; // sent, delivered, read
       const errorMessage = getMetaStatusErrorMessage(status);
@@ -1271,7 +1282,7 @@ export async function handleWebhook(req: any, res: Response) {
       if (campaignId && existingMessage?.automation_source === "broadcast") {
         const { data: campaign, error: campaignLookupError } = await supabase
           .from("w_campaigns")
-          .select("id, results")
+          .select("id, results, schema_version")
           .eq("id", campaignId)
           .maybeSingle();
 
@@ -1281,6 +1292,30 @@ export async function handleWebhook(req: any, res: Response) {
             campaignId,
             wa_message_id,
           });
+        } else if (campaign?.id && campaign.schema_version >= 2) {
+          const { error: recipientStatusError } = await supabase.rpc(
+            "update_broadcast_recipient_delivery",
+            {
+              p_wa_message_id: wa_message_id,
+              p_status: newStatus,
+              p_error_message: errorMessage,
+            },
+          );
+          if (recipientStatusError) {
+            webhookError("status.campaign_recipient_update.failed", recipientStatusError, {
+              requestId,
+              campaignId,
+              wa_message_id,
+              status: newStatus,
+            });
+          } else {
+            webhookLog("status.campaign_recipient_update.ok", {
+              requestId,
+              campaignId,
+              wa_message_id,
+              status: newStatus,
+            });
+          }
         } else if (campaign?.id && Array.isArray(campaign.results)) {
           let matched = false;
           const nextResults = campaign.results.map((result: any) => {
@@ -1368,6 +1403,7 @@ export async function handleWebhook(req: any, res: Response) {
       hadMessages: Array.isArray(value?.messages) && value.messages.length > 0,
       hadStatuses: Array.isArray(value?.statuses) && value.statuses.length > 0,
     });
+    }
   } catch (e: any) {
     webhookError("request.unhandled", e, {
       requestId,

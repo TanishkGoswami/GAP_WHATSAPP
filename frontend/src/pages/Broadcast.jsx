@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet, Pause, Play } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
@@ -130,6 +130,10 @@ export default function Broadcast() {
                 replacement = '[Contact Name]';
             } else if (source === 'phone') {
                 replacement = '[Contact Phone]';
+            } else if (source === 'email') {
+                replacement = '[Contact Email]';
+            } else if (source?.startsWith('field:')) {
+                replacement = `[${source.slice(6)}]`;
             } else if (source === 'custom') {
                 replacement = customTexts[v.key] || v.token;
             }
@@ -158,7 +162,10 @@ export default function Broadcast() {
     const [activeTab, setActiveTab] = useState('new') // 'new' | 'history'
     const [campaignsList, setCampaignsList] = useState([])
     const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+    const [historyLoadState, setHistoryLoadState] = useState('idle')
     const [expandedCampaignId, setExpandedCampaignId] = useState(null)
+    const [recipientReports, setRecipientReports] = useState({})
+    const launchIdempotencyKey = useRef(crypto.randomUUID())
 
     const [currentStep, setCurrentStep] = useState(1)
     const [campaign, setCampaign] = useState({
@@ -204,6 +211,9 @@ export default function Broadcast() {
             : campaign.audience_type === 'saved'
                 ? contacts.filter(c => c.saved_at != null)
                 : contacts;
+    const availableCustomFields = [...new Set(
+        filteredContacts.flatMap(contact => Object.keys(contact?.custom_fields || {}))
+    )].sort((a, b) => a.localeCompare(b))
 
     const selectedTemplateCategory = selectedTemplate?.category || campaign.variable_mapping?._template_category || 'MARKETING'
 
@@ -237,13 +247,24 @@ export default function Broadcast() {
     }, [token]);
 
     const fetchCampaignHistory = (silent = false) => {
-        if (!silent) setIsLoadingHistory(true);
+        if (!silent) {
+            setIsLoadingHistory(true);
+            setHistoryLoadState('loading');
+        }
         apiCall(`${API_URL}/api/broadcasts/campaigns`)
-            .then(res => res.json())
+            .then(async res => {
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data?.error || `Could not load campaigns (${res.status})`);
+                return data;
+            })
             .then(data => {
                 setCampaignsList(data.campaigns || []);
+                setHistoryLoadState('success');
             })
-            .catch(console.error)
+            .catch(error => {
+                console.error(error);
+                if (!silent) setHistoryLoadState('error');
+            })
             .finally(() => {
                 if (!silent) setIsLoadingHistory(false);
             });
@@ -341,6 +362,47 @@ export default function Broadcast() {
         }
     }
 
+    const updateCampaignState = async (id, action) => {
+        try {
+            const res = await apiCall(`${API_URL}/api/broadcasts/campaigns/${id}/${action}`, { method: 'POST' })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data.error || `Failed to ${action} campaign`)
+            fetchCampaignHistory(true)
+        } catch (error) {
+            alertDialog(error.message, { title: 'Campaign update failed', tone: 'danger' })
+        }
+    }
+
+    const fetchRecipientReport = async (campaignId, page = 1) => {
+        setRecipientReports(previous => ({
+            ...previous,
+            [campaignId]: { ...(previous[campaignId] || {}), loading: true }
+        }))
+        try {
+            const res = await apiCall(`${API_URL}/api/broadcasts/campaigns/${campaignId}/recipients?page=${page}&page_size=25`)
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data.error || 'Could not load delivery report')
+            setRecipientReports(previous => ({
+                ...previous,
+                [campaignId]: { recipients: data.recipients || [], pagination: data.pagination, loading: false }
+            }))
+        } catch (error) {
+            setRecipientReports(previous => ({
+                ...previous,
+                [campaignId]: { ...(previous[campaignId] || {}), loading: false, error: error.message }
+            }))
+        }
+    }
+
+    const toggleCampaignDetails = (camp) => {
+        if (expandedCampaignId === camp.id) {
+            setExpandedCampaignId(null)
+            return
+        }
+        setExpandedCampaignId(camp.id)
+        if (camp.schema_version >= 2) fetchRecipientReport(camp.id, 1)
+    }
+
     const handleFileUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -355,9 +417,32 @@ export default function Broadcast() {
                 return;
             }
 
-            const headers = lines[0].split(',').map(h => h.toLowerCase().trim());
+            const parseCsvRow = row => {
+                const values = []
+                let value = ''
+                let quoted = false
+                for (let index = 0; index < row.length; index++) {
+                    const char = row[index]
+                    if (char === '"' && quoted && row[index + 1] === '"') {
+                        value += '"'
+                        index++
+                    } else if (char === '"') {
+                        quoted = !quoted
+                    } else if (char === ',' && !quoted) {
+                        values.push(value.trim())
+                        value = ''
+                    } else {
+                        value += char
+                    }
+                }
+                values.push(value.trim())
+                return values
+            }
+            const originalHeaders = parseCsvRow(lines[0]).map(h => h.trim())
+            const headers = originalHeaders.map(h => h.toLowerCase());
             const phoneIdx = headers.findIndex(h => h.includes('phone') || h.includes('number'));
             const nameIdx = headers.findIndex(h => h.includes('name'));
+            const emailIdx = headers.findIndex(h => h === 'email' || h.includes('email address'));
 
             if (phoneIdx === -1) {
                 alertDialog('CSV must contain a column for phone numbers (e.g. "Phone" or "Number")', { title: 'CSV import failed', tone: 'warning' });
@@ -366,12 +451,20 @@ export default function Broadcast() {
 
             const parsed = [];
             for (let i = 1; i < lines.length; i++) {
-                // simple split by comma, ignoring quotes for basic usage
-                const cols = lines[i].split(',');
+                const cols = parseCsvRow(lines[i]);
                 if (cols[phoneIdx]) {
+                    const custom_fields = Object.fromEntries(
+                        originalHeaders
+                            .map((header, index) => [header, cols[index]?.trim()])
+                            .filter(([header, value], index) => (
+                                header && value && ![phoneIdx, nameIdx, emailIdx].includes(index)
+                            ))
+                    )
                     parsed.push({
                         phone: cols[phoneIdx].trim(),
-                        name: nameIdx !== -1 && cols[nameIdx] ? cols[nameIdx].trim() : 'Unknown'
+                        name: nameIdx !== -1 && cols[nameIdx] ? cols[nameIdx].trim() : 'Unknown',
+                        email: emailIdx !== -1 && cols[emailIdx] ? cols[emailIdx].trim() : '',
+                        custom_fields
                     });
                 }
             }
@@ -513,6 +606,17 @@ export default function Broadcast() {
             }
         });
         finalMapping._template_body = selectedTemplate?.components?.find(c => c.type === 'BODY')?.text || `[Template: ${campaign.template_name}]`;
+        finalMapping._template_footer = selectedTemplate?.components?.find(c => c.type === 'FOOTER')?.text || '';
+        const buttonsComp = selectedTemplate?.components?.find(c => c.type === 'BUTTONS');
+        if (buttonsComp && Array.isArray(buttonsComp.buttons)) {
+            finalMapping._template_buttons = buttonsComp.buttons.map((btn, index) => ({
+                index: String(btn.index !== undefined ? btn.index : index),
+                type: btn.type,
+                text: btn.text,
+                url: btn.url,
+                phone_number: btn.phone_number
+            }));
+        }
         finalMapping._template_category = selectedTemplateCategory;
         if (needsHeaderMedia) {
             finalMapping._header_media_type = selectedHeaderFormat.toLowerCase();
@@ -535,8 +639,9 @@ export default function Broadcast() {
             ...campaign,
             scheduled_at: formattedScheduledAt,
             audience_tag: campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag,
-            audience_type: campaign.audience_type === 'CSV_UPLOAD' ? null : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag'),
+            audience_type: campaign.audience_type === 'CSV_UPLOAD' ? 'CSV_UPLOAD' : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag'),
             csv_data: campaign.audience_type === 'CSV_UPLOAD' ? csvData : null,
+            idempotency_key: launchIdempotencyKey.current,
             variable_mapping: finalMapping,
             required_header_type: needsHeaderMedia ? selectedHeaderFormat.toLowerCase() : undefined,
             header_media_type: needsHeaderMedia ? selectedHeaderFormat.toLowerCase() : undefined,
@@ -551,6 +656,7 @@ export default function Broadcast() {
             const data = await res.json();
             if (res.ok) {
                 setSendResult(data);
+                launchIdempotencyKey.current = crypto.randomUUID();
             } else {
                 alertDialog(data.error || 'Broadcast failed', { title: 'Broadcast failed', tone: 'danger' });
             }
@@ -698,8 +804,15 @@ export default function Broadcast() {
                             Refresh Data
                         </button>
                     </div>
-                    {isLoadingHistory && campaignsList.length === 0 ? (
+                    {(historyLoadState === 'idle' || isLoadingHistory) && campaignsList.length === 0 ? (
                         <div className="p-16 text-center flex justify-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500" /></div>
+                    ) : historyLoadState === 'error' && campaignsList.length === 0 ? (
+                        <div className="p-16 text-center">
+                            <p className="text-sm text-gray-500">Couldn&apos;t load campaigns.</p>
+                            <button type="button" onClick={() => fetchCampaignHistory(false)} className="mt-3 rounded-lg px-4 py-2 text-sm font-semibold text-indigo-600 hover:bg-indigo-50">
+                                Retry
+                            </button>
+                        </div>
                     ) : campaignsList.length === 0 ? (
                         <div className="p-16 text-center flex flex-col items-center justify-center">
                             <div className="w-16 h-16 bg-indigo-50 text-indigo-300 rounded-2xl flex items-center justify-center mb-4"><Calendar className="w-8 h-8" /></div>
@@ -743,27 +856,38 @@ export default function Broadcast() {
                                                 <td className="px-8 py-5 text-gray-600 font-medium">
                                                     <div className="flex items-center gap-1.5">
                                                         <Users className="w-4 h-4 text-gray-400" />
-                                                        {camp.audience_tag || (camp.csv_data ? 'CSV Upload' : 'All Contacts')}
+                                                        {camp.audience_tag || (String(camp.audience_type).toLowerCase().includes('csv') || camp.csv_data ? 'CSV Upload' : camp.audience_type === 'saved' ? 'Saved Contacts' : 'All Contacts')}
                                                     </div>
                                                 </td>
                                                 <td className="px-8 py-5 text-gray-600 font-medium">
                                                     {camp.scheduled_at ? format(new Date(camp.scheduled_at), 'MMM dd, yyyy · hh:mm a') : format(new Date(camp.created_at), 'MMM dd, yyyy · hh:mm a')}
                                                 </td>
                                                 <td className="px-8 py-5">
-                                                    {camp.status === 'completed' ? (
-                                                        <div className="flex gap-3 text-xs items-center">
+                                                    {camp.schema_version >= 2 || camp.status === 'completed' ? (
+                                                        <div className="flex flex-wrap gap-2 text-xs items-center">
                                                             <div className="flex items-center gap-1.5 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-100">
-                                                                <Check className="w-3.5 h-3.5" /> {camp.sent_count}
+                                                                <Check className="w-3.5 h-3.5" /> {camp.accepted_count ?? camp.sent_count ?? 0}
                                                             </div>
                                                             <div className="flex items-center gap-1.5 text-rose-700 font-bold bg-rose-50 px-2.5 py-1.5 rounded-lg border border-rose-100">
-                                                                <Info className="w-3.5 h-3.5" /> {camp.failed_count}
+                                                                <Info className="w-3.5 h-3.5" /> {camp.failed_count ?? 0}
                                                             </div>
+                                                            {camp.schema_version >= 2 && <span className="text-gray-500">{camp.prepared_count || 0}/{camp.total_contacts || 0}</span>}
                                                         </div>
                                                     ) : <span className="text-gray-400 font-medium">-</span>}
                                                 </td>
                                                 <td className="px-8 py-5 text-right">
                                                     <div className="flex justify-end gap-3 items-center">
-                                                        {(camp.status === 'processing' || camp.status === 'scheduled') && (
+                                                        {camp.schema_version >= 2 && ['queued', 'processing'].includes(camp.status) && (
+                                                            <button onClick={() => updateCampaignState(camp.id, 'pause')} className="text-amber-700 text-xs font-bold flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
+                                                                <Pause className="w-3.5 h-3.5" /> Pause
+                                                            </button>
+                                                        )}
+                                                        {camp.schema_version >= 2 && camp.status === 'paused' && (
+                                                            <button onClick={() => updateCampaignState(camp.id, 'resume')} className="text-emerald-700 text-xs font-bold flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                                                                <Play className="w-3.5 h-3.5" /> Resume
+                                                            </button>
+                                                        )}
+                                                        {(['preparing', 'queued', 'processing', 'paused', 'scheduled'].includes(camp.status)) && (
                                                             <button
                                                                 onClick={() => cancelCampaign(camp.id)}
                                                                 className="text-rose-600 hover:text-white text-xs font-bold flex items-center gap-1.5 bg-rose-50 hover:bg-rose-500 px-3 py-1.5 rounded-lg transition-colors border border-rose-200 hover:border-rose-500"
@@ -772,9 +896,9 @@ export default function Broadcast() {
                                                                 <Trash2 className="w-3.5 h-3.5" /> Stop & Cancel
                                                             </button>
                                                         )}
-                                                        {(camp.status === 'completed' || camp.status === 'cancelled') && camp.results && camp.results.length > 0 && (
+                                                        {((camp.schema_version >= 2 && (camp.total_contacts || camp.prepared_count)) || ((camp.status === 'completed' || camp.status === 'cancelled') && camp.results?.length > 0)) && (
                                                             <button
-                                                                onClick={() => setExpandedCampaignId(expandedCampaignId === camp.id ? null : camp.id)}
+                                                                onClick={() => toggleCampaignDetails(camp)}
                                                                 className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors"
                                                             >
                                                                 {expandedCampaignId === camp.id ? 'Hide Details' : 'View Results'}
@@ -784,32 +908,54 @@ export default function Broadcast() {
                                                     </div>
                                                 </td>
                                             </tr>
-                                            {expandedCampaignId === camp.id && camp.results && (
+                                            {expandedCampaignId === camp.id && (camp.schema_version >= 2 || camp.results) && (
                                                 <tr>
                                                     <td colSpan="6" className="bg-gray-50/50 p-8 border-b border-gray-200 shadow-inner">
                                                         <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
                                                             <LayoutGrid className="w-4 h-4 text-gray-400" /> Delivery Report
                                                         </h4>
                                                         <div className="max-h-80 overflow-y-auto space-y-2.5 pr-3 scrollbar-thin scrollbar-thumb-gray-200">
-                                                            {camp.results.map((res, idx) => (
+                                                            {(camp.schema_version >= 2 ? (recipientReports[camp.id]?.recipients || []).map(row => ({
+                                                                name: row.contact_name,
+                                                                phone: row.normalized_phone,
+                                                                status: row.status,
+                                                                error: row.error_message,
+                                                            })) : camp.results).map((res, idx) => (
                                                                 <div key={idx} className="grid grid-cols-[1fr_auto] gap-4 text-sm p-4 bg-white rounded-xl shadow-sm border border-gray-200/60 hover:border-gray-300 transition-colors">
                                                                     <div className="flex min-w-0 items-center gap-3">
-                                                                        <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${res.status === 'sent' ? 'bg-emerald-500 shadow-emerald-200' : 'bg-rose-500 shadow-rose-200'}`}></div>
+                                                                        <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${['accepted', 'sent', 'delivered', 'read'].includes(res.status) ? 'bg-emerald-500 shadow-emerald-200' : res.status === 'failed' ? 'bg-rose-500 shadow-rose-200' : 'bg-amber-500 shadow-amber-200'}`}></div>
                                                                         <span className="font-bold text-gray-900">{res.name}</span>
                                                                         <span className="text-gray-500 bg-gray-100/80 px-2.5 py-1 rounded-md font-mono text-xs">{res.phone || 'Unknown Phone'}</span>
                                                                     </div>
-                                                                    {res.status === 'sent' ? (
+                                                                    {['accepted', 'sent', 'delivered', 'read'].includes(res.status) ? (
                                                                         <span className="text-emerald-600 font-semibold flex items-center gap-1.5">
-                                                                            <Check className="w-4 h-4" /> Delivered
+                                                                            <Check className="w-4 h-4" /> {res.status}
                                                                         </span>
-                                                                    ) : (
+                                                                    ) : res.status === 'failed' ? (
                                                                         <span className="max-w-xl whitespace-normal break-words text-right font-semibold text-rose-600 flex items-center gap-1.5" title={res.error}>
                                                                             <Info className="w-4 h-4 shrink-0" /> Failed: {res.error}
                                                                         </span>
+                                                                    ) : (
+                                                                        <span className="text-amber-600 font-semibold">{res.status}</span>
                                                                     )}
                                                                 </div>
                                                             ))}
+                                                            {camp.schema_version >= 2 && recipientReports[camp.id]?.loading && (
+                                                                <div className="flex items-center justify-center gap-2 p-6 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading recipients…</div>
+                                                            )}
+                                                            {camp.schema_version >= 2 && recipientReports[camp.id]?.error && (
+                                                                <div className="p-4 text-sm text-rose-600">{recipientReports[camp.id].error}</div>
+                                                            )}
                                                         </div>
+                                                        {camp.schema_version >= 2 && recipientReports[camp.id]?.pagination?.total > 25 && (
+                                                            <div className="mt-4 flex items-center justify-between text-sm">
+                                                                <span className="text-gray-500">{recipientReports[camp.id].pagination.total} recipients</span>
+                                                                <div className="flex gap-2">
+                                                                    <button disabled={recipientReports[camp.id].pagination.page <= 1} onClick={() => fetchRecipientReport(camp.id, recipientReports[camp.id].pagination.page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Previous</button>
+                                                                    <button disabled={recipientReports[camp.id].pagination.page * 25 >= recipientReports[camp.id].pagination.total} onClick={() => fetchRecipientReport(camp.id, recipientReports[camp.id].pagination.page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Next</button>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             )}
@@ -1306,6 +1452,10 @@ export default function Broadcast() {
                                                             <option value="">Select source</option>
                                                             <option value="name">Contact Name</option>
                                                             <option value="phone">Contact Phone</option>
+                                                            <option value="email">Contact Email</option>
+                                                            {availableCustomFields.map(field => (
+                                                                <option key={field} value={`field:${field}`}>Contact field: {field}</option>
+                                                            ))}
                                                             <option value="custom">Custom Text...</option>
                                                         </select>
 

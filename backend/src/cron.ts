@@ -3,6 +3,10 @@ import { supabase } from './config/supabase.js';
 import { processCampaign } from './services/broadcast.service.js';
 
 export function startCronJobs() {
+    if (process.env.BROADCAST_QUEUE_ENABLED === 'true') {
+        console.log('[broadcast] Legacy campaign cron disabled; BullMQ owns scheduling and recovery');
+        return;
+    }
     // Process scheduled campaigns every minute
     cron.schedule('* * * * *', async () => {
         try {

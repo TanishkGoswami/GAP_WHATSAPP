@@ -16,6 +16,7 @@ import {
   fetchMetaBusinessProfile,
   uploadMetaProfilePicture,
   updateMetaBusinessProfile,
+  subscribeMetaAppToWaba,
 } from '../services/meta.service.js';
 
 const GRAPH_API_VERSION = process.env.META_API_VERSION || "v20.0";
@@ -150,10 +151,10 @@ export async function addMetaAccount(req: any, res: Response) {
     req.body;
   const orgId = req.organization_id;
 
-  if (!phone_number_id || !access_token) {
+  if (!phone_number_id || !waba_id || !access_token) {
     return res
       .status(400)
-      .json({ error: "phone_number_id and access_token are required" });
+      .json({ error: "phone_number_id, waba_id and access_token are required" });
   }
 
   try {
@@ -193,6 +194,10 @@ export async function addMetaAccount(req: any, res: Response) {
     const normalizedPhoneNumberId = String(phone_number_id).trim();
 
     await enforceWhatsAppCloudNumberLimit(orgId, normalizedPhoneNumberId);
+    await subscribeMetaAppToWaba(
+      String(waba_id).trim(),
+      String(access_token).trim(),
+    );
 
     const { data, error } = await supabase
       .from("w_wa_accounts")
@@ -394,6 +399,8 @@ function mergeTemplateRows(metaRows: any[], localRows: any[]) {
       validation_issues: row.validation_issues || [],
       risk_score: row.risk_score || 0,
       submitted_at: row.submitted_at,
+      approved_at: row.approved_at,
+      rejected_at: row.rejected_at,
       last_updated: row.updated_at,
       source: "local",
     });
@@ -438,6 +445,31 @@ export async function upsertLocalTemplateSubmission(params: {
 }) {
   const status = normalizeMetaTemplateStatus(params.status);
   const now = new Date().toISOString();
+
+  // Fetch existing submission if it exists, to preserve timestamps
+  const { data: existing } = await supabase
+    .from("w_template_submissions")
+    .select("status, submitted_at, approved_at, rejected_at")
+    .eq("organization_id", params.organization_id)
+    .eq("name", params.name)
+    .eq("language", params.language || "en_US")
+    .maybeSingle();
+
+  let submitted_at = params.submitted_at || existing?.submitted_at || null;
+  if (status === "PENDING" && (!submitted_at || existing?.status !== "PENDING")) {
+    submitted_at = now;
+  }
+
+  let approved_at = existing?.approved_at || null;
+  if (status === "APPROVED" && (!approved_at || existing?.status !== "APPROVED")) {
+    approved_at = now;
+  }
+
+  let rejected_at = existing?.rejected_at || null;
+  if (status === "REJECTED" && (!rejected_at || existing?.status !== "REJECTED")) {
+    rejected_at = now;
+  }
+
   const payload: any = {
     organization_id: params.organization_id,
     wa_account_id: params.wa_account_id || null,
@@ -456,9 +488,9 @@ export async function upsertLocalTemplateSubmission(params: {
     risk_score: Number(params.risk_score || 0),
     meta_response: params.meta_response || {},
     submitted_by: params.submitted_by || null,
-    submitted_at: params.submitted_at || (status === "PENDING" ? now : null),
-    approved_at: status === "APPROVED" ? now : null,
-    rejected_at: status === "REJECTED" ? now : null,
+    submitted_at,
+    approved_at,
+    rejected_at,
     last_synced_at: now,
     updated_at: now,
   };
@@ -480,8 +512,40 @@ export async function bulkUpsertLocalTemplateSubmissions(
 ) {
     if (metaTemplates.length === 0) return;
     const now = new Date().toISOString();
+
+    // Fetch existing records for this account
+    const { data: existingRows } = await supabase
+        .from('w_template_submissions')
+        .select('name, language, status, submitted_at, approved_at, rejected_at, submitted_by')
+        .eq('organization_id', orgId)
+        .eq('wa_account_id', waAccountId);
+
+    const existingMap = new Map<string, any>();
+    for (const r of existingRows || []) {
+        const key = `${String(r.name).toLowerCase()}::${String(r.language || 'en_US')}`;
+        existingMap.set(key, r);
+    }
+
     const payloads = metaTemplates.map((template: any) => {
         const status = normalizeMetaTemplateStatus(template.status);
+        const key = `${String(template.name).toLowerCase()}::${String(template.language || 'en_US')}`;
+        const existing = existingMap.get(key);
+
+        let submitted_at = existing?.submitted_at || null;
+        if (status === 'PENDING' && (!submitted_at || existing?.status !== 'PENDING')) {
+            submitted_at = now;
+        }
+
+        let approved_at = existing?.approved_at || null;
+        if (status === 'APPROVED' && (!approved_at || existing?.status !== 'APPROVED')) {
+            approved_at = now;
+        }
+
+        let rejected_at = existing?.rejected_at || null;
+        if (status === 'REJECTED' && (!rejected_at || existing?.status !== 'REJECTED')) {
+            rejected_at = now;
+        }
+
         return {
             organization_id: orgId,
             wa_account_id: waAccountId,
@@ -498,10 +562,10 @@ export async function bulkUpsertLocalTemplateSubmissions(
             validation_issues: [],
             risk_score: 0,
             meta_response: template,
-            submitted_by: null,
-            submitted_at: status === 'PENDING' ? now : null,
-            approved_at: status === 'APPROVED' ? now : null,
-            rejected_at: status === 'REJECTED' ? now : null,
+            submitted_by: existing?.submitted_by || null,
+            submitted_at,
+            approved_at,
+            rejected_at,
             last_synced_at: now,
             updated_at: now,
         };
@@ -800,6 +864,26 @@ export async function deleteTemplate(req: any, res: Response) {
     const token = decryptToken(account.access_token_encrypted);
     const waba_id = account.whatsapp_business_account_id;
 
+    // 1. Fetch local template first to verify if it is local-only
+    const { data: localTemplate } = await supabase
+      .from("w_template_submissions")
+      .select("template_id, status")
+      .eq("organization_id", orgId)
+      .eq("wa_account_id", account.id)
+      .eq("name", name)
+      .maybeSingle();
+
+    if (!localTemplate || !localTemplate.template_id || localTemplate.status === 'DRAFT') {
+      // Clean up local cache if it is a draft or does not exist on Meta
+      await supabase
+        .from("w_template_submissions")
+        .delete()
+        .eq("organization_id", orgId)
+        .eq("wa_account_id", account.id)
+        .eq("name", name);
+      return res.json({ success: true });
+    }
+
     let deleteUrl = `https://graph.facebook.com/v20.0/${waba_id}/message_templates?name=${encodeURIComponent(name)}`;
     try {
       const listRes = await fetch(
@@ -825,13 +909,57 @@ export async function deleteTemplate(req: any, res: Response) {
     const json = await response.json();
 
     if (!response.ok) {
-      let errMsg = json.error?.message || "Template deletion failed";
-      if (json.error?.code === 100 || errMsg.includes("permission")) {
-        errMsg =
+      const errMsg = json.error?.message || "Template deletion failed";
+      const errCode = json.error?.code;
+
+      // Check if the error indicates that the template was already deleted or doesn't exist on Meta
+      const errDetails = json.error?.error_data?.details || "";
+      const isNotFound =
+        errCode === 100 &&
+        (errMsg.includes("does not exist") ||
+          errMsg.includes("not found") ||
+          errMsg.includes("unknown") ||
+          errMsg.includes("matching") ||
+          errMsg.includes("cannot find") ||
+          errMsg.includes("parameter") ||
+          errDetails.includes("does not exist") ||
+          errDetails.includes("not found") ||
+          errDetails.includes("unknown") ||
+          errDetails.includes("cannot find"));
+
+      if (isNotFound) {
+        // If not found on Meta, delete the local cache record anyway so the UI stays in sync
+        await supabase
+          .from("w_template_submissions")
+          .delete()
+          .eq("organization_id", orgId)
+          .eq("wa_account_id", account.id)
+          .eq("name", name);
+
+        return res.json({ success: true });
+      }
+
+      let userFriendlyMsg = errMsg;
+      if (
+        errMsg.includes("permission") ||
+        errMsg.includes("access") ||
+        errCode === 200 ||
+        errCode === 10
+      ) {
+        userFriendlyMsg =
           "Permission denied by Meta. Your connected account needs WhatsApp Business Management admin access to delete templates. You can delete it directly from Meta Business Manager.";
       }
-      return res.status(response.status).json({ error: errMsg });
+      return res.status(response.status).json({ error: userFriendlyMsg });
     }
+
+    // Delete local cache record
+    await supabase
+      .from("w_template_submissions")
+      .delete()
+      .eq("organization_id", orgId)
+      .eq("wa_account_id", account.id)
+      .eq("name", name);
+
     res.json({ success: true });
   } catch (err: any) {
     console.error("Delete Template Error:", err);
