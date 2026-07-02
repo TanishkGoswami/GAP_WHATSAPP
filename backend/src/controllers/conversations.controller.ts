@@ -237,7 +237,8 @@ export async function startConversation(req: any, res: Response) {
                 last_message_at: new Date().toISOString(),
                 last_message_preview: 'Conversation started',
                 unread_count: 0,
-                status: 'open'
+                status: 'open',
+                bot_enabled: true
             })
             .select(`
                 *,

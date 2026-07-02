@@ -189,7 +189,7 @@ export async function upsertConversation(organization_id: string, wa_account_id:
     } else {
         const { data, error } = await supabase
             .from('w_conversations')
-            .insert(payload)
+            .insert({ ...payload, bot_enabled: true })
             .select()
             .single();
         if (error) console.error("Conversation Insert Error:", error);

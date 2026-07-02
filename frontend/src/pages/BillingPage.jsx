@@ -210,9 +210,23 @@ export default function BillingPage() {
                     customerEmail: user?.email,
                 }),
             })
-            const data = await res.json().catch(() => ({}))
+            let data = {}
+            try {
+                data = await res.clone().json()
+            } catch (e) {
+                const text = await res.text()
+                data = { error: text ? `Server Error (${res.status}): ${text.slice(0, 50)}...` : `HTTP ${res.status} ${res.statusText}` }
+            }
 
             if (!res.ok) throw new Error(data?.error || (isDowngrade ? 'Failed to schedule downgrade' : 'Failed to create payment link'))
+            if (data?.no_change) {
+                showNotice({
+                    type: 'info',
+                    title: 'No change',
+                    message: data.message || 'You are already on this plan.',
+                })
+                return true
+            }
             if (data?.scheduled_downgrade) {
                 showNotice({
                     type: 'success',
@@ -236,7 +250,7 @@ export default function BillingPage() {
                 window.location.href = data.payment_link
                 return true
             }
-            throw new Error(data?.error || 'Failed to create payment link')
+            throw new Error(data?.error || 'Failed to create payment link (Missing URL)')
         } catch (err) {
             console.error('Upgrade error:', err)
             showNotice({
