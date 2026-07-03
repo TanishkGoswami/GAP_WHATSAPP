@@ -401,6 +401,7 @@ function mergeTemplateRows(metaRows: any[], localRows: any[]) {
       submitted_at: row.submitted_at,
       approved_at: row.approved_at,
       rejected_at: row.rejected_at,
+      last_synced_at: row.last_synced_at,
       last_updated: row.updated_at,
       source: "local",
     });
@@ -422,6 +423,22 @@ function mergeTemplateRows(metaRows: any[], localRows: any[]) {
   return [...byKey.values()].sort((a, b) =>
     String(a.name || "").localeCompare(String(b.name || "")),
   );
+}
+
+export function findStaleMetaTemplateIds(metaRows: any[], localRows: any[]) {
+  const metaKeys = new Set(
+    metaRows.map(
+      (row) =>
+        `${String(row.name || "").toLowerCase()}::${String(row.language || "en_US")}`,
+    ),
+  );
+
+  return localRows
+    .filter((row) => {
+      const key = `${String(row.name || "").toLowerCase()}::${String(row.language || "en_US")}`;
+      return row.template_id && row.status !== "DRAFT" && !metaKeys.has(key);
+    })
+    .map((row) => row.id);
 }
 
 export async function upsertLocalTemplateSubmission(params: {
@@ -618,7 +635,21 @@ export async function getTemplates(req: any, res: Response) {
             .eq('wa_account_id', account.id);
         if (localErr) console.warn('[Templates] Local cache read failed:', localErr.message);
 
-        res.json(mergeTemplateRows(metaTemplates, localRows || []));
+        const staleIds = findStaleMetaTemplateIds(metaTemplates, localRows || []);
+        if (staleIds.length) {
+            const { error: deleteErr } = await supabase
+                .from('w_template_submissions')
+                .delete()
+                .in('id', staleIds)
+                .eq('organization_id', orgId)
+                .eq('wa_account_id', account.id);
+            if (deleteErr) {
+                console.warn('[Templates] Stale local cache cleanup failed:', deleteErr.message);
+            }
+        }
+
+        const activeLocalRows = (localRows || []).filter((row: any) => !staleIds.includes(row.id));
+        res.json(mergeTemplateRows(metaTemplates, activeLocalRows));
     } catch (err: any) {
         console.error('Error fetching templates:', err);
         res.status(500).json({ error: err.message });

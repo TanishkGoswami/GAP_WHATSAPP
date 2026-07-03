@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone, AlertCircle, RefreshCw, UploadCloud, Type, MessageSquareText, MousePointerClick, ChevronDown, Loader2, Check, MessageSquare, Image, ExternalLink, ArrowRight, ShieldCheck, HelpCircle, Tag, Building2, Target, Sparkles, LockKeyhole } from 'lucide-react'
+import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone, AlertCircle, RefreshCw, UploadCloud, Type, MessageSquareText, MousePointerClick, ChevronDown, Loader2, Check, CheckCheck, MessageSquare, Image, ExternalLink, ArrowRight, ShieldCheck, HelpCircle, Tag, Building2, Target, Sparkles, LockKeyhole, CalendarDays } from 'lucide-react'
 import Modal from '../components/Modal'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
-import TourButton from '../onboarding/TourButton'
 import { META_TEMPLATES_LIBRARY } from '../data/metaTemplates'
 import MetaTemplateLibrary from '../components/MetaTemplateLibrary'
+import { getPendingReviewInfo } from '../utils/templateReview'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
 
@@ -534,9 +534,6 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                     <p className="text-sm text-gray-500 mt-1">Manage your WhatsApp message templates</p>
                 </div>
                 <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
-                    <div className="hidden md:block">
-                        <TourButton />
-                    </div>
                     <button
                         onClick={() => setIsCreateOpen(true)}
                         data-tour="templates-create"
@@ -650,6 +647,39 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                 </div>
             )}
 
+            {activeStatus === 'PENDING' && (
+                <details className="group rounded-xl border border-amber-200 bg-white shadow-sm">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm text-gray-800 [&::-webkit-details-marker]:hidden">
+                        <span className="flex min-w-0 items-center gap-3">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                                <HelpCircle className="h-4 w-4" />
+                            </span>
+                            <span className="min-w-0">
+                                <strong className="block font-semibold">Template approval taking longer?</strong>
+                                <span className="block truncate text-xs font-normal text-gray-500">Check content, category, account health and Meta review steps.</span>
+                            </span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2">
+                            <span className="hidden rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700 sm:inline">8 checks</span>
+                            <ChevronDown className="h-4 w-4 text-gray-400 transition-transform group-open:rotate-180" />
+                        </span>
+                    </summary>
+                    <div className="border-t border-gray-100 bg-amber-50/40 px-4 py-4 text-xs leading-5 text-gray-700 sm:px-5">
+                        <p className="mb-3 rounded-lg border border-amber-100 bg-white px-3 py-2 text-amber-900">Approval Meta control karta hai; pending state mein Meta exact reason provide nahi karta.</p>
+                        <ol className="grid gap-2 pl-4 list-decimal md:grid-cols-2 md:gap-x-8">
+                            <li><strong>Content clear rakhein:</strong> test, dummy, ignore, vague ya misleading copy avoid karein.</li>
+                            <li><strong>Correct category:</strong> offers, donations, promotions aur lead generation ko Marketing mein rakhein.</li>
+                            <li><strong>Claims verify karein:</strong> loan, returns, discount, government scheme aur urgency claims factual hon.</li>
+                            <li><strong>Media check karein:</strong> image/video readable, relevant aur policy-compliant ho.</li>
+                            <li><strong>Samples realistic hon:</strong> variables ke sample values actual context explain karein, “info” ya “Sample 1” nahi.</li>
+                            <li><strong>Account health:</strong> WhatsApp Manager mein Business Verification, Account Quality aur policy restrictions check karein.</li>
+                            <li><strong>24+ hours:</strong> pehle Sync Status karein; phir WhatsApp Manager mein same template kholkar Meta Support case raise karein.</li>
+                            <li><strong>Duplicate submit na karein:</strong> repeated copies queue ko fast nahi karti aur management confusing banati hain.</li>
+                        </ol>
+                    </div>
+                </details>
+            )}
+
             {loading && (
                 <div data-tour="templates-list" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {[0, 1, 2].map(i => (
@@ -691,57 +721,76 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                             const buttonsComp = template.components?.find(c => c.type === 'BUTTONS');
                             const headerComp = template.components?.find(c => c.type === 'HEADER');
                             const footerComp = template.components?.find(c => c.type === 'FOOTER');
+                            const pendingInfo = template.status === 'PENDING' ? getPendingReviewInfo(template) : null;
 
                             return (
                                 <div
                                     key={template.id || template.name}
                                     onClick={() => setSelectedTemplate(template)}
-                                    className="group meta-template-card relative flex flex-col justify-between overflow-hidden cursor-pointer"
+                                    className="group meta-template-card relative flex cursor-pointer flex-col justify-between overflow-hidden"
                                 >
-                                    <div className="p-5 flex flex-col flex-1">
+                                    <div className="flex flex-1 flex-col p-4 sm:p-5">
                                         {/* Header row: icon + name + status + delete */}
-                                        <div className="flex items-start justify-between gap-2 mb-4">
+                                        <div className="mb-3 flex items-start justify-between gap-3">
                                             <div className="flex items-center gap-3 min-w-0">
-                                                <div className="h-10 w-10 rounded-lg bg-gray-50 flex items-center justify-center text-gray-450 border border-gray-100 shrink-0" style={{ borderRadius: '10px' }}>
-                                                    <FileText className="h-5 w-5 shrink-0" />
+                                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600">
+                                                    <MessageSquareText className="h-5 w-5" strokeWidth={1.8} />
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <h3 className="font-semibold text-slate-800 truncate max-w-[130px] text-sm leading-tight group-hover:text-blue-600 transition-colors">{template.name}</h3>
-                                                    <p className="text-[10px] text-gray-400 font-bold mt-0.5 uppercase tracking-wide">{template.language}</p>
+                                                    <h3 className="max-w-[150px] truncate text-sm font-semibold leading-tight text-slate-900 transition-colors group-hover:text-blue-600">{template.name}</h3>
+                                                    <p className="mt-1 flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
+                                                        <span>{template.language}</span>
+                                                        <span className="h-1 w-1 rounded-full bg-slate-300" />
+                                                        <span className="capitalize">{String(template.category || '').toLowerCase()}</span>
+                                                    </p>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1.5 shrink-0">
-                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border leading-none ${template.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                                                    template.status === 'PENDING' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                                <span className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[9px] font-semibold uppercase tracking-wide ${template.status === 'APPROVED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                    template.status === 'PENDING' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                                         template.status === 'DRAFT' ? 'bg-gray-50 text-gray-600 border-gray-200' :
                                                             'bg-rose-50 text-rose-700 border-rose-100'
-                                                    }`} style={{ borderRadius: '10px' }}>
+                                                    }`}>
                                                     {template.status === 'APPROVED' && <CheckCircle className="h-3 w-3 shrink-0 text-emerald-600" />}
                                                     {template.status === 'PENDING' && (
-                                                        <span className="relative flex h-2.5 w-2.5 shrink-0 mr-0.5">
-                                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-                                                        </span>
+                                                        <Clock className="h-3 w-3" />
                                                     )}
                                                     {template.status === 'DRAFT' && <FileText className="h-3 w-3 shrink-0" />}
                                                     {template.status === 'REJECTED' && <XCircle className="h-3 w-3 shrink-0 text-rose-600" />}
-                                                    <span className="uppercase tracking-wider text-[9px]">{template.status}</span>
+                                                    <span>{template.status}</span>
                                                 </span>
                                                 <button
                                                     onClick={(e) => { e.stopPropagation(); handleDelete(template.name); }}
-                                                    className="text-gray-300 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50"
+                                                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-200"
                                                     title="Delete template"
+                                                    aria-label={`Delete ${template.name}`}
                                                 >
                                                     <Trash2 className="h-4 w-4 shrink-0" />
                                                 </button>
                                             </div>
                                         </div>
 
+                                        {pendingInfo && (
+                                            <div
+                                                title={pendingInfo.hint}
+                                                className={`mb-3 flex items-center justify-between gap-3 rounded-lg px-3 py-2 text-[10px] ${pendingInfo.overdue ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}
+                                            >
+                                                <span className="flex min-w-0 items-center gap-2 font-medium">
+                                                    <span className="relative flex h-2 w-2 shrink-0">
+                                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60" />
+                                                        <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+                                                    </span>
+                                                    <span className="truncate">{pendingInfo.overdue ? 'Review delayed' : 'Meta review in progress'}</span>
+                                                </span>
+                                                <span className="shrink-0 font-semibold">{pendingInfo.hours}h</span>
+                                            </div>
+                                        )}
+
                                         {/* WhatsApp Mock Chat Bubble Preview */}
-                                        <div className="bg-[#e5ddd5] p-3 flex-1 flex flex-col justify-between relative overflow-hidden border border-gray-250/50 min-h-[160px] shadow-inner mb-2" style={{ borderRadius: '12px' }}>
+                                        <div className="wa-template-canvas relative mb-0 flex min-h-[190px] flex-1 flex-col justify-between overflow-hidden rounded-xl border border-[#ded8cf] p-3 shadow-inner">
                                             <div className="absolute inset-0 opacity-[0.08] bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')] pointer-events-none" />
 
-                                            <div className="bg-white p-2.5 pb-1.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] max-w-[95%] self-start relative z-10" style={{ borderRadius: '8px 8px 8px 0px' }}>
+                                            <div className="relative z-10 max-w-[94%] self-start rounded-[8px_8px_8px_2px] bg-white p-3 pb-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.12)]">
                                                 {headerComp?.format === 'TEXT' && (
                                                     <p className="text-[10px] font-extrabold text-gray-900 mb-1 leading-tight border-b border-gray-100 pb-0.5">{headerComp.text}</p>
                                                 )}
@@ -756,19 +805,19 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                     </div>
                                                 )}
 
-                                                <p className="text-[11px] leading-relaxed text-gray-800 whitespace-pre-line font-medium">
+                                                <p className="whitespace-pre-line text-[11px] font-medium leading-[1.55] text-slate-800">
                                                     {renderTemplateText(bodyComp?.text || 'No preview available')}
                                                 </p>
 
                                                 {footerComp?.text && (
-                                                    <p className="text-[8px] text-gray-400 mt-1 font-semibold leading-none">{footerComp.text}</p>
+                                                    <p className="mt-1.5 text-[8px] font-medium text-slate-400">{footerComp.text}</p>
                                                 )}
 
                                                 <div className="flex items-center justify-end mt-1 gap-0.5 leading-none">
                                                     <span className="text-[7.5px] text-gray-450 font-medium">
                                                         {formatTimeToIST(template.approved_at || template.submitted_at || template.last_updated)}
                                                     </span>
-                                                    <span className={`${template.status === 'APPROVED' ? 'text-[#34b7f1]' : 'text-gray-400'} text-[8px] font-bold`}>✓✓</span>
+                                                    <CheckCheck className={`h-3 w-3 ${template.status === 'APPROVED' ? 'text-sky-500' : 'text-slate-400'}`} />
                                                 </div>
                                             </div>
 
@@ -776,7 +825,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                             {buttonsComp?.buttons?.length > 0 && (
                                                 <div className="mt-2 space-y-1 w-[95%] self-start relative z-10">
                                                     {buttonsComp.buttons.slice(0, 2).map((btn, i) => (
-                                                        <div key={i} className="flex items-center justify-center gap-1 bg-white hover:bg-gray-50 text-[9.5px] font-bold text-blue-600 rounded-lg py-1.5 border border-gray-200/85 shadow-sm transition-all" style={{ borderRadius: '8px' }}>
+                                                        <div key={i} className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-100 bg-white py-1.5 text-[9px] font-semibold text-blue-600 shadow-sm">
                                                             {btn.type === 'URL' ? <ExternalLink className="h-3 w-3 shrink-0" /> : btn.type === 'PHONE_NUMBER' ? <Phone className="h-3 w-3 shrink-0" /> : <MessageSquare className="h-3 w-3 shrink-0" />}
                                                             <span className="truncate">{btn.text}</span>
                                                         </div>
@@ -787,9 +836,10 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                     </div>
 
                                     {/* Footer — always at bottom */}
-                                    <div className="border-t border-gray-100 bg-[#f8fafc] px-4 py-3 flex items-center justify-between text-[10px] text-gray-400 font-semibold">
-                                        <span className="uppercase tracking-wider text-[9px] text-gray-500 bg-gray-100/70 border border-gray-150 px-2 py-0.5 rounded-md" style={{ borderRadius: '6px' }}>{template.category}</span>
-                                        <span>
+                                    <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/70 px-4 py-3 text-[10px] sm:px-5">
+                                        <span className="flex min-w-0 items-center gap-1.5 text-slate-500">
+                                            <CalendarDays className="h-3.5 w-3.5 shrink-0" />
+                                            <span className="truncate">
                                             {template.status === 'APPROVED' 
                                                 ? `Approved ${formatDateToIST(template.approved_at || template.last_updated)}` 
                                                 : template.status === 'PENDING' 
@@ -798,6 +848,10 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                                 ? `Rejected ${formatDateToIST(template.rejected_at || template.last_updated)}`
                                                 : `Updated ${formatDateToIST(template.last_updated)}`
                                             }
+                                            </span>
+                                        </span>
+                                        <span className="flex shrink-0 items-center gap-1 font-semibold text-blue-600 opacity-0 transition-opacity group-hover:opacity-100">
+                                            View <ArrowRight className="h-3.5 w-3.5" />
                                         </span>
                                     </div>
                                 </div>
