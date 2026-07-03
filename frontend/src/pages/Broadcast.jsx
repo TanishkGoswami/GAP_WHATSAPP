@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet, Pause, Play, Phone, MessageSquare } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
@@ -7,11 +7,10 @@ import { formatINRFromPaise } from '../config/whatsappPricing'
 import TourButton from '../onboarding/TourButton'
 
 const STEPS = [
-    { id: 1, name: 'Details', icon: LayoutGrid },
+    { id: 1, name: 'Setup', icon: LayoutGrid },
     { id: 2, name: 'Audience', icon: Users },
-    { id: 3, name: 'Template', icon: LayoutGrid },
-    { id: 4, name: 'Content', icon: FileText },
-    { id: 5, name: 'Review', icon: Check },
+    { id: 3, name: 'Message', icon: FileText },
+    { id: 4, name: 'Review', icon: Check },
 ]
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
@@ -130,6 +129,10 @@ export default function Broadcast() {
                 replacement = '[Contact Name]';
             } else if (source === 'phone') {
                 replacement = '[Contact Phone]';
+            } else if (source === 'email') {
+                replacement = '[Contact Email]';
+            } else if (source?.startsWith('field:')) {
+                replacement = `[${source.slice(6)}]`;
             } else if (source === 'custom') {
                 replacement = customTexts[v.key] || v.token;
             }
@@ -157,9 +160,13 @@ export default function Broadcast() {
 
     const [activeTab, setActiveTab] = useState('new') // 'new' | 'history'
     const [campaignsList, setCampaignsList] = useState([])
+    const [historySearch, setHistorySearch] = useState('')
+    const [historyStatus, setHistoryStatus] = useState('all')
     const [isLoadingHistory, setIsLoadingHistory] = useState(false)
     const [historyLoadState, setHistoryLoadState] = useState('idle')
     const [expandedCampaignId, setExpandedCampaignId] = useState(null)
+    const [recipientReports, setRecipientReports] = useState({})
+    const launchIdempotencyKey = useRef(crypto.randomUUID())
 
     const [currentStep, setCurrentStep] = useState(1)
     const [campaign, setCampaign] = useState({
@@ -187,10 +194,23 @@ export default function Broadcast() {
     const [billingEstimate, setBillingEstimate] = useState(null)
     const [isEstimating, setIsEstimating] = useState(false)
     const [estimateError, setEstimateError] = useState('')
+    const [isMobilePreviewOpen, setIsMobilePreviewOpen] = useState(false)
+    const visibleCampaigns = campaignsList.filter(item => {
+        const matchesSearch = !historySearch.trim() ||
+            String(item.name || '').toLowerCase().includes(historySearch.trim().toLowerCase()) ||
+            String(item.template_name || '').toLowerCase().includes(historySearch.trim().toLowerCase())
+        return matchesSearch && (historyStatus === 'all' || item.status === historyStatus)
+    })
 
     const selectedTemplate = templates.find(t => t.name === campaign.template_name && t.language === campaign.template_language)
         || templates.find(t => t.name === campaign.template_name)
+    const selectedWaAccount = waAccounts.find(account => account.id === campaign.wa_account_id)
     const variables = selectedTemplate ? parseVars(selectedTemplate.components) : []
+    const isVariableMapped = variable => {
+        const source = campaign.variable_mapping[variable.key]
+        return source && (source !== 'custom' || String(customTexts[variable.key] || '').trim())
+    }
+    const mappedVariableCount = variables.filter(isVariableMapped).length
     const dynamicUrlButtons = selectedTemplate ? parseDynamicUrlButtons(selectedTemplate.components) : []
     const selectedHeader = selectedTemplate?.components?.find(c => c.type === 'HEADER')
     const selectedHeaderFormat = String(selectedHeader?.format || '').toUpperCase()
@@ -205,6 +225,9 @@ export default function Broadcast() {
             : campaign.audience_type === 'saved'
                 ? contacts.filter(c => c.saved_at != null)
                 : contacts;
+    const availableCustomFields = [...new Set(
+        filteredContacts.flatMap(contact => Object.keys(contact?.custom_fields || {}))
+    )].sort((a, b) => a.localeCompare(b))
 
     const selectedTemplateCategory = selectedTemplate?.category || campaign.variable_mapping?._template_category || 'MARKETING'
 
@@ -307,29 +330,7 @@ export default function Broadcast() {
 
         fetchEstimate();
         return () => { cancelled = true; };
-    }, [currentStep, token, campaign.audience_tag, campaign.template_name, selectedTemplateCategory, csvData]);
-
-    const deleteCampaign = async (id) => {
-        const confirmed = await confirmDialog('Are you sure you want to cancel and delete this scheduled campaign?', {
-            title: 'Delete scheduled campaign',
-            tone: 'danger',
-            confirmLabel: 'Delete campaign',
-        });
-        if (!confirmed) return;
-        try {
-            const res = await apiCall(`${API_URL}/api/broadcasts/campaigns/${id}`, {
-                method: 'DELETE'
-            });
-            if (res.ok) {
-                fetchCampaignHistory();
-            } else {
-                const data = await res.json();
-                alertDialog(data.error || 'Failed to delete', { title: 'Delete failed', tone: 'danger' });
-            }
-        } catch (e) {
-            alertDialog('Error: ' + e.message, { title: 'Delete failed', tone: 'danger' });
-        }
-    }
+    }, [currentStep, token, campaign.audience_type, campaign.audience_tag, campaign.template_name, selectedTemplateCategory, csvData]);
 
     const cancelCampaign = async (id) => {
         const confirmed = await confirmDialog('Are you sure you want to stop this campaign? It will be permanently cancelled.', {
@@ -353,6 +354,47 @@ export default function Broadcast() {
         }
     }
 
+    const updateCampaignState = async (id, action) => {
+        try {
+            const res = await apiCall(`${API_URL}/api/broadcasts/campaigns/${id}/${action}`, { method: 'POST' })
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data.error || `Failed to ${action} campaign`)
+            fetchCampaignHistory(true)
+        } catch (error) {
+            alertDialog(error.message, { title: 'Campaign update failed', tone: 'danger' })
+        }
+    }
+
+    const fetchRecipientReport = async (campaignId, page = 1) => {
+        setRecipientReports(previous => ({
+            ...previous,
+            [campaignId]: { ...(previous[campaignId] || {}), loading: true }
+        }))
+        try {
+            const res = await apiCall(`${API_URL}/api/broadcasts/campaigns/${campaignId}/recipients?page=${page}&page_size=25`)
+            const data = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(data.error || 'Could not load delivery report')
+            setRecipientReports(previous => ({
+                ...previous,
+                [campaignId]: { recipients: data.recipients || [], pagination: data.pagination, loading: false }
+            }))
+        } catch (error) {
+            setRecipientReports(previous => ({
+                ...previous,
+                [campaignId]: { ...(previous[campaignId] || {}), loading: false, error: error.message }
+            }))
+        }
+    }
+
+    const toggleCampaignDetails = (camp) => {
+        if (expandedCampaignId === camp.id) {
+            setExpandedCampaignId(null)
+            return
+        }
+        setExpandedCampaignId(camp.id)
+        if (camp.schema_version >= 2) fetchRecipientReport(camp.id, 1)
+    }
+
     const handleFileUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -367,9 +409,32 @@ export default function Broadcast() {
                 return;
             }
 
-            const headers = lines[0].split(',').map(h => h.toLowerCase().trim());
+            const parseCsvRow = row => {
+                const values = []
+                let value = ''
+                let quoted = false
+                for (let index = 0; index < row.length; index++) {
+                    const char = row[index]
+                    if (char === '"' && quoted && row[index + 1] === '"') {
+                        value += '"'
+                        index++
+                    } else if (char === '"') {
+                        quoted = !quoted
+                    } else if (char === ',' && !quoted) {
+                        values.push(value.trim())
+                        value = ''
+                    } else {
+                        value += char
+                    }
+                }
+                values.push(value.trim())
+                return values
+            }
+            const originalHeaders = parseCsvRow(lines[0]).map(h => h.trim())
+            const headers = originalHeaders.map(h => h.toLowerCase());
             const phoneIdx = headers.findIndex(h => h.includes('phone') || h.includes('number'));
             const nameIdx = headers.findIndex(h => h.includes('name'));
+            const emailIdx = headers.findIndex(h => h === 'email' || h.includes('email address'));
 
             if (phoneIdx === -1) {
                 alertDialog('CSV must contain a column for phone numbers (e.g. "Phone" or "Number")', { title: 'CSV import failed', tone: 'warning' });
@@ -378,12 +443,20 @@ export default function Broadcast() {
 
             const parsed = [];
             for (let i = 1; i < lines.length; i++) {
-                // simple split by comma, ignoring quotes for basic usage
-                const cols = lines[i].split(',');
+                const cols = parseCsvRow(lines[i]);
                 if (cols[phoneIdx]) {
+                    const custom_fields = Object.fromEntries(
+                        originalHeaders
+                            .map((header, index) => [header, cols[index]?.trim()])
+                            .filter(([header, value], index) => (
+                                header && value && ![phoneIdx, nameIdx, emailIdx].includes(index)
+                            ))
+                    )
                     parsed.push({
                         phone: cols[phoneIdx].trim(),
-                        name: nameIdx !== -1 && cols[nameIdx] ? cols[nameIdx].trim() : 'Unknown'
+                        name: nameIdx !== -1 && cols[nameIdx] ? cols[nameIdx].trim() : 'Unknown',
+                        email: emailIdx !== -1 && cols[emailIdx] ? cols[emailIdx].trim() : '',
+                        custom_fields
                     });
                 }
             }
@@ -482,8 +555,6 @@ export default function Broadcast() {
         }
         if (currentStep === 3) {
             if (!campaign.template_name) return alertDialog('Please select a template.', { title: 'Template required', tone: 'warning' });
-        }
-        if (currentStep === 4) {
             if (!(await validateHeaderMediaUrl())) return;
             for (const button of dynamicUrlButtons) {
                 const validation = validateDynamicUrlButtonValue(button, campaign.variable_mapping[`_button_url_${button.index}`] || campaign.variable_mapping[`button_url_${button.index}`])
@@ -493,12 +564,13 @@ export default function Broadcast() {
             }
             for (let variable of variables) {
                 const key = variable.key
-                if (!campaign.variable_mapping[key] && !customTexts[key]) {
+                const source = campaign.variable_mapping[key]
+                if (!source || (source === 'custom' && !String(customTexts[key] || '').trim())) {
                     return alertDialog(`Please map ${variable.token}.`, { title: 'Variable mapping required', tone: 'warning' });
                 }
             }
         }
-        setCurrentStep(p => Math.min(5, p + 1))
+        setCurrentStep(p => Math.min(4, p + 1))
     };
 
     const handleBack = () => setCurrentStep(p => Math.max(1, p - 1));
@@ -558,8 +630,9 @@ export default function Broadcast() {
             ...campaign,
             scheduled_at: formattedScheduledAt,
             audience_tag: campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag,
-            audience_type: campaign.audience_type === 'CSV_UPLOAD' ? null : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag'),
+            audience_type: campaign.audience_type === 'CSV_UPLOAD' ? 'CSV_UPLOAD' : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag'),
             csv_data: campaign.audience_type === 'CSV_UPLOAD' ? csvData : null,
+            idempotency_key: launchIdempotencyKey.current,
             variable_mapping: finalMapping,
             required_header_type: needsHeaderMedia ? selectedHeaderFormat.toLowerCase() : undefined,
             header_media_type: needsHeaderMedia ? selectedHeaderFormat.toLowerCase() : undefined,
@@ -574,6 +647,7 @@ export default function Broadcast() {
             const data = await res.json();
             if (res.ok) {
                 setSendResult(data);
+                launchIdempotencyKey.current = crypto.randomUUID();
             } else {
                 alertDialog(data.error || 'Broadcast failed', { title: 'Broadcast failed', tone: 'danger' });
             }
@@ -664,7 +738,7 @@ export default function Broadcast() {
                         {/* Time & status */}
                         <div className="flex items-center justify-end gap-1 text-[9px] text-gray-400 mt-1 select-none">
                             <span>12:00 PM</span>
-                            <span className="text-blue-500">✓✓</span>
+                            <span className="font-bold text-[#53bdeb]">✓✓</span>
                         </div>
                     </div>
 
@@ -673,7 +747,7 @@ export default function Broadcast() {
                         <div className="relative z-10 mt-2 space-y-1.5 self-start w-[85%]">
                             {selectedTemplate.components.find(c => c.type === 'BUTTONS').buttons.map((btn, idx) => (
                                 <div key={idx} className="flex items-center justify-center gap-2 rounded-lg bg-white py-2 px-3 shadow-sm border border-gray-200 text-xs font-bold text-sky-600 cursor-default hover:bg-gray-50 transition-colors">
-                                    {btn.type === 'PHONE_NUMBER' ? '📞' : btn.type === 'URL' ? '🔗' : '↩️'}
+                                    {btn.type === 'PHONE_NUMBER' ? <Phone className="h-3.5 w-3.5" /> : btn.type === 'URL' ? <LinkIcon className="h-3.5 w-3.5" /> : <MessageSquare className="h-3.5 w-3.5" />}
                                     <span className="truncate">{btn.text}</span>
                                 </div>
                             ))}
@@ -698,13 +772,13 @@ export default function Broadcast() {
                     <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-sm backdrop-blur-sm w-full md:w-auto">
                         <button
                             onClick={() => setActiveTab('new')}
-                            className={`flex-1 md:flex-initial text-center px-3 py-2 md:px-5 md:py-2.5 text-xs md:text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'new' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
+                            className={`flex-1 md:flex-initial text-center px-3 py-2 md:px-5 md:py-2.5 text-xs md:text-sm font-semibold rounded-lg transition-colors ${activeTab === 'new' ? 'bg-white shadow-sm text-[#0064b7] ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
                         >
                             New Campaign
                         </button>
                         <button
                             onClick={() => setActiveTab('history')}
-                            className={`flex-1 md:flex-initial text-center px-3 py-2 md:px-5 md:py-2.5 text-xs md:text-sm font-semibold rounded-lg transition-all duration-300 ${activeTab === 'history' ? 'bg-white shadow-sm text-indigo-700 ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
+                            className={`flex-1 md:flex-initial text-center px-3 py-2 md:px-5 md:py-2.5 text-xs md:text-sm font-semibold rounded-lg transition-colors ${activeTab === 'history' ? 'bg-white shadow-sm text-[#0064b7] ring-1 ring-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
                         >
                             History
                         </button>
@@ -714,12 +788,37 @@ export default function Broadcast() {
 
             {activeTab === 'history' ? (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                    <div className="px-8 py-6 border-b border-gray-200 flex justify-between items-center bg-gradient-to-b from-gray-50/50 to-white">
-                        <h2 className="text-xl font-bold text-gray-900">Campaign History</h2>
-                        <button onClick={fetchCampaignHistory} className="text-sm text-indigo-600 font-semibold hover:text-indigo-800 flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-lg transition-colors">
+                    <div className="border-b border-gray-200 bg-gray-50/60 p-4 sm:p-6">
+                        <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <h2 className="text-xl font-semibold text-gray-950">Campaign history</h2>
+                            <p className="mt-1 text-sm text-gray-500">Monitor delivery and manage active broadcasts.</p>
+                        </div>
+                        <button onClick={fetchCampaignHistory} className="flex items-center gap-2 rounded-full border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-[#0064b7] transition-colors hover:bg-[#eef7ff]">
                             <Loader2 className={`w-4 h-4 ${isLoadingHistory ? 'animate-spin' : ''}`} />
-                            Refresh Data
+                            Refresh
                         </button>
+                        </div>
+                        <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_180px]">
+                            <input
+                                type="search"
+                                value={historySearch}
+                                onChange={event => setHistorySearch(event.target.value)}
+                                placeholder="Search campaigns or templates"
+                                className="h-10 rounded-lg border-gray-300 bg-white text-sm"
+                            />
+                            <select
+                                value={historyStatus}
+                                onChange={event => setHistoryStatus(event.target.value)}
+                                className="h-10 rounded-lg border-gray-300 bg-white text-sm"
+                                aria-label="Filter campaigns by status"
+                            >
+                                <option value="all">All statuses</option>
+                                {['scheduled', 'preparing', 'queued', 'processing', 'paused', 'completed', 'failed', 'cancelled'].map(status => (
+                                    <option key={status} value={status}>{status.charAt(0).toUpperCase() + status.slice(1)}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                     {(historyLoadState === 'idle' || isLoadingHistory) && campaignsList.length === 0 ? (
                         <div className="p-16 text-center flex justify-center"><Loader2 className="w-10 h-10 animate-spin text-indigo-500" /></div>
@@ -736,8 +835,48 @@ export default function Broadcast() {
                             <h3 className="text-lg font-semibold text-gray-900 mb-1">No campaigns found</h3>
                             <p className="text-gray-500">Schedule your first broadcast to engage your audience.</p>
                         </div>
+                    ) : visibleCampaigns.length === 0 ? (
+                        <div className="p-12 text-center">
+                            <p className="text-sm font-semibold text-gray-800">No matching campaigns</p>
+                            <p className="mt-1 text-sm text-gray-500">Try a different search or status.</p>
+                        </div>
                     ) : (
-                        <div className="overflow-x-auto">
+                        <>
+                        <div className="divide-y divide-gray-100 md:hidden">
+                            {visibleCampaigns.map(camp => (
+                                <article key={camp.id} className="space-y-3 p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <h3 className="truncate text-sm font-semibold text-gray-950">{camp.name}</h3>
+                                            <p className="mt-1 truncate text-xs text-gray-500">{camp.template_name}</p>
+                                        </div>
+                                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${camp.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : camp.status === 'failed' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{camp.status}</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 rounded-lg bg-gray-50 p-3 text-xs">
+                                        <div><span className="block text-gray-500">Audience</span><span className="mt-1 block font-semibold text-gray-800">{camp.total_contacts || camp.prepared_count || 0} contacts</span></div>
+                                        <div><span className="block text-gray-500">Delivery</span><span className="mt-1 block font-semibold text-gray-800">{camp.accepted_count ?? camp.sent_count ?? 0} accepted</span></div>
+                                    </div>
+                                    <button type="button" onClick={() => toggleCampaignDetails(camp)} className="w-full rounded-lg border border-gray-200 py-2 text-xs font-semibold text-[#0064b7]">
+                                        {expandedCampaignId === camp.id ? 'Hide delivery report' : 'View delivery report'}
+                                    </button>
+                                    {expandedCampaignId === camp.id && (
+                                        <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                            {recipientReports[camp.id]?.loading ? (
+                                                <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading report</div>
+                                            ) : recipientReports[camp.id]?.error ? (
+                                                <p className="text-xs text-red-600">{recipientReports[camp.id].error}</p>
+                                            ) : (recipientReports[camp.id]?.recipients || []).slice(0, 5).map(row => (
+                                                <div key={row.id || row.normalized_phone} className="flex items-center justify-between gap-3 rounded-md bg-white px-3 py-2 text-xs">
+                                                    <span className="truncate font-medium text-gray-800">{row.contact_name || row.normalized_phone}</span>
+                                                    <span className="shrink-0 capitalize text-gray-500">{row.status}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </article>
+                            ))}
+                        </div>
+                        <div className="hidden overflow-x-auto md:block">
                             <table className="w-full text-left text-sm whitespace-nowrap">
                                 <thead className="bg-gray-50/80 text-gray-500 font-semibold uppercase text-xs tracking-wider border-b border-gray-200">
                                     <tr>
@@ -750,7 +889,7 @@ export default function Broadcast() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {campaignsList.map(camp => (
+                                    {visibleCampaigns.map(camp => (
                                         <React.Fragment key={camp.id}>
                                             <tr className="hover:bg-gray-50/60 transition-colors">
                                                 <td className="px-8 py-5">
@@ -773,27 +912,38 @@ export default function Broadcast() {
                                                 <td className="px-8 py-5 text-gray-600 font-medium">
                                                     <div className="flex items-center gap-1.5">
                                                         <Users className="w-4 h-4 text-gray-400" />
-                                                        {camp.audience_tag || (camp.csv_data ? 'CSV Upload' : 'All Contacts')}
+                                                        {camp.audience_tag || (String(camp.audience_type).toLowerCase().includes('csv') || camp.csv_data ? 'CSV Upload' : camp.audience_type === 'saved' ? 'Saved Contacts' : 'All Contacts')}
                                                     </div>
                                                 </td>
                                                 <td className="px-8 py-5 text-gray-600 font-medium">
                                                     {camp.scheduled_at ? format(new Date(camp.scheduled_at), 'MMM dd, yyyy · hh:mm a') : format(new Date(camp.created_at), 'MMM dd, yyyy · hh:mm a')}
                                                 </td>
                                                 <td className="px-8 py-5">
-                                                    {camp.status === 'completed' ? (
-                                                        <div className="flex gap-3 text-xs items-center">
+                                                    {camp.schema_version >= 2 || camp.status === 'completed' ? (
+                                                        <div className="flex flex-wrap gap-2 text-xs items-center">
                                                             <div className="flex items-center gap-1.5 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-100">
-                                                                <Check className="w-3.5 h-3.5" /> {camp.sent_count}
+                                                                <Check className="w-3.5 h-3.5" /> {camp.schema_version >= 2 ? (camp.accepted_count ?? camp.sent_count ?? 0) : (camp.results?.filter(r => ['accepted', 'sent', 'delivered', 'read'].includes(r?.status)).length || 0)}
                                                             </div>
                                                             <div className="flex items-center gap-1.5 text-rose-700 font-bold bg-rose-50 px-2.5 py-1.5 rounded-lg border border-rose-100">
-                                                                <Info className="w-3.5 h-3.5" /> {camp.failed_count}
+                                                                <Info className="w-3.5 h-3.5" /> {camp.schema_version >= 2 ? (camp.failed_count ?? 0) : (camp.results?.filter(r => r?.status === 'failed').length || 0)}
                                                             </div>
+                                                            {camp.schema_version >= 2 && <span className="text-gray-500">{camp.prepared_count || 0}/{camp.total_contacts || 0}</span>}
                                                         </div>
                                                     ) : <span className="text-gray-400 font-medium">-</span>}
                                                 </td>
                                                 <td className="px-8 py-5 text-right">
                                                     <div className="flex justify-end gap-3 items-center">
-                                                        {(camp.status === 'processing' || camp.status === 'scheduled') && (
+                                                        {camp.schema_version >= 2 && ['queued', 'processing'].includes(camp.status) && (
+                                                            <button onClick={() => updateCampaignState(camp.id, 'pause')} className="text-amber-700 text-xs font-bold flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">
+                                                                <Pause className="w-3.5 h-3.5" /> Pause
+                                                            </button>
+                                                        )}
+                                                        {camp.schema_version >= 2 && camp.status === 'paused' && (
+                                                            <button onClick={() => updateCampaignState(camp.id, 'resume')} className="text-emerald-700 text-xs font-bold flex items-center gap-1 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
+                                                                <Play className="w-3.5 h-3.5" /> Resume
+                                                            </button>
+                                                        )}
+                                                        {(['preparing', 'queued', 'processing', 'paused', 'scheduled'].includes(camp.status)) && (
                                                             <button
                                                                 onClick={() => cancelCampaign(camp.id)}
                                                                 className="text-rose-600 hover:text-white text-xs font-bold flex items-center gap-1.5 bg-rose-50 hover:bg-rose-500 px-3 py-1.5 rounded-lg transition-colors border border-rose-200 hover:border-rose-500"
@@ -802,9 +952,9 @@ export default function Broadcast() {
                                                                 <Trash2 className="w-3.5 h-3.5" /> Stop & Cancel
                                                             </button>
                                                         )}
-                                                        {(camp.status === 'completed' || camp.status === 'cancelled') && camp.results && camp.results.length > 0 && (
+                                                        {((camp.schema_version >= 2 && (camp.total_contacts || camp.prepared_count)) || ((camp.status === 'completed' || camp.status === 'cancelled') && camp.results?.length > 0)) && (
                                                             <button
-                                                                onClick={() => setExpandedCampaignId(expandedCampaignId === camp.id ? null : camp.id)}
+                                                                onClick={() => toggleCampaignDetails(camp)}
                                                                 className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-colors"
                                                             >
                                                                 {expandedCampaignId === camp.id ? 'Hide Details' : 'View Results'}
@@ -814,32 +964,54 @@ export default function Broadcast() {
                                                     </div>
                                                 </td>
                                             </tr>
-                                            {expandedCampaignId === camp.id && camp.results && (
+                                            {expandedCampaignId === camp.id && (camp.schema_version >= 2 || camp.results) && (
                                                 <tr>
                                                     <td colSpan="6" className="bg-gray-50/50 p-8 border-b border-gray-200 shadow-inner">
                                                         <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
                                                             <LayoutGrid className="w-4 h-4 text-gray-400" /> Delivery Report
                                                         </h4>
                                                         <div className="max-h-80 overflow-y-auto space-y-2.5 pr-3 scrollbar-thin scrollbar-thumb-gray-200">
-                                                            {camp.results.map((res, idx) => (
+                                                            {(camp.schema_version >= 2 ? (recipientReports[camp.id]?.recipients || []).map(row => ({
+                                                                name: row.contact_name,
+                                                                phone: row.normalized_phone,
+                                                                status: row.status,
+                                                                error: row.error_message,
+                                                            })) : camp.results).map((res, idx) => (
                                                                 <div key={idx} className="grid grid-cols-[1fr_auto] gap-4 text-sm p-4 bg-white rounded-xl shadow-sm border border-gray-200/60 hover:border-gray-300 transition-colors">
                                                                     <div className="flex min-w-0 items-center gap-3">
-                                                                        <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${res.status === 'sent' ? 'bg-emerald-500 shadow-emerald-200' : 'bg-rose-500 shadow-rose-200'}`}></div>
+                                                                        <div className={`w-2.5 h-2.5 rounded-full shadow-sm ${['accepted', 'sent', 'delivered', 'read'].includes(res.status) ? 'bg-emerald-500 shadow-emerald-200' : res.status === 'failed' ? 'bg-rose-500 shadow-rose-200' : 'bg-amber-500 shadow-amber-200'}`}></div>
                                                                         <span className="font-bold text-gray-900">{res.name}</span>
                                                                         <span className="text-gray-500 bg-gray-100/80 px-2.5 py-1 rounded-md font-mono text-xs">{res.phone || 'Unknown Phone'}</span>
                                                                     </div>
-                                                                    {res.status === 'sent' ? (
+                                                                    {['accepted', 'sent', 'delivered', 'read'].includes(res.status) ? (
                                                                         <span className="text-emerald-600 font-semibold flex items-center gap-1.5">
-                                                                            <Check className="w-4 h-4" /> Delivered
+                                                                            <Check className="w-4 h-4" /> {res.status}
                                                                         </span>
-                                                                    ) : (
+                                                                    ) : res.status === 'failed' ? (
                                                                         <span className="max-w-xl whitespace-normal break-words text-right font-semibold text-rose-600 flex items-center gap-1.5" title={res.error}>
                                                                             <Info className="w-4 h-4 shrink-0" /> Failed: {res.error}
                                                                         </span>
+                                                                    ) : (
+                                                                        <span className="text-amber-600 font-semibold">{res.status}</span>
                                                                     )}
                                                                 </div>
                                                             ))}
+                                                            {camp.schema_version >= 2 && recipientReports[camp.id]?.loading && (
+                                                                <div className="flex items-center justify-center gap-2 p-6 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading recipients…</div>
+                                                            )}
+                                                            {camp.schema_version >= 2 && recipientReports[camp.id]?.error && (
+                                                                <div className="p-4 text-sm text-rose-600">{recipientReports[camp.id].error}</div>
+                                                            )}
                                                         </div>
+                                                        {camp.schema_version >= 2 && recipientReports[camp.id]?.pagination?.total > 25 && (
+                                                            <div className="mt-4 flex items-center justify-between text-sm">
+                                                                <span className="text-gray-500">{recipientReports[camp.id].pagination.total} recipients</span>
+                                                                <div className="flex gap-2">
+                                                                    <button disabled={recipientReports[camp.id].pagination.page <= 1} onClick={() => fetchRecipientReport(camp.id, recipientReports[camp.id].pagination.page - 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Previous</button>
+                                                                    <button disabled={recipientReports[camp.id].pagination.page * 25 >= recipientReports[camp.id].pagination.total} onClick={() => fetchRecipientReport(camp.id, recipientReports[camp.id].pagination.page + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Next</button>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             )}
@@ -848,6 +1020,7 @@ export default function Broadcast() {
                                 </tbody>
                             </table>
                         </div>
+                        </>
                     )}
                 </div>
             ) : sendResult ? (
@@ -868,7 +1041,7 @@ export default function Broadcast() {
                     <div className="flex justify-center gap-4 pt-4 border-t border-gray-100">
                         <button
                             onClick={startNew}
-                            className="px-8 py-3.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-bold shadow-lg shadow-indigo-200 transition-all hover:-translate-y-0.5"
+                            className="rounded-full bg-[#0070d1] px-8 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#0064b7]"
                         >
                             Start New Campaign
                         </button>
@@ -881,7 +1054,7 @@ export default function Broadcast() {
                     </div>
                 </div>
             ) : (
-                <div className="space-y-10">
+                <div className="space-y-5">
                     {/* Progress Steps */}
                     <div data-tour="broadcast-stepper" className="rounded-2xl border border-gray-200 bg-white p-3 md:p-5 shadow-sm">
                         <div className="relative">
@@ -903,12 +1076,12 @@ export default function Broadcast() {
                                         }}
                                         disabled={!isCompleted && !isActive}
                                     >
-                                        <div className={`flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-lg md:rounded-xl border transition-all ${
+                                        <div className={`flex h-8 w-8 md:h-10 md:w-10 items-center justify-center rounded-full border text-sm font-bold transition-all ${
                                                 isActive ? 'border-[#0070d1] bg-[#0070d1] text-white shadow-sm' :
                                                 isCompleted ? 'border-emerald-500 bg-emerald-500 text-white' :
                                                 'border-gray-200 bg-white text-gray-400'
                                             }`}>
-                                            <step.icon className="h-4.5 w-4.5 md:h-5 md:w-5" />
+                                            {isCompleted ? <Check className="h-4 w-4" /> : step.id}
                                         </div>
                                         <span className={`mt-1.5 text-[8px] sm:text-[10px] md:text-xs font-bold uppercase tracking-wide transition-colors ${isActive ? 'text-[#0064b7]' : isCompleted ? 'text-emerald-600' : 'text-gray-400'} block text-center truncate w-full`}>
                                             {step.name}
@@ -923,16 +1096,16 @@ export default function Broadcast() {
                     {/* Step Content */}
                     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
                         {currentStep === 1 && (
-                            <div className="grid gap-0 lg:grid-cols-[minmax(260px,0.85fr)_minmax(360px,1fr)_minmax(280px,0.8fr)]">
+                            <div className="mx-auto grid max-w-4xl gap-0 lg:grid-cols-[minmax(260px,0.8fr)_minmax(420px,1.2fr)]">
                                 <div className="border-b border-gray-100 bg-gray-50 p-4 md:p-6 lg:border-b-0 lg:border-r lg:p-8">
                                     <div className="flex h-full flex-col justify-center">
                                         <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef7ff] text-[#0064b7]">
                                             <LayoutGrid className="h-5 w-5" />
                                         </div>
-                                        <h2 className="mt-4 md:mt-5 text-lg md:text-xl font-semibold text-gray-950">Campaign Details</h2>
-                                        <p className="mt-2 md:mt-3 text-xs md:text-sm leading-relaxed text-gray-600">Campaign ka naam, WhatsApp account, aur optional schedule set karein. Agar schedule empty hai to campaign immediately launch hoga.</p>
+                                        <h2 className="mt-4 md:mt-5 text-lg md:text-xl font-semibold text-gray-950">Campaign setup</h2>
+                                        <p className="mt-2 md:mt-3 text-xs md:text-sm leading-relaxed text-gray-600">Name your campaign, choose an official WhatsApp account, and decide when it should send.</p>
                                         <div className="mt-4 md:mt-6 rounded-lg border border-blue-100 bg-blue-50 p-3 md:p-4 text-xs md:text-sm leading-relaxed text-blue-900">
-                                            Broadcasts ke liye sirf official Meta API account use hoga. QR session accounts inbox testing ke liye hain.
+                                            Broadcasts require an official Meta API account with approved template access.
                                         </div>
                                     </div>
                                 </div>
@@ -961,46 +1134,56 @@ export default function Broadcast() {
                                                     onChange={e => setCampaign({ ...campaign, wa_account_id: e.target.value })}
                                                 >
                                                     <option value="">Select an account</option>
-                                                    {waAccounts.map(acc => {
-                                                        const isMeta = Boolean(acc.whatsapp_business_account_id);
-                                                        return (
-                                                            <option key={acc.id} value={acc.id} disabled={!isMeta}>
-                                                                {acc.display_phone_number || acc.name} {isMeta ? 'Meta API' : 'QR Session - broadcast unavailable'}
-                                                            </option>
-                                                        );
-                                                    })}
+                                                    {waAccounts.filter(acc => acc.whatsapp_business_account_id).map(acc => (
+                                                        <option key={acc.id} value={acc.id}>
+                                                            {acc.display_phone_number || acc.name}
+                                                        </option>
+                                                    ))}
                                                 </select>
                                                 <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                                             </div>
                                         )}
                                         <p className="mt-1.5 text-[10px] md:text-xs leading-normal text-gray-500">
-                                            Approved templates ke saath Meta API account required hai.
+                                            An approved template and an official Meta API account are required.
                                         </p>
+                                        {selectedWaAccount && (
+                                            <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                                                <Check className="h-3.5 w-3.5" /> Meta API account ready
+                                            </p>
+                                        )}
                                     </div>
 
                                     <div>
-                                        <label className="mb-1.5 block text-xs md:text-sm font-semibold text-gray-800">Schedule <span className="font-medium text-gray-400">(Optional)</span></label>
-                                        <div className="relative">
+                                        <label className="mb-2 block text-xs md:text-sm font-semibold text-gray-800">Send timing</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => setCampaign({ ...campaign, scheduled_at: '' })}
+                                                className={`rounded-lg border px-3 py-2.5 text-left text-sm font-semibold ${!campaign.scheduled_at ? 'border-[#0070d1] bg-[#eef7ff] text-[#0064b7] ring-1 ring-[#0070d1]' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                                            >
+                                                Send now
+                                                <span className="mt-0.5 block text-xs font-normal text-gray-500">Start after review</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setCampaign({ ...campaign, scheduled_at: campaign.scheduled_at || new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 16) })}
+                                                className={`rounded-lg border px-3 py-2.5 text-left text-sm font-semibold ${campaign.scheduled_at ? 'border-[#0070d1] bg-[#eef7ff] text-[#0064b7] ring-1 ring-[#0070d1]' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'}`}
+                                            >
+                                                Schedule
+                                                <span className="mt-0.5 block text-xs font-normal text-gray-500">Choose date and time</span>
+                                            </button>
+                                        </div>
+                                        {campaign.scheduled_at && <div className="relative mt-3">
                                             <input
                                                 type="datetime-local"
                                                 className="h-10 md:h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-xs md:text-sm text-gray-950 outline-none transition focus:border-[#0070d1] focus:ring-2 focus:ring-[#0070d1]/10"
                                                 value={campaign.scheduled_at}
                                                 onChange={e => setCampaign({ ...campaign, scheduled_at: e.target.value })}
                                             />
-                                        </div>
-                                        <p className="mt-1.5 text-[10px] md:text-xs text-gray-500">Leave empty to send immediately.</p>
+                                        </div>}
                                     </div>
                                 </div>
 
-                                <div className="hidden lg:block border-t border-gray-100 bg-white p-6 lg:border-l lg:border-t-0 lg:p-8">
-                                    <div className="flex h-full min-h-[300px] items-center justify-center overflow-hidden rounded-xl bg-[#edf8f1]">
-                                        <img
-                                            src="/images/broadcast.png"
-                                            alt="Broadcast campaign illustration"
-                                            className="h-full min-h-[300px] w-full object-cover"
-                                        />
-                                    </div>
-                                </div>
                             </div>
                         )}
 
@@ -1165,15 +1348,24 @@ export default function Broadcast() {
                         )}
 
                         {currentStep === 3 && (
-                            <div data-tour="broadcast-template" className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-4 sm:p-6 md:grid-cols-2 lg:p-8">
+                            <div data-tour="broadcast-template" className="mx-auto max-w-5xl border-b border-gray-100 p-4 sm:p-6 lg:p-8">
+                                <div className="mb-4 flex items-end justify-between gap-4">
+                                    <div>
+                                        <h2 className="text-xl font-semibold text-gray-950">Choose a message template</h2>
+                                        <p className="mt-1 text-sm text-gray-500">Only Meta-approved templates can be used for broadcasts.</p>
+                                    </div>
+                                    <span className="shrink-0 rounded-full bg-[#eef7ff] px-3 py-1 text-xs font-semibold text-[#0064b7]">
+                                        {templates.filter(t => t.status === 'APPROVED').length} available
+                                    </span>
+                                </div>
                                 <div>
-                                    <h2 className="text-lg font-medium text-gray-900 mb-4">Select Template</h2>
                                     {isLoading.templates ? (
-                                        <div className="flex justify-center p-8"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>
+                                        <div className="flex justify-center p-8"><Loader2 className="h-8 w-8 animate-spin text-[#0070d1]" /></div>
                                     ) : (
-                                        <div className="space-y-3 h-[300px] md:h-[600px] overflow-y-auto pr-2">
+                                        <div className="grid max-h-[280px] grid-cols-1 gap-3 overflow-y-auto pr-2 sm:grid-cols-2">
                                             {templates.filter(t => t.status === 'APPROVED').map((tpl) => (
-                                                <div
+                                                <button
+                                                    type="button"
                                                     key={tpl.id || tpl.name}
                                                     onClick={() => {
                                                         setHeaderMediaUrl('');
@@ -1185,14 +1377,14 @@ export default function Broadcast() {
                                                             variable_mapping: cleanTemplateMapping(campaign.variable_mapping)
                                                         });
                                                     }}
-                                                    className={`p-4 rounded-lg border cursor-pointer transition-colors ${campaign.template_name === tpl.name
-                                                        ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-500'
-                                                        : 'border-gray-200 hover:border-gray-300'
+                                                    className={`rounded-lg border p-4 text-left transition-colors ${campaign.template_name === tpl.name
+                                                        ? 'border-[#0070d1] bg-[#eef7ff] ring-1 ring-[#0070d1]'
+                                                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                                                         }`}
                                                 >
-                                                    <div className="flex justify-between items-start">
-                                                        <div className="font-medium text-gray-900">{tpl.name}</div>
-                                                        <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">APPROVED</span>
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        <div className="font-semibold text-gray-900">{tpl.name}</div>
+                                                        {campaign.template_name === tpl.name && <Check className="h-4 w-4 shrink-0 text-[#0070d1]" />}
                                                     </div>
                                                     <div className="text-xs text-gray-500 mt-2 line-clamp-2">
                                                         {tpl.components?.find(c => c.type === 'BODY')?.text || 'No preview'}
@@ -1200,7 +1392,7 @@ export default function Broadcast() {
                                                     <div className="mt-3 text-[11px] font-medium text-gray-400">
                                                         {getTemplateComponentSummary(tpl.components)}
                                                     </div>
-                                                </div>
+                                                </button>
                                             ))}
                                             {templates.filter(t => t.status === 'APPROVED').length === 0 && (
                                                 <div className="text-sm text-gray-500 text-center p-4">No approved templates found.</div>
@@ -1208,16 +1400,24 @@ export default function Broadcast() {
                                         </div>
                                     )}
                                 </div>
-                                <div>
-                                    {renderLivePreview()}
-                                </div>
                             </div>
                         )}
 
-                        {currentStep === 4 && (
+                        {currentStep === 3 && selectedTemplate && (
                             <div className="mx-auto grid max-w-5xl grid-cols-1 gap-8 p-4 sm:p-6 md:grid-cols-2 lg:p-8">
-                                <div className="order-2 md:order-1">
-                                    {renderLivePreview()}
+                                <div className="order-2 md:order-1 md:sticky md:top-6 md:self-start">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsMobilePreviewOpen(open => !open)}
+                                        className="mt-4 flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 md:hidden"
+                                        aria-expanded={isMobilePreviewOpen}
+                                    >
+                                        Message preview
+                                        <ChevronDown className={`h-4 w-4 transition-transform ${isMobilePreviewOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    <div className={`${isMobilePreviewOpen ? 'block' : 'hidden'} md:block`}>
+                                        {renderLivePreview()}
+                                    </div>
                                 </div>
 
                                 <div className="order-1 md:order-2">
@@ -1227,8 +1427,8 @@ export default function Broadcast() {
                                             <p className="mt-1 text-sm text-gray-500">Map template placeholders to contact fields or fixed values.</p>
                                         </div>
                                         {selectedTemplate && (
-                                            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-600">
-                                                {getTemplateComponentSummary(selectedTemplate.components)}
+                                            <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${mappedVariableCount === variables.length ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                                                {variables.length ? `${mappedVariableCount}/${variables.length} mapped` : 'No variables'}
                                             </span>
                                         )}
                                     </div>
@@ -1242,7 +1442,7 @@ export default function Broadcast() {
                                                 {needsHeaderMedia && (
                                                     <div className="rounded-lg border border-gray-200 bg-white">
                                                         <div className="flex items-start gap-3 border-b border-gray-100 px-4 py-3">
-                                                            <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                                                            <div className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[#eef7ff] text-[#0064b7]">
                                                                 <FileText className="h-4 w-4" />
                                                             </div>
                                                             <div className="min-w-0 flex-1">
@@ -1256,13 +1456,13 @@ export default function Broadcast() {
                                                             </div>
                                                         </div>
                                                         <div className="space-y-3 p-4">
-                                                            <label className="flex min-h-20 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-center transition-colors hover:border-indigo-300 hover:bg-indigo-50">
+                                                            <label className="flex min-h-20 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-center transition-colors hover:border-[#8fc5f4] hover:bg-[#eef7ff]">
                                                                 {isHeaderUploading ? (
-                                                                    <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+                                                                    <Loader2 className="h-5 w-5 animate-spin text-[#0070d1]" />
                                                                 ) : (
-                                                                    <Upload className="h-5 w-5 text-indigo-600" />
+                                                                    <Upload className="h-5 w-5 text-[#0070d1]" />
                                                                 )}
-                                                                <span className="mt-2 text-sm font-medium text-indigo-700">
+                                                                <span className="mt-2 text-sm font-medium text-[#0064b7]">
                                                                     {isHeaderUploading ? 'Uploading...' : `Upload ${selectedHeaderFormat.toLowerCase()}`}
                                                                 </span>
                                                                 <input
@@ -1312,41 +1512,77 @@ export default function Broadcast() {
                                                         </p>
                                                     </div>
                                                 ))}
-                                                {(variables.length > 0 || dynamicUrlButtons.length > 0) && (
+                                                {variables.length > 0 && (
                                                     <div className="border-t border-gray-100 pt-5">
                                                         <h3 className="text-sm font-semibold text-gray-900">Body variables</h3>
                                                         <p className="mt-1 text-xs text-gray-500">Choose where each placeholder value should come from.</p>
                                                     </div>
                                                 )}
                                                 {variables.length > 0 ? variables.map((variable) => (
-                                                    <div key={variable.key} className="rounded-lg border border-gray-200 bg-white p-4">
-                                                        <div className="mb-3 flex items-center justify-between gap-3">
-                                                            <div>
-                                                                <label className="block text-sm font-semibold capitalize text-gray-900">
-                                                                    {variable.label}
-                                                                </label>
-                                                                <div className="mt-0.5 font-mono text-xs text-gray-400">{variable.token}</div>
+                                                    <div key={variable.key} className={`rounded-xl border p-4 transition-colors ${isVariableMapped(variable) ? 'border-emerald-200 bg-emerald-50/30' : 'border-gray-200 bg-white'}`}>
+                                                        <div className="mb-4 flex items-center justify-between gap-3">
+                                                            <div className="flex min-w-0 items-center gap-3">
+                                                                <span className="flex h-8 min-w-8 items-center justify-center rounded-lg bg-gray-900 px-2 font-mono text-xs font-semibold text-white">
+                                                                    {variable.token}
+                                                                </span>
+                                                                <div>
+                                                                    <p className="text-sm font-semibold capitalize text-gray-900">{variable.label}</p>
+                                                                    <p className="text-xs text-gray-500">Choose the value sent to each recipient</p>
+                                                                </div>
                                                             </div>
+                                                            {isVariableMapped(variable) ? (
+                                                                <span className="text-xs font-semibold text-emerald-700">Mapped</span>
+                                                            ) : (
+                                                                <span className="text-xs font-medium text-amber-600">Required</span>
+                                                            )}
                                                         </div>
-                                                        <select
-                                                            className="h-10 w-full rounded-lg border-gray-300 text-sm"
-                                                            value={campaign.variable_mapping[variable.key] || ''}
-                                                            onChange={e => handleVariableMapChange(variable.key, e.target.value)}
-                                                        >
-                                                            <option value="">Select source</option>
-                                                            <option value="name">Contact Name</option>
-                                                            <option value="phone">Contact Phone</option>
-                                                            <option value="custom">Custom Text...</option>
-                                                        </select>
+
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {[
+                                                                ['name', 'Contact name'],
+                                                                ['phone', 'Phone number'],
+                                                                ['email', 'Email address'],
+                                                                ['custom', 'Fixed text']
+                                                            ].map(([value, label]) => (
+                                                                <button
+                                                                    key={value}
+                                                                    type="button"
+                                                                    onClick={() => handleVariableMapChange(variable.key, value)}
+                                                                    className={`rounded-lg border px-3 py-2.5 text-left text-xs font-semibold transition-colors ${campaign.variable_mapping[variable.key] === value ? 'border-[#0070d1] bg-[#eef7ff] text-[#0064b7] ring-1 ring-[#0070d1]' : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'}`}
+                                                                >
+                                                                    {label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+
+                                                        {availableCustomFields.length > 0 && (
+                                                            <div className="mt-3">
+                                                                <label className="mb-1.5 block text-xs font-medium text-gray-600">Or use another contact field</label>
+                                                                <select
+                                                                    className="h-10 w-full rounded-lg border-gray-300 bg-white text-sm"
+                                                                    value={campaign.variable_mapping[variable.key]?.startsWith('field:') ? campaign.variable_mapping[variable.key] : ''}
+                                                                    onChange={e => e.target.value && handleVariableMapChange(variable.key, e.target.value)}
+                                                                >
+                                                                    <option value="">Choose contact field</option>
+                                                                    {availableCustomFields.map(field => (
+                                                                        <option key={field} value={`field:${field}`}>{field}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        )}
 
                                                         {campaign.variable_mapping[variable.key] === 'custom' && (
-                                                            <input
-                                                                type="text"
-                                                                placeholder="Enter custom text..."
-                                                                className="mt-2 h-10 w-full rounded-lg border-gray-300 text-sm"
-                                                                value={customTexts[variable.key] || ''}
-                                                                onChange={e => setCustomTexts({ ...customTexts, [variable.key]: e.target.value })}
-                                                            />
+                                                            <div className="mt-3">
+                                                                <label className="mb-1.5 block text-xs font-medium text-gray-700">Fixed value</label>
+                                                                <input
+                                                                    type="text"
+                                                                    placeholder={`Value for ${variable.token}`}
+                                                                    className={`h-10 w-full rounded-lg text-sm ${String(customTexts[variable.key] || '').trim() ? 'border-emerald-300' : 'border-amber-300 bg-amber-50/40'}`}
+                                                                    value={customTexts[variable.key] || ''}
+                                                                    onChange={e => setCustomTexts({ ...customTexts, [variable.key]: e.target.value })}
+                                                                />
+                                                                <p className="mt-1.5 text-xs text-gray-500">Every recipient will receive this same value.</p>
+                                                            </div>
                                                         )}
                                                     </div>
                                                 )) : (
@@ -1365,37 +1601,38 @@ export default function Broadcast() {
                             </div>
                         )}
 
-                        {currentStep === 5 && (
-                            <div data-tour="broadcast-cost" className="mx-auto max-w-lg space-y-6 p-4 sm:p-6 text-center lg:p-8">
-                                <div className="mx-auto h-16 w-16 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
-                                    <Send className="h-8 w-8 ml-1" />
-                                </div>
+                        {currentStep === 4 && (
+                            <div data-tour="broadcast-cost" className="mx-auto grid max-w-5xl gap-8 p-4 sm:p-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(360px,1.1fr)] lg:p-8">
+                                <div className="lg:sticky lg:top-6 lg:self-start">{renderLivePreview()}</div>
+                                <div className="space-y-5">
                                 <div>
-                                    <h2 className="text-2xl font-bold text-gray-900">Ready to Launch?</h2>
-                                    <p className="text-gray-500 mt-2">
-                                        You are about to schedule <strong>{campaign.template_name}</strong> to <strong>{filteredContacts.length} contacts</strong>.
+                                    <h2 className="text-2xl font-semibold text-gray-950">Review and launch</h2>
+                                    <p className="mt-2 text-sm text-gray-500">
+                                        Confirm the campaign details before sending to <strong>{filteredContacts.length} contacts</strong>.
                                     </p>
                                 </div>
 
-                                <div className="bg-gray-50 rounded-xl p-4 text-left text-sm space-y-3 border border-gray-200">
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-500">Campaign Name</span>
-                                        <span className="font-medium text-gray-900">{campaign.name}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-500">Account</span>
-                                        <span className="font-medium text-gray-900">
-                                            {waAccounts.find(a => a.id === campaign.wa_account_id)?.display_phone_number || 'Unknown'}
-                                        </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-500">Audience</span>
-                                        <span className="font-medium text-gray-900">{campaign.audience_tag === 'CSV_UPLOAD' ? `CSV Upload (${csvData.length} contacts)` : (campaign.audience_tag || 'All Contacts')}</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span className="text-gray-500">Schedule</span>
-                                        <span className="font-medium text-gray-900">{campaign.scheduled_at ? format(new Date(campaign.scheduled_at), 'PPp') : 'Send Immediately'}</span>
-                                    </div>
+                                <div className="grid gap-3 text-left text-sm sm:grid-cols-2">
+                                    <button type="button" onClick={() => setCurrentStep(1)} className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-left hover:border-[#b9dcfb] hover:bg-[#f5faff]">
+                                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Setup</span>
+                                        <span className="mt-2 block font-semibold text-gray-950">{campaign.name}</span>
+                                        <span className="mt-1 block text-xs text-gray-500">{selectedWaAccount?.display_phone_number || selectedWaAccount?.name}</span>
+                                    </button>
+                                    <button type="button" onClick={() => setCurrentStep(2)} className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-left hover:border-[#b9dcfb] hover:bg-[#f5faff]">
+                                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audience</span>
+                                        <span className="mt-2 block font-semibold text-gray-950">{filteredContacts.length} recipients</span>
+                                        <span className="mt-1 block text-xs text-gray-500">{campaign.audience_type === 'CSV_UPLOAD' ? 'CSV upload' : campaign.audience_tag || campaign.audience_type}</span>
+                                    </button>
+                                    <button type="button" onClick={() => setCurrentStep(3)} className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-left hover:border-[#b9dcfb] hover:bg-[#f5faff]">
+                                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Message</span>
+                                        <span className="mt-2 block truncate font-semibold text-gray-950">{campaign.template_name}</span>
+                                        <span className="mt-1 block text-xs text-gray-500">{mappedVariableCount}/{variables.length} variables mapped</span>
+                                    </button>
+                                    <button type="button" onClick={() => setCurrentStep(1)} className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-left hover:border-[#b9dcfb] hover:bg-[#f5faff]">
+                                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Timing</span>
+                                        <span className="mt-2 block font-semibold text-gray-950">{campaign.scheduled_at ? 'Scheduled' : 'Send immediately'}</span>
+                                        <span className="mt-1 block text-xs text-gray-500">{campaign.scheduled_at ? format(new Date(campaign.scheduled_at), 'PPp') : 'Starts after launch'}</span>
+                                    </button>
                                 </div>
 
                                 <div className={`rounded-xl border p-4 text-left ${billingEstimate?.can_launch ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'
@@ -1452,12 +1689,12 @@ export default function Broadcast() {
                                             </div>
                                             {!billingEstimate.enough_wallet && (
                                                 <p className="rounded-lg bg-white/70 p-3 text-xs font-medium leading-5 text-red-700">
-                                                    Recharge wallet before launching. Is campaign ke liye {formatINRFromPaise(billingEstimate.estimated_cost_paise - billingEstimate.wallet_balance_paise)} aur chahiye.
+                                                    Recharge your wallet before launching. You need {formatINRFromPaise(billingEstimate.estimated_cost_paise - billingEstimate.wallet_balance_paise)} more for this campaign.
                                                 </p>
                                             )}
                                             {!billingEstimate.plan?.allowed && (
                                                 <p className="rounded-lg bg-white/70 p-3 text-xs font-medium leading-5 text-red-700">
-                                                    Monthly broadcast limit complete ho gaya hai. Plan upgrade required.
+                                                    Your monthly broadcast limit has been reached. Upgrade your plan to continue.
                                                 </p>
                                             )}
                                         </div>
@@ -1470,7 +1707,7 @@ export default function Broadcast() {
                                     data-tour="broadcast-send"
                                     disabled={isSending || isEstimating || (billingEstimate && !billingEstimate.can_launch)}
                                     onClick={handleLaunch}
-                                    className="w-full py-3 flex items-center justify-center gap-2 bg-green-600 text-white rounded-xl font-bold text-lg hover:bg-green-700 shadow-lg shadow-green-200 transition-all transform hover:scale-[1.02] disabled:opacity-70 disabled:hover:scale-100"
+                                    className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#0070d1] px-5 text-base font-semibold text-white shadow-sm transition-colors hover:bg-[#0064b7] disabled:cursor-not-allowed disabled:opacity-50"
                                 >
                                     {isSending ? (
                                         <><Loader2 className="w-5 h-5 animate-spin" /> {campaign.scheduled_at ? 'Scheduling...' : `Sending to ${filteredContacts.length} contacts...`}</>
@@ -1478,26 +1715,30 @@ export default function Broadcast() {
                                         campaign.scheduled_at ? 'Schedule Campaign' : 'Launch Campaign Now'
                                     )}
                                 </button>
+                                </div>
                             </div>
                         )}
                     </div>
 
                     {/* Navigation */}
-                    <div className="flex justify-between pt-4 px-4 md:px-0">
+                    <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 border-t border-gray-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur md:px-6">
                         <button
                             onClick={handleBack}
                             disabled={currentStep === 1 || isSending}
-                            className="px-6 py-2 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="h-10 rounded-full border border-gray-300 px-5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                             Back
                         </button>
+                        <span className="hidden text-xs font-medium text-gray-500 sm:block">
+                            Step {currentStep} of {STEPS.length}: {STEPS[currentStep - 1]?.name}
+                        </span>
 
-                        {currentStep < 5 && (
+                        {currentStep < 4 && (
                             <button
                                 onClick={handleNext}
-                                className="flex items-center gap-2 px-6 py-2 rounded-lg bg-gray-900 text-white font-medium hover:bg-gray-800"
+                                className="flex h-10 items-center gap-2 rounded-full bg-[#0070d1] px-5 text-sm font-semibold text-white hover:bg-[#0064b7]"
                             >
-                                Next Step <ArrowRight className="h-4 w-4" />
+                                Continue <ArrowRight className="h-4 w-4" />
                             </button>
                         )}
                     </div>

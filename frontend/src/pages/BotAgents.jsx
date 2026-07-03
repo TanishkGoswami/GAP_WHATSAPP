@@ -34,9 +34,6 @@ const API_BASE = `${BACKEND_BASE}/api`
 
 const MODELS = [
     { value: 'gpt-4o-mini', label: 'GPT-4o Mini', helper: 'Fast support replies' },
-    { value: 'gpt-4o', label: 'GPT-4o', helper: 'Best quality' },
-    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo', helper: 'Legacy advanced' },
-    { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo', helper: 'Legacy low cost' },
 ]
 
 const defaultAgent = {
@@ -171,7 +168,11 @@ export default function BotAgents() {
     }, [agents])
 
     const currentPlanName = user?.plan || 'No active plan'
-    const currentPlanConfig = FALLBACK_PLANS.find(p => p.id.toLowerCase() === currentPlanName.toLowerCase() || p.name.toLowerCase() === currentPlanName.toLowerCase())
+    const normalizedPlanName = currentPlanName.toLowerCase()
+    const currentPlanConfig = FALLBACK_PLANS.find(p => 
+        normalizedPlanName.includes(p.id.toLowerCase()) || 
+        normalizedPlanName.includes(p.name.toLowerCase())
+    )
     const aiAgentLimit = currentPlanConfig?.limits?.ai_agents ?? 0
     const isLimitReached = aiAgentLimit !== -1 && agents.length >= aiAgentLimit
 

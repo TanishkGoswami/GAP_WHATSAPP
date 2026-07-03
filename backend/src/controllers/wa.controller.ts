@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { supabase } from '../config/supabase.js';
 import { encryptToken } from '../utils/crypto.js';
-import { getMetaErrorMessage, getMetaAccountDiagnostics, toSafeWhatsappAccount, buildAccountReadinessSummary } from '../services/meta.service.js';
+import { getMetaErrorMessage, getMetaAccountDiagnostics, toSafeWhatsappAccount, buildAccountReadinessSummary, subscribeMetaAppToWaba } from '../services/meta.service.js';
 import { enforceWhatsAppCloudNumberLimit } from '../services/billing.service.js';
 import { sessions } from '../services/whatsapp.service.js';
 import * as fs from 'fs';
@@ -104,6 +104,12 @@ export async function connectCallback(req: any, res: Response) {
 
         for (const waba of discoveredWabaIds) {
             const currentWabaId = waba.id;
+            try {
+                await subscribeMetaAppToWaba(currentWabaId, finalToken);
+            } catch (error: any) {
+                discoveryErrors.push(`Could not enable inbound webhooks for WABA ${currentWabaId}: ${error.message}`);
+                continue;
+            }
             const numbersUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/${currentWabaId}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating,code_verification_status&access_token=${encodeURIComponent(finalToken)}`;
             const numRes = await fetch(numbersUrl);
             const numData: any = await numRes.json();

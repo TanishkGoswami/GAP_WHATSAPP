@@ -85,34 +85,41 @@ export default function PaymentSuccessPage() {
                     </>
                 ) : (
                     <>
-                        <CheckCircle className="w-14 h-14 text-green-500 mx-auto mb-4" />
-                        <h2 className="text-2xl font-semibold text-gray-900 mb-2">Payment Successful!</h2>
-                        {scheduledDowngrade ? (
-                            <p className="text-sm text-green-600 font-medium mb-2">
-                                {plan} scheduled from {scheduledDowngrade.effective_at ? new Date(scheduledDowngrade.effective_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'next billing cycle'}
-                            </p>
-                        ) : plan && (
-                            <p className="text-sm text-green-600 font-medium mb-2">
-                                {plan} plan activated
-                            </p>
-                        )}
-                        {walletRecharge?.amount_paise && (
-                            <p className="text-sm text-green-600 font-medium mb-2">
-                                Wallet credited with ₹{Number(walletRecharge.amount_paise / 100).toLocaleString('en-IN')}
-                            </p>
-                        )}
-                        <p className="text-sm text-gray-500 mb-8">
-                            {walletRecharge
-                                ? 'Your WhatsApp message wallet is ready for campaigns.'
-                                : scheduledDowngrade
-                                    ? 'Your current plan remains active until the renewal date. The lower plan will apply next cycle.'
-                                    : 'Your WhatsApp subscription is now active. Enjoy full access!'}
-                        </p>
+                        <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border-4 border-green-500">
+                            <CheckCircle className="h-8 w-8 text-green-500" strokeWidth={2.5} />
+                        </div>
+                        <h2 className="text-2xl font-bold text-gray-900 mb-8 px-4 leading-snug">
+                            Your order has been<br />successfully submitted
+                        </h2>
+
+                        <div className="text-sm text-left mb-4">
+                            <div className="flex justify-between py-4 border-b border-gray-100">
+                                <span className="text-gray-500">Order ID</span>
+                                <span className="font-medium text-gray-900">{new URLSearchParams(window.location.search).get('razorpay_payment_link_id') || 'TXN_SUCCESS'}</span>
+                            </div>
+                            <div className="flex justify-between py-4 border-b border-gray-100">
+                                <span className="text-gray-500">Payment Method</span>
+                                <span className="font-medium text-gray-900">Razorpay</span>
+                            </div>
+                            <div className="flex justify-between py-4 border-b border-gray-100">
+                                <span className="text-gray-500">Date & Time</span>
+                                <span className="font-medium text-gray-900">{new Date().toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).replace(',', '')}</span>
+                            </div>
+                            <div className="flex justify-between py-6 items-center">
+                                <span className="font-bold text-gray-900 text-base">Total</span>
+                                <span className="font-bold text-gray-900 text-xl">
+                                    {walletRecharge?.amount_paise 
+                                        ? `₹ ${(walletRecharge.amount_paise / 100).toLocaleString('en-IN')}` 
+                                        : (plan ? 'Paid via Plan' : '₹ 0')}
+                                </span>
+                            </div>
+                        </div>
+
                         <button
                             onClick={() => navigate(walletRecharge || scheduledDowngrade ? '/billing' : '/dashboard')}
-                            className="w-full py-3 bg-gray-900 text-white rounded-xl text-sm font-semibold hover:bg-gray-800 transition-colors"
+                            className="w-full py-4 bg-[#1a1a1a] text-white rounded-xl text-sm font-semibold hover:bg-black transition-colors"
                         >
-                            {walletRecharge || scheduledDowngrade ? 'Go to Billing' : 'Go to Dashboard'}
+                            Go to my account
                         </button>
                     </>
                 )}

@@ -8,7 +8,10 @@ import {
     sendBroadcast, 
     getCampaigns, 
     deleteCampaign, 
-    cancelCampaign 
+    cancelCampaign,
+    pauseCampaign,
+    resumeCampaign,
+    getCampaignRecipients,
 } from '../controllers/broadcast.controller.js';
 
 const router = Router();
@@ -23,5 +26,8 @@ router.post('/send', authMiddleware, sendBroadcast);
 router.get('/campaigns', authMiddleware, getCampaigns);
 router.delete('/campaigns/:id', authMiddleware, deleteCampaign);
 router.post('/campaigns/:id/cancel', authMiddleware, cancelCampaign);
+router.post('/campaigns/:id/pause', authMiddleware, pauseCampaign);
+router.post('/campaigns/:id/resume', authMiddleware, resumeCampaign);
+router.get('/campaigns/:id/recipients', authMiddleware, getCampaignRecipients);
 
 export default router;

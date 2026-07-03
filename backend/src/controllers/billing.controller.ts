@@ -374,8 +374,6 @@ export const getBillingOverview = async (req: any, res: Response) => {
             console.error('[billing/overview] Failed to fetch owner subscription dates:', subErr);
         }
 
-        const planId = normalizePlanId(orgData.plan_id) || null;
-        const currentPlan = planId ? plans.find((plan: any) => plan.id === planId) || null : null;
         let subscription: any = null;
         let subscriptionInvoices: any[] = [];
         let subscriptionCreditBalancePaise = 0;
@@ -423,6 +421,9 @@ export const getBillingOverview = async (req: any, res: Response) => {
         } catch (subscriptionErr) {
             console.error('[billing/overview] Failed to fetch subscription plan-change state:', subscriptionErr);
         }
+
+        const actualPlanId = getHighestRankedPlanId(orgData.plan_id, subscription?.plan_id, req.user?.user_metadata?.plan);
+        const currentPlan = actualPlanId ? plans.find((plan: any) => plan.id === actualPlanId) || null : null;
 
         res.json({
             organization: orgData,

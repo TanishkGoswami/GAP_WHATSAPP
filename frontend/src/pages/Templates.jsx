@@ -1204,9 +1204,9 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
     if (!isOpen) return null
 
     return (
-        <Modal isOpen={isOpen} onClose={closeModal} title={isPreApproved ? "Use Meta template" : "Create message template"} maxWidth="max-w-6xl" panelClassName="template-editor-modal">
-            <div className="grid min-h-0 gap-0 overflow-hidden lg:grid-cols-[minmax(0,1fr)_360px]">
-                <div className="wa-chat-scroll max-h-[calc(100dvh-190px)] overflow-y-auto px-1 pb-4 pr-2 sm:px-2 sm:pr-4 lg:max-h-[calc(100dvh-180px)]">
+        <Modal isOpen={isOpen} onClose={closeModal} title={isPreApproved ? "Use Meta template" : "Create message template"} maxWidth="max-w-[1240px]" panelClassName="template-editor-modal">
+            <div className="grid min-h-0 overflow-hidden rounded-xl border border-gray-200 bg-gray-50 lg:grid-cols-[minmax(0,1fr)_400px]">
+                <div className="wa-chat-scroll max-h-[calc(100dvh-210px)] overflow-y-auto p-4 sm:p-6 lg:max-h-[calc(100dvh-200px)]">
                     {submitError ? (
                         <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                             <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
@@ -1228,8 +1228,8 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                         </div>
                     )}
 
-                    <div className="space-y-5">
-                        <section className="space-y-4">
+                    <div className="space-y-4">
+                        <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                             <div>
                                 <label className="mb-1.5 block text-sm font-semibold text-gray-800">Template name</label>
                                 <input
@@ -1272,7 +1272,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                             </div>
                         </section>
 
-                        <section className="border-t border-gray-100 pt-5">
+                        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                             <div className="mb-3 flex items-center gap-2">
                                 <Type className="h-4 w-4 text-gray-500" />
                                 <h4 className="text-sm font-semibold text-gray-900">Header</h4>
@@ -1337,7 +1337,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                             ) : null}
                         </section>
 
-                        <section className="border-t border-gray-100 pt-5">
+                        <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                             <div className="mb-1.5 flex items-center justify-between gap-3">
                                 <label className="flex items-center gap-2 text-sm font-semibold text-gray-900">
                                     <MessageSquareText className="h-4 w-4 text-gray-500" />
@@ -1363,7 +1363,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                             </div>
                         </section>
 
-                        <section className="space-y-4 border-t border-gray-100 pt-5">
+                        <section className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                             <div>
                                 <label className="mb-1.5 block text-sm font-semibold text-gray-800">Footer <span className="font-normal text-gray-400">Optional</span></label>
                                 <input disabled={isPreApproved} className={`${fieldClass} ${isPreApproved ? 'opacity-60 bg-gray-50' : ''}`} placeholder="Reply STOP to unsubscribe" value={data.footerText} onChange={e => setData({ ...data, footerText: e.target.value })} />
@@ -1417,78 +1417,99 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                     </div>
                 </div>
 
-                <aside className="order-first mb-5 flex min-h-0 flex-col items-center justify-start rounded-xl border border-[#e8edf3] bg-[#f5f7fa] p-4 lg:order-none lg:sticky lg:top-0 lg:mb-0 lg:ml-3 lg:min-h-[600px] lg:rounded-none lg:border-y-0 lg:border-r-0 lg:p-5">
-                    <div className="mb-4 text-center">
-                        <div className="text-xs font-bold text-gray-800 tracking-wide">Live Preview</div>
-                        <div className="text-[10px] text-gray-400">WhatsApp Mobile View</div>
-                    </div>
-                    {/* Simulated iPhone Device */}
-                    <div className="relative h-[310px] w-full max-w-[300px] overflow-hidden border-[5px] border-slate-900 bg-slate-900 shadow-[0_18px_45px_rgba(15,23,42,0.18)] sm:h-[390px] lg:h-[490px]" style={{ borderRadius: '32px' }}>
-                        {/* Speaker/Camera Island */}
-                        <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-20 h-4.5 rounded-full bg-black z-30 flex items-center justify-center">
-                            <span className="w-1.5 h-1.5 rounded-full bg-gray-800 mr-2" />
-                            <span className="w-8 h-1 rounded-full bg-gray-800" />
+                <aside className="min-h-0 border-t border-gray-200 bg-white p-4 sm:p-6 lg:sticky lg:top-0 lg:border-l lg:border-t-0">
+                    <div className="mx-auto w-full max-w-[330px]">
+                        <div className="mb-3 flex items-center justify-between px-1">
+                            <div>
+                                <p className="text-sm font-semibold text-gray-950">Mobile preview</p>
+                                <p className="text-[11px] text-gray-500">Live WhatsApp rendering</p>
+                            </div>
+                            <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_4px_rgba(16,185,129,0.12)]" />
                         </div>
 
-                        {/* Screen Content */}
-                        <div className="wa-template-canvas flex h-full w-full flex-col justify-between overflow-y-auto p-3 pt-9">
-                            {/* Chat bubble */}
-                            <div className="flex-1 flex flex-col justify-start">
-                                <div className="bg-white p-2.5 pb-1.5 shadow-[0_1px_0.5px_rgba(0,0,0,0.13)] max-w-[95%] self-start relative z-10" style={{ borderRadius: '8px 8px 8px 0px' }}>
-                                    {data.headerType === 'TEXT' && data.headerText ? (
-                                        <p className="text-[10px] font-extrabold text-gray-900 mb-1 leading-tight border-b border-gray-100 pb-0.5">{data.headerText}</p>
-                                    ) : null}
-                                    {data.headerType === 'IMAGE' ? (
-                                        previewFileUrl ? (
-                                            <img src={previewFileUrl} alt="Preview" className="mb-1.5 h-20 w-full rounded object-cover bg-gray-50 border border-gray-100" style={{ borderRadius: '4px' }} />
-                                        ) : (
-                                            <div className="mb-1.5 h-20 w-full rounded bg-gray-50 flex items-center justify-center text-gray-400 border border-gray-100" style={{ borderRadius: '4px' }}>
-                                                <ImageIcon className="h-4 w-4 text-gray-400" />
-                                            </div>
-                                        )
-                                    ) : null}
-                                    {data.headerType === 'VIDEO' ? (
-                                        previewFileUrl ? (
-                                            <video src={previewFileUrl} className="mb-1.5 h-20 w-full rounded object-cover bg-gray-50 border border-gray-100" style={{ borderRadius: '4px' }} controls muted />
-                                        ) : (
-                                            <div className="mb-1.5 h-20 w-full rounded bg-gray-50 flex items-center justify-center text-gray-400 border border-gray-100" style={{ borderRadius: '4px' }}>
-                                                <Video className="h-4 w-4 text-gray-400" />
-                                            </div>
-                                        )
-                                    ) : null}
+                        <div className="relative mx-auto h-[620px] w-[300px] rounded-[48px] bg-gradient-to-b from-[#4b4b4d] via-[#111113] to-[#3a3a3c] p-[4px] shadow-[0_28px_60px_rgba(15,23,42,0.28)]">
+                            <span className="absolute -left-[3px] top-28 h-12 w-[3px] rounded-l bg-[#242426]" />
+                            <span className="absolute -left-[3px] top-44 h-20 w-[3px] rounded-l bg-[#242426]" />
+                            <span className="absolute -right-[3px] top-40 h-24 w-[3px] rounded-r bg-[#242426]" />
 
-                                    <p className="text-[11px] leading-relaxed text-gray-800 whitespace-pre-wrap break-words font-medium">
-                                        {data.bodyText ? renderTemplateText(data.bodyText) : <span className="text-gray-400 italic">Start typing your message...</span>}
-                                    </p>
-
-                                    {data.footerText ? (
-                                        <p className="text-[8px] text-gray-400 mt-1 font-semibold leading-none">{data.footerText}</p>
-                                    ) : null}
-
-                                    <div className="flex items-center justify-end mt-1 gap-0.5 leading-none">
-                                        <span className="text-[7.5px] text-gray-455 font-medium">10:00 AM</span>
-                                        <span className="text-[#34b7f1] text-[8px] font-bold">✓✓</span>
-                                    </div>
+                            <div className="relative h-full overflow-hidden rounded-[44px] border-[5px] border-black bg-[#efeae2]">
+                                <div className="absolute left-1/2 top-3 z-40 h-7 w-24 -translate-x-1/2 rounded-full bg-black shadow-sm">
+                                    <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-[#101b2c] ring-1 ring-[#293956]" />
                                 </div>
 
-                                {/* Interactive Buttons */}
-                                {data.buttons.length > 0 ? (
-                                    <div className="mt-2 space-y-1 w-[95%] self-start relative z-10">
-                                        {data.buttons.map((btn, i) => (
-                                            <div key={i} className="flex items-center justify-center gap-1 bg-white hover:bg-gray-50 text-[9.5px] font-bold text-blue-600 rounded-lg py-2 border border-gray-200/80 shadow-sm" style={{ borderRadius: '8px' }}>
-                                                {btn.type === 'URL' ? <ExternalLink className="h-3 w-3 shrink-0" /> : btn.type === 'PHONE_NUMBER' ? <Phone className="h-3 w-3 shrink-0" /> : <MessageSquare className="h-3 w-3 shrink-0" />}
-                                                <span className="truncate">{btn.text || 'Button text'}</span>
-                                            </div>
-                                        ))}
+                                <div className="flex h-12 items-end justify-between bg-[#f7f8fa] px-5 pb-2 text-[10px] font-semibold text-slate-900">
+                                    <span>10:00</span>
+                                    <span className="tracking-widest">●●● ▰</span>
+                                </div>
+                                <div className="flex h-14 items-center gap-2 border-b border-black/5 bg-[#f7f8fa] px-3">
+                                    <span className="text-lg text-[#54656f]">‹</span>
+                                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#d9fdd3] text-[11px] font-bold text-[#128c7e]">B</div>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="truncate text-[12px] font-semibold text-[#111b21]">Business name</p>
+                                        <p className="text-[9px] text-[#667781]">Official business account</p>
                                     </div>
-                                ) : null}
+                                    <Phone className="h-4 w-4 text-[#54656f]" />
+                                    <MoreHorizontal className="h-4 w-4 text-[#54656f]" />
+                                </div>
+
+                                <div className="wa-template-canvas h-[calc(100%-104px)] overflow-y-auto px-3 py-4">
+                                    <div className="mb-3 text-center">
+                                        <span className="rounded-md bg-white/90 px-2 py-1 text-[9px] font-medium uppercase tracking-wide text-[#667781] shadow-sm">Today</span>
+                                    </div>
+
+                                    <div className="overflow-hidden rounded-lg bg-white shadow-[0_1px_2px_rgba(11,20,26,0.18)]">
+                                        {data.headerType === 'TEXT' && data.headerText ? (
+                                            <p className="px-3 pt-3 text-[12px] font-semibold leading-5 text-[#111b21]">{data.headerText}</p>
+                                        ) : null}
+                                        {data.headerType === 'IMAGE' ? (
+                                            previewFileUrl ? (
+                                                <img src={previewFileUrl} alt="Template header preview" className="aspect-[1.91/1] w-full bg-gray-100 object-cover" />
+                                            ) : (
+                                                <div className="flex aspect-[1.91/1] w-full items-center justify-center bg-gray-100 text-gray-400">
+                                                    <ImageIcon className="h-7 w-7" />
+                                                </div>
+                                            )
+                                        ) : null}
+                                        {data.headerType === 'VIDEO' ? (
+                                            previewFileUrl ? (
+                                                <video src={previewFileUrl} className="aspect-video w-full bg-gray-100 object-cover" controls muted />
+                                            ) : (
+                                                <div className="flex aspect-video w-full items-center justify-center bg-gray-100 text-gray-400">
+                                                    <Video className="h-7 w-7" />
+                                                </div>
+                                            )
+                                        ) : null}
+
+                                        <div className="px-3 pb-2 pt-2.5">
+                                            <p className="whitespace-pre-wrap break-words text-[11px] leading-[1.5] text-[#111b21]">
+                                                {data.bodyText ? renderTemplateText(data.bodyText) : <span className="italic text-gray-400">Your message will appear here...</span>}
+                                            </p>
+                                            {data.footerText ? <p className="mt-2 text-[9px] leading-4 text-[#667781]">{data.footerText}</p> : null}
+                                            <div className="mt-1 flex items-center justify-end gap-1">
+                                                <span className="text-[8px] text-[#667781]">10:00 AM</span>
+                                                <span className="text-[9px] font-bold text-[#53bdeb]">✓✓</span>
+                                            </div>
+                                        </div>
+
+                                        {data.buttons.length > 0 ? (
+                                            <div className="border-t border-gray-100">
+                                                {data.buttons.map((btn, i) => (
+                                                    <div key={i} className="flex items-center justify-center gap-1.5 border-b border-gray-100 py-2 text-[10px] font-medium text-[#00a5f4] last:border-0">
+                                                        {btn.type === 'URL' ? <ExternalLink className="h-3 w-3" /> : btn.type === 'PHONE_NUMBER' ? <Phone className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />}
+                                                        <span className="truncate">{btn.text || 'Button text'}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : null}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </aside>
             </div>
 
-            <div className="sticky bottom-0 z-10 -mx-1 mt-0 flex flex-col-reverse gap-3 border-t border-gray-100 bg-white/95 px-1 pt-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+            <div className="sticky bottom-0 z-10 -mx-1 flex flex-col-reverse gap-3 bg-white/95 px-1 pt-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
                 <p className="hidden text-xs text-gray-500 sm:block">Meta usually reviews submitted templates within 24 hours.</p>
                 <div className="flex flex-col-reverse gap-2 sm:flex-row">
                 <button
