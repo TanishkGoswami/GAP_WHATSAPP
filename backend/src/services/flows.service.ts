@@ -1,29 +1,117 @@
 import { supabase } from '../config/supabase.js';
 import { isUuid } from '../utils/format.js';
 import { getBotAgentReply } from './ai.service.js';
+import { encryptFormToken } from '../utils/crypto.js';
+import crypto from 'crypto';
+
+function extractFormSlug(urlStr: string): string {
+  if (!urlStr) return '';
+  let cleanUrl = urlStr.trim();
+  if (!/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = 'https://' + cleanUrl;
+  }
+  try {
+    const parsed = new URL(cleanUrl);
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    if (parts.length > 0) {
+      return parts[parts.length - 1];
+    }
+  } catch {
+    return cleanUrl.split('/').filter(Boolean).pop() || '';
+  }
+  return '';
+}
+
+function appendFormToken(urlStr: string, token: string): string {
+  if (!urlStr) return '';
+  let hasProtocol = /^https?:\/\//i.test(urlStr.trim());
+  let cleanUrl = urlStr.trim();
+  if (!hasProtocol) {
+    cleanUrl = 'https://' + cleanUrl;
+  }
+  try {
+    const parsed = new URL(cleanUrl);
+    parsed.searchParams.set('token', token);
+    let result = parsed.toString();
+    if (!hasProtocol) {
+      result = result.replace(/^https?:\/\//i, '');
+    }
+    return result;
+  } catch {
+    const separator = urlStr.includes('?') ? '&' : '?';
+    return `${urlStr}${separator}token=${encodeURIComponent(token)}`;
+  }
+}
+
+function processButtonConfig(
+  b: any,
+  session_id: string,
+  conversation_id: string,
+  contact_id: string,
+  organization_id: string,
+  assigned_bot_id: string | null
+): { id: string; text: string; type: 'reply' | 'url' | 'phone'; url?: string; phone?: string } {
+  let btnUrl = b.url || undefined;
+  let btnType: 'reply' | 'url' | 'phone' = b.type === 'phone' ? 'phone' : b.type === 'url' ? 'url' : 'reply';
+
+  if (b.type === 'form') {
+    try {
+      const form_slug = extractFormSlug(b.url);
+      const payload = {
+        nonce: crypto.randomUUID(),
+        session_id,
+        conversation_id,
+        contact_id,
+        organization_id,
+        bot_id: assigned_bot_id,
+        form_slug,
+        issued_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      };
+      
+      const token = encryptFormToken(JSON.stringify(payload));
+      btnUrl = appendFormToken(b.url || '', token);
+      btnType = 'url';
+    } catch (err: any) {
+      console.error('[Flow] Secure URL generation failed:', err?.message || err);
+      btnUrl = ''; // Fail securely
+      btnType = 'url';
+    }
+  }
+
+  return {
+    id: b.id || b.text,
+    text: b.text,
+    type: btnType,
+    url: btnUrl,
+    phone: b.phone || undefined
+  };
+}
+
+
 
 export type FlowEngineResult = {
-    consumed: boolean;
-    output?: string | null;
-    media?: Array<{
-        type: 'image' | 'video' | 'audio' | 'document';
-        url: string;
-        caption?: string | null;
-        mimeType?: string | null;
-        fileName?: string | null;
-    }>;
-    interactive?: {
-        type: 'button' | 'cta_url';
-        body: string;
-        footer?: string;
-        buttons: Array<{ id: string; text: string; type?: 'reply' | 'url' | 'phone'; url?: string; phone?: string }>;
-    };
-    handoff?: boolean;
-    flow_id?: string | null;
-    flow_version_id?: string | null;
-    flow_session_id?: string | null;
-    flow_run_id?: string | null;
-    flow_node_id?: string | null;
+  consumed: boolean;
+  output?: string | null;
+  media?: Array<{
+    type: 'image' | 'video' | 'audio' | 'document';
+    url: string;
+    caption?: string | null;
+    mimeType?: string | null;
+    fileName?: string | null;
+  }>;
+  interactive?: {
+    type: 'button' | 'cta_url';
+    body: string;
+    footer?: string;
+    buttons: Array<{ id: string; text: string; type?: 'reply' | 'url' | 'phone'; url?: string; phone?: string }>;
+  };
+  handoff?: boolean;
+  flow_id?: string | null;
+  flow_version_id?: string | null;
+  flow_session_id?: string | null;
+  flow_run_id?: string | null;
+  flow_node_id?: string | null;
 };
 
 export const SUPPORTED_FLOW_NODE_TYPES = new Set([
@@ -70,30 +158,30 @@ export function getFlowTriggerKeywords(flow: any, nodesOverride?: any[]): string
 }
 
 async function logFlowStep(params: {
-    organization_id: string;
-    run_id?: string | null;
-    node_id: string;
-    node_type: string;
-    input_data?: any;
-    output_data?: any;
-    status?: 'success' | 'failed' | 'skipped' | 'waiting';
-    error_message?: string | null;
+  organization_id: string;
+  run_id?: string | null;
+  node_id: string;
+  node_type: string;
+  input_data?: any;
+  output_data?: any;
+  status?: 'success' | 'failed' | 'skipped' | 'waiting';
+  error_message?: string | null;
 }) {
-    if (!params.run_id) return;
-    try {
-        await supabase.from('w_flow_run_steps').insert({
-            organization_id: params.organization_id,
-            run_id: params.run_id,
-            node_id: params.node_id,
-            node_type: params.node_type,
-            input_data: params.input_data || {},
-            output_data: params.output_data || {},
-            status: params.status || 'success',
-            error_message: params.error_message || null,
-        });
-    } catch (err: any) {
-        console.warn('[Flow] Step log failed:', err?.message || err);
-    }
+  if (!params.run_id) return;
+  try {
+    await supabase.from('w_flow_run_steps').insert({
+      organization_id: params.organization_id,
+      run_id: params.run_id,
+      node_id: params.node_id,
+      node_type: params.node_type,
+      input_data: params.input_data || {},
+      output_data: params.output_data || {},
+      status: params.status || 'success',
+      error_message: params.error_message || null,
+    });
+  } catch (err: any) {
+    console.warn('[Flow] Step log failed:', err?.message || err);
+  }
 }
 
 export function normalizeFlowAccountScope(value: any) {
@@ -284,6 +372,15 @@ export async function processFlowEngine(
   incomingWaAccountId?: string | null,
 ): Promise<FlowEngineResult> {
   const normalized = text.toLowerCase().trim();
+
+  // Load conversation to get assigned_bot_id
+  const { data: convData } = await supabase
+    .from("w_conversations")
+    .select("assigned_bot_id")
+    .eq("id", conversation_id)
+    .maybeSingle();
+  const assigned_bot_id = convData?.assigned_bot_id || null;
+
 
   // Flow Builder has priority and is independent from the per-chat AI-agent toggle.
 
@@ -636,13 +733,8 @@ export async function processFlowEngine(
                 type: "button",
                 body,
                 footer,
-                buttons: buttons.map((b: any) => ({
-                id: b.id || b.text,
-                text: b.text,
-                type: b.type || 'reply',
-                url: b.url || undefined,
-                phone: b.phone || undefined,
-              })),
+                buttons: buttons.map((b: any) => processButtonConfig(b, session_id, conversation_id, contact_id, organization_id, assigned_bot_id)),
+
               },
             };
           }
@@ -742,13 +834,8 @@ export async function processFlowEngine(
             type: "button",
             body,
             footer,
-            buttons: buttons.map((b: any) => ({
-              id: b.id || b.text,
-              text: b.text,
-              type: b.type || 'reply',
-              url: b.url || undefined,
-              phone: b.phone || undefined,
-            })),
+            buttons: buttons.map((b: any) => processButtonConfig(b, session_id, conversation_id, contact_id, organization_id, assigned_bot_id)),
+
           },
         };
       } else {

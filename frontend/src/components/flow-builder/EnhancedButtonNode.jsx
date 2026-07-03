@@ -68,7 +68,7 @@ export default function EnhancedButtonNode({ id, data, selected }) {
                                 <div className="bg-green-50/80 border border-green-200 rounded px-2 py-1.5 pr-6">
                                     <div className="text-xs font-medium text-green-800">{btn.text}</div>
                                     <div className="text-[10px] text-green-500">
-                                        {btn.type === 'url' ? '🔗 URL' : btn.type === 'phone' ? '📞 Call' : '↩ Reply'}
+                                        {btn.type === 'url' ? '🔗 URL' : btn.type === 'form' ? '📝 Form' : btn.type === 'phone' ? '📞 Call' : '↩ Reply'}
                                     </div>
                                 </div>
                                 {/* Per-button output handle */}
