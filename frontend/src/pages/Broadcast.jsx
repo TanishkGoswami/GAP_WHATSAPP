@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet, Pause, Play, Phone, MessageSquare } from 'lucide-react'
+import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet, Pause, Play, Phone, MessageSquare, ShieldCheck, TrendingUp } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { formatINRFromPaise } from '../config/whatsappPricing'
 import TourButton from '../onboarding/TourButton'
+import { MESSAGING_TIERS, getMessagingTierLabel } from '../utils/messagingLimits'
 
 const STEPS = [
     { id: 1, name: 'Setup', icon: LayoutGrid },
@@ -184,6 +185,8 @@ export default function Broadcast() {
     const [csvFileName, setCsvFileName] = useState('')
 
     const [waAccounts, setWaAccounts] = useState([])
+    const [messagingLimits, setMessagingLimits] = useState(null)
+    const [messagingLimitsState, setMessagingLimitsState] = useState('idle')
     const [tags, setTags] = useState([])
     const [contacts, setContacts] = useState([])
     const [templates, setTemplates] = useState([])
@@ -259,6 +262,35 @@ export default function Broadcast() {
             })
             .catch(() => setIsLoading(p => ({ ...p, contacts: false })));
     }, [token]);
+
+    useEffect(() => {
+        if (!campaign.wa_account_id) {
+            setMessagingLimits(null)
+            setMessagingLimitsState('idle')
+            return
+        }
+
+        let cancelled = false
+        setMessagingLimits(null)
+        setMessagingLimitsState('loading')
+        apiCall(`${API_URL}/api/whatsapp/accounts/${campaign.wa_account_id}/messaging-limits`)
+            .then(async res => {
+                const data = await res.json().catch(() => ({}))
+                if (!res.ok) throw new Error(data.error || 'Could not load Meta messaging limits')
+                return data
+            })
+            .then(data => {
+                if (!cancelled) {
+                    setMessagingLimits(data)
+                    setMessagingLimitsState('success')
+                }
+            })
+            .catch(() => {
+                if (!cancelled) setMessagingLimitsState('error')
+            })
+
+        return () => { cancelled = true }
+    }, [campaign.wa_account_id])
 
     const fetchCampaignHistory = (silent = false) => {
         if (!silent) {
@@ -1152,6 +1184,59 @@ export default function Broadcast() {
                                             </p>
                                         )}
                                     </div>
+
+                                    {selectedWaAccount && (
+                                        <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                                            <div className="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+                                                <div>
+                                                    <div className="flex items-center gap-1.5 text-sm font-semibold text-gray-950">
+                                                        Messaging limits
+                                                        <span title="Live data fetched from the connected Meta account"><Info className="h-3.5 w-3.5 text-gray-400" /></span>
+                                                    </div>
+                                                    <p className="mt-0.5 text-[10px] text-gray-500">
+                                                        {messagingLimits?.fetched_at ? `Updated ${format(new Date(messagingLimits.fetched_at), 'MMM d, h:mm a')}` : 'Loading live Meta account data'}
+                                                    </p>
+                                                </div>
+                                                {messagingLimits?.quality_rating && (
+                                                    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-semibold ${messagingLimits.quality_rating === 'GREEN' ? 'bg-emerald-50 text-emerald-700' : messagingLimits.quality_rating === 'YELLOW' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`}>
+                                                        <ShieldCheck className="h-3 w-3" /> {messagingLimits.quality_rating} quality
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {messagingLimitsState === 'loading' && (
+                                                <div className="flex h-28 items-center justify-center gap-2 text-xs text-gray-500">
+                                                    <Loader2 className="h-4 w-4 animate-spin" /> Fetching from Meta...
+                                                </div>
+                                            )}
+                                            {messagingLimitsState === 'error' && (
+                                                <div className="m-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+                                                    Live messaging limit is unavailable. Reconnect or check this account’s Meta permissions.
+                                                </div>
+                                            )}
+                                            {messagingLimitsState === 'success' && (
+                                                <div className="p-4">
+                                                    <div className="grid grid-cols-5 overflow-hidden rounded-lg border border-gray-200">
+                                                        {MESSAGING_TIERS.map((tier) => {
+                                                            const isCurrent = tier.value === messagingLimits.messaging_limit_tier
+                                                            return (
+                                                                <div key={tier.value} className={`flex min-h-16 flex-col items-center justify-center border-r border-gray-200 px-1 text-center last:border-r-0 ${isCurrent ? 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-300' : 'bg-gray-50 text-gray-400'}`}>
+                                                                    {isCurrent && <span className="mb-1 rounded-full bg-blue-600 px-2 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-white">Current</span>}
+                                                                    <span className={`text-[9px] sm:text-[10px] ${isCurrent ? 'font-bold' : 'font-medium'}`}>{tier.label}</span>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                    <div className="mt-3 flex items-start gap-2 rounded-lg bg-gray-50 px-3 py-2.5">
+                                                        <TrendingUp className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                                                        <p className="text-[10px] leading-4 text-gray-600">
+                                                            Current limit: <strong className="text-gray-900">{getMessagingTierLabel(messagingLimits.messaging_limit_tier)}</strong> business-initiated conversations in a rolling 24-hour period.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </section>
+                                    )}
 
                                     <div>
                                         <label className="mb-2 block text-xs md:text-sm font-semibold text-gray-800">Send timing</label>

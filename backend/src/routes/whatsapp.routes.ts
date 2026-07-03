@@ -5,6 +5,7 @@ import {
   getNumberRequests,
   createNumberRequest,
   getAccounts,
+  getAccountMessagingLimits,
   addMetaAccount,
   deleteAccount,
   getAccountDiagnostics,
@@ -26,6 +27,7 @@ router.get("/number-requests", authMiddleware, getNumberRequests);
 router.post("/number-requests", authMiddleware, createNumberRequest);
 
 router.get("/accounts", authMiddleware, getAccounts);
+router.get("/accounts/:id/messaging-limits", authMiddleware, getAccountMessagingLimits);
 router.post("/accounts/meta", authMiddleware, addMetaAccount);
 router.delete("/accounts/:id", authMiddleware, deleteAccount);
 router.get("/accounts/:id/diagnostics", authMiddleware, getAccountDiagnostics);

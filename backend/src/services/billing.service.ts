@@ -1,5 +1,23 @@
 import { supabase } from '../config/supabase.js';
 
+const PLAN_RANKS: Record<string, number> = {
+    free: 0,
+    starter: 10,
+    growth: 20,
+    pro: 30,
+    enterprise: 40,
+};
+
+export function normalizeWhatsappPlanId(planId: any): string | null {
+    const value = String(planId || '').toLowerCase();
+    if (value.includes('enterprise') || value.includes('all_in_one') || value.includes('ultimate')) return 'enterprise';
+    if (value.includes('pro') || value.includes('premium')) return 'pro';
+    if (value.includes('growth')) return 'growth';
+    if (value.includes('starter')) return 'starter';
+    if (value === 'free') return 'free';
+    return null;
+}
+
 export async function getOrganizationPlanLimits(organizationId: string) {
     const { data: org } = await supabase
         .from('organizations')
@@ -7,7 +25,28 @@ export async function getOrganizationPlanLimits(organizationId: string) {
         .eq('id', organizationId)
         .maybeSingle();
 
-    const planId = org?.plan_id || null;
+    const { data: owner } = await supabase
+        .from('organization_members')
+        .select('user_id')
+        .eq('organization_id', organizationId)
+        .eq('role', 'owner')
+        .maybeSingle();
+
+    const { data: subscription } = owner?.user_id
+        ? await supabase
+            .from('app_user_subscriptions')
+            .select('plan_id, status, expires_at')
+            .eq('user_id', owner.user_id)
+            .maybeSingle()
+        : { data: null };
+
+    const subscriptionActive = subscription
+        && subscription.status === 'active'
+        && (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now());
+    const planId = [org?.plan_id, subscriptionActive ? subscription.plan_id : null]
+        .map(normalizeWhatsappPlanId)
+        .filter((id): id is string => !!id)
+        .sort((a, b) => PLAN_RANKS[b] - PLAN_RANKS[a])[0] || null;
     const { data: plan } = planId
         ? await supabase
             .from('whatsapp_subscription_plans')
