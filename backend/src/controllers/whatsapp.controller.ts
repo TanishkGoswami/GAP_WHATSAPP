@@ -734,6 +734,53 @@ export async function createTemplate(req: any, res: Response) {
         const token = decryptToken(account.access_token_encrypted);
         const waba_id = account.whatsapp_business_account_id;
 
+        if (req.body.library_template_name) {
+            let libraryButtonInputs;
+            try {
+                libraryButtonInputs = req.body.library_template_button_inputs
+                    ? JSON.parse(String(req.body.library_template_button_inputs))
+                    : undefined;
+                if (libraryButtonInputs && !Array.isArray(libraryButtonInputs)) throw new Error();
+            } catch {
+                return res.status(400).json({ error: 'Invalid Meta library button inputs.' });
+            }
+            const libraryPayload = {
+                name: String(name || '').trim().toLowerCase(),
+                category: String(category || 'UTILITY').toUpperCase(),
+                language: String(language || 'en_US'),
+                library_template_name: String(req.body.library_template_name),
+                ...(libraryButtonInputs ? { library_template_button_inputs: libraryButtonInputs } : {}),
+            };
+            if (!/^[a-z0-9_]{1,512}$/.test(libraryPayload.name)) {
+                return res.status(400).json({ error: 'Template name must use lowercase letters, numbers, and underscores only.' });
+            }
+            const libraryRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(libraryPayload),
+            });
+            const libraryJson: any = await libraryRes.json();
+            if (!libraryRes.ok) {
+                return res.status(libraryRes.status).json({ error: libraryJson.error?.error_user_msg || libraryJson.error?.message || 'Meta library import failed' });
+            }
+            await upsertLocalTemplateSubmission({
+                organization_id: orgId,
+                wa_account_id: account.id,
+                waba_id,
+                template_id: libraryJson.id || null,
+                name: libraryPayload.name,
+                language: libraryPayload.language,
+                category: libraryPayload.category,
+                status: libraryJson.status || 'APPROVED',
+                components: [],
+                normalized_payload: libraryPayload,
+                meta_response: libraryJson,
+                submitted_by: req.user?.id || null,
+                submitted_at: new Date().toISOString(),
+            });
+            return res.json({ success: true, data: libraryJson });
+        }
+
         let parsedComponents = [];
         try {
             parsedComponents = JSON.parse(components || '[]');
@@ -1074,10 +1121,6 @@ export async function getTemplateLibrary(req: any, res: Response) {
       queryParams.set("limit", "250");
     }
     
-    if (!queryParams.has("fields")) {
-      queryParams.set("fields", "name,category,components,language,status");
-    }
-
     const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/message_template_library?${queryParams.toString()}`;
 
     const response = await fetch(url, {

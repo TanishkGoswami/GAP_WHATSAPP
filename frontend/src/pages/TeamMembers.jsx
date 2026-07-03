@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
-import TourButton from '../onboarding/TourButton'
+
 import {
     UserPlus,
     Search,
