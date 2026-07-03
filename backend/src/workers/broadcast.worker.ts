@@ -20,7 +20,7 @@ import { supabase } from '../config/supabase.js';
 const connection = getBroadcastRedis();
 const workers: Worker[] = [];
 
-workers.push(new Worker(BROADCAST_PREPARE_QUEUE, async (job) => {
+workers.push(new Worker(BROADCAST_PREPARE_QUEUE, async (job: any) => {
     try {
         await prepareCampaignForQueue(job.data.campaignId);
     } catch (error: any) {
@@ -38,7 +38,7 @@ workers.push(new Worker(BROADCAST_PREPARE_QUEUE, async (job) => {
     }
 }, { connection, concurrency: Number(process.env.BROADCAST_PREPARE_CONCURRENCY || 2) }));
 
-workers.push(new Worker(BROADCAST_SEND_QUEUE, async (job) => {
+workers.push(new Worker(BROADCAST_SEND_QUEUE, async (job: any) => {
     try {
         await sendQueuedRecipient(job.data.recipientId);
     } catch (error) {
@@ -74,7 +74,7 @@ await getBroadcastReconcileQueue().upsertJobScheduler(
 );
 
 for (const worker of workers) {
-    worker.on('failed', (job, error) => {
+    worker.on('failed', (job: any, error: any) => {
         console.error('[broadcast-worker] Job failed', {
             queue: worker.name, jobId: job?.id, message: error.message,
         });
