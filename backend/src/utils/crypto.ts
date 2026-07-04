@@ -35,3 +35,48 @@ export function decryptToken(stored: string | null | undefined): string {
         return stored;
     }
 }
+
+// ====== AES-256-GCM Form URL Token Encryption & Decryption ======
+export function encryptFormToken(payloadStr: string): string {
+    const secret = process.env.FORM_LINK_SECRET || 'dev_fallback_form_link_secret_key';
+    if (!process.env.FORM_LINK_SECRET) {
+        console.warn('⚠️ FORM_LINK_SECRET is not configured — using local fallback key for testing!');
+    }
+    const key = crypto.createHash('sha256').update(secret).digest();
+    const iv = crypto.randomBytes(12); // GCM standard IV is 12 bytes
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(payloadStr, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return iv.toString('hex') + '.' + tag.toString('hex') + '.' + encrypted.toString('base64url');
+}
+
+export function decryptFormToken(token: string): string {
+    const secret = process.env.FORM_LINK_SECRET || 'dev_fallback_form_link_secret_key';
+    if (!process.env.FORM_LINK_SECRET) {
+        console.warn('⚠️ FORM_LINK_SECRET is not configured — using local fallback key for testing!');
+    }
+    const key = crypto.createHash('sha256').update(secret).digest();
+    const parts = token.split('.');
+    if (parts.length !== 3) {
+        throw new Error('Invalid secure token format');
+    }
+    const [ivHex, tagHex, ciphertextBase64Url] = parts;
+    const iv = Buffer.from(ivHex, 'hex');
+    const tag = Buffer.from(tagHex, 'hex');
+    const encrypted = Buffer.from(ciphertextBase64Url, 'base64url');
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    
+    // Validate expiration
+    const payload = JSON.parse(decrypted.toString('utf8'));
+    if (payload?.expires_at) {
+        const expires = new Date(payload.expires_at).getTime();
+        if (Date.now() > expires) {
+            throw new Error('Token has expired');
+        }
+    }
+    return decrypted.toString('utf8');
+}
+

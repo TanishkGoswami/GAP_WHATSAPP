@@ -250,30 +250,52 @@ export async function handleWebhook(req: any, res: Response) {
           localTemplateId: existing.id,
           organization_id: existing.organization_id,
         });
-        await upsertLocalTemplateSubmission({
-          organization_id: existing.organization_id,
-          wa_account_id: existing.wa_account_id,
-          waba_id: wabaId || existing.normalized_payload?.waba_id || null,
-          template_id: templateId,
-          name: existing.name,
-          language: existing.language,
-          category: value?.category || existing.category,
-          status: templateStatus,
-          quality_score: value?.quality_score || value?.quality || null,
-          rejection_reason: rejectionReason,
-          components: existing.components || [],
-          normalized_payload: existing.normalized_payload || {},
-          meta_response: value,
-        });
-        io.to(`org:${existing.organization_id}`).emit(
-          "template_status_updated",
-          {
+
+        if (templateStatus === "DELETED" || templateStatus === "DELETE") {
+          const { error: delErr } = await supabase
+            .from("w_template_submissions")
+            .delete()
+            .eq("id", existing.id);
+          if (delErr) {
+            console.warn("[Webhook] Template deletion from cache failed:", delErr.message);
+          } else {
+            console.log(`[Webhook] Deleted template "${existing.name}" (${existing.language}) because it was deleted on Meta.`);
+          }
+          io.to(`org:${existing.organization_id}`).emit(
+            "template_status_updated",
+            {
+              name: existing.name,
+              language: existing.language,
+              status: "DELETED",
+              rejected_reason: rejectionReason,
+            },
+          );
+        } else {
+          await upsertLocalTemplateSubmission({
+            organization_id: existing.organization_id,
+            wa_account_id: existing.wa_account_id,
+            waba_id: wabaId || existing.normalized_payload?.waba_id || null,
+            template_id: templateId,
             name: existing.name,
             language: existing.language,
+            category: value?.category || existing.category,
             status: templateStatus,
-            rejected_reason: rejectionReason,
-          },
-        );
+            quality_score: value?.quality_score || value?.quality || null,
+            rejection_reason: rejectionReason,
+            components: existing.components || [],
+            normalized_payload: existing.normalized_payload || {},
+            meta_response: value,
+          });
+          io.to(`org:${existing.organization_id}`).emit(
+            "template_status_updated",
+            {
+              name: existing.name,
+              language: existing.language,
+              status: templateStatus,
+              rejected_reason: rejectionReason,
+            },
+          );
+        }
         webhookLog("template.status.socket_emit.ok", {
           requestId,
           organization_id: existing.organization_id,
