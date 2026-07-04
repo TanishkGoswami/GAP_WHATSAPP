@@ -29,7 +29,7 @@ import {
 const BACKEND_BASE = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'
 
 export default function TeamMembers() {
-    const { session, userRole, loginType, apiCall, user, updateMyOnlineStatus } = useAuth()
+    const { session, userRole, apiCall, user, updateMyOnlineStatus } = useAuth()
     const { alertDialog, confirmDialog } = useDialog()
     const isAdmin = userRole === 'admin' || userRole === 'owner'
 
@@ -168,12 +168,6 @@ export default function TeamMembers() {
         return 'pending'
     }
 
-    const formatInviteExpiry = (value) => {
-        if (!value) return ''
-        const date = new Date(value)
-        if (Number.isNaN(date.getTime())) return ''
-        return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-    }
 
     const formatDate = (dateString) => {
         if (!dateString) return 'Never'
@@ -824,11 +818,11 @@ export default function TeamMembers() {
     )
 }
 
-function SummaryCard({ icon: Icon, title, value, color }) {
+function SummaryCard({ icon: IconComponent, title, value, color }) {
     return (
         <div className="rounded-2xl border border-gray-200 bg-white p-2 sm:p-5 shadow-sm transition-all duration-300 hover:shadow-md flex items-center gap-1.5 sm:gap-4">
             <div className={`p-1.5 sm:p-3 rounded-lg sm:rounded-xl ${color} shrink-0`}>
-                <Icon className="h-3.5 w-3.5 sm:h-5 sm:w-5" />
+                <IconComponent className="h-3.5 w-3.5 sm:h-5 sm:w-5" />
             </div>
             <div className="min-w-0">
                 <p className="text-[10px] sm:text-xs font-medium text-gray-500 truncate">{title}</p>

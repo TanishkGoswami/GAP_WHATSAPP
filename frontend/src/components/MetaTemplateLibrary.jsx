@@ -134,7 +134,6 @@ export default function MetaTemplateLibrary({
     setSearch,
     showFilters,
     setShowFilters,
-    onOpen,
     onUse,
     loading,
     error,

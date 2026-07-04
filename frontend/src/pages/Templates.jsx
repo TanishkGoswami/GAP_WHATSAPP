@@ -1208,7 +1208,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
         headerText: '',
         bodyText: '',
         footerText: '',
-        buttons: [] // { type: 'QUICK_REPLY', text: 'Yes', url: '', phone_number: '' }
+        buttons: [] // URL buttons also carry urlType and urlExample for Meta's dynamic URL format.
     })
     const [file, setFile] = useState(null)
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -1226,8 +1226,16 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
     const hasPlaceholderCopy = placeholderCopy.test(data.bodyText)
     const previewFileUrl = useMemo(() => file ? URL.createObjectURL(file) : '', [file])
     const samplesComplete = bodyVariables.every(variable => String(bodySamples[variable] || '').trim()) && (!headerVariables.length || headerSample.trim())
+    const buttonsComplete = data.buttons.every(button => {
+        if (!String(button.text || '').trim()) return false
+        if (button.type === 'URL') {
+            return /^https?:\/\/.+/i.test(button.url)
+                && (button.urlType !== 'DYNAMIC' || Boolean(button.urlExample?.trim()))
+        }
+        return button.type !== 'PHONE_NUMBER' || /^\+[1-9]\d{7,14}$/.test(button.phone_number)
+    })
     const libraryInputsComplete = libraryButtonInputs.every(input => input.type !== 'URL' || /^https?:\/\/.+/i.test(input.url?.base_url || ''))
-    const canSubmit = normalizedName && /^[a-z0-9_]+$/.test(normalizedName) && (isOfficialLibrary ? libraryInputsComplete : (data.bodyText.trim() && !hasPlaceholderCopy && bodyLength <= 1024 && samplesComplete && !(data.headerType === 'TEXT' && !data.headerText.trim()) && !((data.headerType === 'IMAGE' || data.headerType === 'VIDEO') && !file)))
+    const canSubmit = normalizedName && /^[a-z0-9_]+$/.test(normalizedName) && (isOfficialLibrary ? libraryInputsComplete : (data.bodyText.trim() && !hasPlaceholderCopy && bodyLength <= 1024 && samplesComplete && buttonsComplete && !(data.headerType === 'TEXT' && !data.headerText.trim()) && !((data.headerType === 'IMAGE' || data.headerType === 'VIDEO') && !file)))
 
     useEffect(() => {
         if (initialData && isOpen) {
@@ -1247,7 +1255,9 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                 buttons: buttonsComp?.buttons?.map(b => ({
                     type: b.type,
                     text: b.text,
-                    url: b.url || '',
+                    url: (b.url || '').replace(/\{\{\s*1\s*\}\}\s*$/, ''),
+                    urlType: /\{\{\s*1\s*\}\}\s*$/.test(b.url || '') ? 'DYNAMIC' : 'STATIC',
+                    urlExample: b.example?.[0]?.replace((b.url || '').replace(/\{\{\s*1\s*\}\}\s*$/, ''), '') || '',
                     phone_number: b.phone_number || ''
                 })) || []
             });
@@ -1304,7 +1314,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
     const addButton = () => {
         setData(prev => ({
             ...prev,
-            buttons: [...prev.buttons, { type: 'QUICK_REPLY', text: `Button ${prev.buttons.length + 1}`, url: '', phone_number: '' }]
+            buttons: [...prev.buttons, { type: 'QUICK_REPLY', text: `Button ${prev.buttons.length + 1}`, url: '', urlType: 'STATIC', urlExample: '', phone_number: '' }]
         }))
     }
 
@@ -1376,7 +1386,12 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                     type: 'BUTTONS',
                     buttons: data.buttons.map(b => {
                         if (b.type === 'PHONE_NUMBER') return { type: 'PHONE_NUMBER', text: b.text, phone_number: b.phone_number };
-                        if (b.type === 'URL') return { type: 'URL', text: b.text, url: b.url };
+                        if (b.type === 'URL') {
+                            if (b.urlType === 'DYNAMIC') {
+                                return { type: 'URL', text: b.text, url: `${b.url}{{1}}`, example: [`${b.url}${b.urlExample.trim()}`] };
+                            }
+                            return { type: 'URL', text: b.text, url: b.url };
+                        }
                         return { type: 'QUICK_REPLY', text: b.text };
                     })
                 });
@@ -1668,7 +1683,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                                             <div className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)_auto]">
                                                 <CustomSelect
                                                     value={btn.type}
-                                                    onChange={val => !isPreApproved && updateButton(i, { type: val, url: '', phone_number: '' })}
+                                                    onChange={val => !isPreApproved && updateButton(i, { type: val, url: '', urlType: 'STATIC', urlExample: '', phone_number: '' })}
                                                     options={[
                                                         { value: 'QUICK_REPLY', label: 'Quick reply' },
                                                         { value: 'URL', label: 'Website' },
@@ -1683,7 +1698,41 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                                                 </button>
                                             </div>
                                             {btn.type === 'URL' ? (
-                                                <input disabled={isPreApproved} className={`${fieldClass} mt-2 py-2 ${isPreApproved ? 'opacity-60 bg-gray-50' : ''}`} placeholder="https://example.com" value={btn.url || ''} onChange={e => updateButton(i, { url: e.target.value })} />
+                                                <div className="mt-2 space-y-2">
+                                                    <div className="grid grid-cols-2 gap-2" role="group" aria-label="Website URL type">
+                                                        {['STATIC', 'DYNAMIC'].map(urlType => (
+                                                            <button
+                                                                key={urlType}
+                                                                type="button"
+                                                                disabled={isPreApproved}
+                                                                aria-pressed={(btn.urlType || 'STATIC') === urlType}
+                                                                onClick={() => updateButton(i, { urlType, urlExample: '' })}
+                                                                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${(btn.urlType || 'STATIC') === urlType ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'}`}
+                                                            >
+                                                                {urlType === 'STATIC' ? 'Static URL' : 'Dynamic URL'}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <input
+                                                        disabled={isPreApproved}
+                                                        className={`${fieldClass} py-2 ${isPreApproved ? 'opacity-60 bg-gray-50' : ''}`}
+                                                        placeholder={(btn.urlType || 'STATIC') === 'DYNAMIC' ? 'https://example.com/order/' : 'https://example.com'}
+                                                        value={btn.url || ''}
+                                                        onChange={e => updateButton(i, { url: e.target.value.replace(/\{\{\s*1\s*\}\}\s*$/, '') })}
+                                                    />
+                                                    {(btn.urlType || 'STATIC') === 'DYNAMIC' ? (
+                                                        <div>
+                                                            <input
+                                                                disabled={isPreApproved}
+                                                                className={`${fieldClass} py-2 ${isPreApproved ? 'opacity-60 bg-gray-50' : ''}`}
+                                                                placeholder="Sample value, e.g. ORD-10834"
+                                                                value={btn.urlExample || ''}
+                                                                onChange={e => updateButton(i, { urlExample: e.target.value })}
+                                                            />
+                                                            <p className="mt-1 text-[10px] text-gray-500">Customer-specific value URL ke end mein add hoga. Meta review ke liye ek sample required hai.</p>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
                                             ) : null}
                                             {btn.type === 'PHONE_NUMBER' ? (
                                                 <input disabled={isPreApproved} className={`${fieldClass} mt-2 py-2 ${isPreApproved ? 'opacity-60 bg-gray-50' : ''}`} placeholder="+919999999999" value={btn.phone_number || ''} onChange={e => updateButton(i, { phone_number: `+${e.target.value.replace(/[^0-9]/g, '')}` })} />
