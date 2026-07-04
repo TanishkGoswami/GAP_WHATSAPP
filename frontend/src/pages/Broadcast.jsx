@@ -4,7 +4,6 @@ import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { formatINRFromPaise } from '../config/whatsappPricing'
-import TourButton from '../onboarding/TourButton'
 import { MESSAGING_TIERS, getMessagingTierLabel } from '../utils/messagingLimits'
 
 const STEPS = [
@@ -799,7 +798,6 @@ export default function Broadcast() {
                 </div>
                 <div data-tour="broadcast-tabs" className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
                     <div className="hidden md:block">
-                        <TourButton />
                     </div>
                     <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200/60 shadow-sm backdrop-blur-sm w-full md:w-auto">
                         <button
@@ -1090,9 +1088,9 @@ export default function Broadcast() {
                     {/* Progress Steps */}
                     <div data-tour="broadcast-stepper" className="rounded-2xl border border-gray-200 bg-white p-3 md:p-5 shadow-sm">
                         <div className="relative">
-                            <div className="absolute left-6 right-6 md:left-8 md:right-8 top-4 md:top-5 h-0.5 bg-gray-200"></div>
-                            <div className="absolute left-6 md:left-8 top-4 md:top-5 h-0.5 bg-[#0070d1] transition-all duration-500 ease-in-out" style={{ width: `calc(${((currentStep - 1) / (STEPS.length - 1)) * 100}% - ${currentStep === 1 ? '0px' : '1.5rem'})` }}></div>
-                            <div className="relative z-10 grid grid-cols-5 gap-1 md:gap-2">
+                            <div className="absolute left-[12.5%] right-[12.5%] top-4 md:top-5 h-0.5 bg-gray-200"></div>
+                            <div className="absolute left-[12.5%] top-4 md:top-5 h-0.5 bg-[#0070d1] transition-all duration-500 ease-in-out" style={{ width: `calc(${((currentStep - 1) / (STEPS.length - 1)) * 100}%)` }}></div>
+                            <div className="relative z-10 grid grid-cols-4 gap-1 md:gap-2">
                             {STEPS.map((step) => {
                                 const isActive = step.id === currentStep
                                 const isCompleted = step.id < currentStep
@@ -1126,7 +1124,8 @@ export default function Broadcast() {
                     </div>
 
                     {/* Step Content */}
-                    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+                    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm flex flex-col overflow-hidden">
+                        <div className="flex-1">
                         {currentStep === 1 && (
                             <div className="mx-auto grid max-w-4xl gap-0 lg:grid-cols-[minmax(260px,0.8fr)_minmax(420px,1.2fr)]">
                                 <div className="border-b border-gray-100 bg-gray-50 p-4 md:p-6 lg:border-b-0 lg:border-r lg:p-8">
@@ -1786,46 +1785,46 @@ export default function Broadcast() {
                                     ) : (
                                         <p className="text-sm text-gray-600">Estimate loading...</p>
                                     )}
-                                </div>
-
-                                <button
-                                    data-tour="broadcast-send"
-                                    disabled={isSending || isEstimating || (billingEstimate && !billingEstimate.can_launch)}
-                                    onClick={handleLaunch}
-                                    className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#0070d1] px-5 text-base font-semibold text-white shadow-sm transition-colors hover:bg-[#0064b7] disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                    {isSending ? (
-                                        <><Loader2 className="w-5 h-5 animate-spin" /> {campaign.scheduled_at ? 'Scheduling...' : `Sending to ${filteredContacts.length} contacts...`}</>
-                                    ) : (
-                                        campaign.scheduled_at ? 'Schedule Campaign' : 'Launch Campaign Now'
-                                    )}
-                                </button>
+                                    <button
+                                        data-tour="broadcast-send"
+                                        disabled={isSending || isEstimating || (billingEstimate && !billingEstimate.can_launch)}
+                                        onClick={handleLaunch}
+                                        className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#0070d1] px-5 text-base font-semibold text-white shadow-sm transition-colors hover:bg-[#0064b7] disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {isSending ? (
+                                            <><Loader2 className="w-5 h-5 animate-spin" /> {campaign.scheduled_at ? 'Scheduling...' : `Sending to ${filteredContacts.length} contacts...`}</>
+                                        ) : (
+                                            campaign.scheduled_at ? 'Schedule Campaign' : 'Launch Campaign Now'
+                                        )}
+                                    </button>
                                 </div>
                             </div>
+                        </div>
                         )}
-                    </div>
+                        </div>
 
-                    {/* Navigation */}
-                    <div className="sticky bottom-0 z-20 flex items-center justify-between gap-3 border-t border-gray-200 bg-white/95 px-4 py-3 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] backdrop-blur md:px-6">
-                        <button
-                            onClick={handleBack}
-                            disabled={currentStep === 1 || isSending}
-                            className="h-10 rounded-full border border-gray-300 px-5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                            Back
-                        </button>
-                        <span className="hidden text-xs font-medium text-gray-500 sm:block">
-                            Step {currentStep} of {STEPS.length}: {STEPS[currentStep - 1]?.name}
-                        </span>
-
-                        {currentStep < 4 && (
+                        {/* Navigation */}
+                        <div className="flex items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-4 py-4 md:px-6 rounded-b-2xl mt-auto">
                             <button
-                                onClick={handleNext}
-                                className="flex h-10 items-center gap-2 rounded-full bg-[#0070d1] px-5 text-sm font-semibold text-white hover:bg-[#0064b7]"
+                                onClick={handleBack}
+                                disabled={currentStep === 1 || isSending}
+                                className="h-10 rounded-full border border-gray-300 px-5 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
                             >
-                                Continue <ArrowRight className="h-4 w-4" />
+                                Back
                             </button>
-                        )}
+                            <span className="hidden text-xs font-medium text-gray-500 sm:block">
+                                Step {currentStep} of {STEPS.length}: {STEPS[currentStep - 1]?.name}
+                            </span>
+
+                            {currentStep < 4 && (
+                                <button
+                                    onClick={handleNext}
+                                    className="flex h-10 items-center gap-2 rounded-full bg-[#0070d1] px-5 text-sm font-semibold text-white hover:bg-[#0064b7]"
+                                >
+                                    Continue <ArrowRight className="h-4 w-4" />
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

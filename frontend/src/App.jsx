@@ -12,6 +12,7 @@ import AgentLogin from './pages/AgentLogin'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import Templates from './pages/Templates'
+import TemplateWizard from './pages/TemplateWizard'
 import Broadcast from './pages/Broadcast'
 import LiveChat from './pages/LiveChat'
 import BotAgents from './pages/BotAgents'
@@ -73,6 +74,7 @@ export default function App() {
                 <Route path="contacts" element={<Contacts />} />
                 <Route path="flow-builder" element={<FlowBuilder />} />
                 <Route path="templates" element={<Templates />} />
+                <Route path="templates/new" element={<TemplateWizard />} />
                 <Route path="templates/industries" element={<Templates defaultView="INDUSTRIES" />} />
                 <Route path="broadcast" element={<Broadcast />} />
                 <Route path="live-chat" element={<LiveChat />} />
