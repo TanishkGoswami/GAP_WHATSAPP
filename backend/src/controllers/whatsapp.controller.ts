@@ -145,6 +145,48 @@ export async function getAccounts(req: any, res: Response) {
   }
 }
 
+export async function getAccountMessagingLimits(req: any, res: Response) {
+  const orgId = req.organization_id;
+
+  try {
+    if (!orgId) return res.status(400).json({ error: "No organization found" });
+
+    const account = await getOrgWhatsappAccount(req.params.id, orgId);
+    if (!account.phone_number_id || !account.access_token_encrypted) {
+      return res.status(400).json({ error: "This account is not connected through Meta Cloud API" });
+    }
+
+    const token = decryptToken(account.access_token_encrypted);
+    const fields = "id,display_phone_number,verified_name,quality_rating,messaging_limit_tier,code_verification_status";
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(account.phone_number_id)}?fields=${fields}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const data: any = await response.json();
+
+    if (!response.ok || data.error) {
+      return res.status(response.status || 502).json({
+        error: data.error?.message || "Meta could not load messaging limits",
+      });
+    }
+
+    res.json({
+      messaging_limit_tier: data.messaging_limit_tier || null,
+      quality_rating: data.quality_rating || null,
+      code_verification_status: data.code_verification_status || null,
+      verified_name: data.verified_name || null,
+      display_phone_number: data.display_phone_number || null,
+      fetched_at: new Date().toISOString(),
+      source: "meta_live",
+    });
+  } catch (err: any) {
+    console.error("[whatsapp/messaging-limits] Error:", err);
+    res.status(/not found/i.test(err.message) ? 404 : 500).json({
+      error: err.message || "Failed to load messaging limits",
+    });
+  }
+}
+
 export async function addMetaAccount(req: any, res: Response) {
   const { phone_number_id, waba_id, access_token, display_phone_number, name } =
     req.body;
@@ -396,6 +438,7 @@ function mergeTemplateRows(metaRows: any[], localRows: any[]) {
       submitted_at: row.submitted_at,
       approved_at: row.approved_at,
       rejected_at: row.rejected_at,
+      last_synced_at: row.last_synced_at,
       last_updated: row.updated_at,
       source: "local",
     });
@@ -417,6 +460,22 @@ function mergeTemplateRows(metaRows: any[], localRows: any[]) {
   return [...byKey.values()].sort((a, b) =>
     String(a.name || "").localeCompare(String(b.name || "")),
   );
+}
+
+export function findStaleMetaTemplateIds(metaRows: any[], localRows: any[]) {
+  const metaKeys = new Set(
+    metaRows.map(
+      (row) =>
+        `${String(row.name || "").toLowerCase()}::${String(row.language || "en_US")}`,
+    ),
+  );
+
+  return localRows
+    .filter((row) => {
+      const key = `${String(row.name || "").toLowerCase()}::${String(row.language || "en_US")}`;
+      return row.template_id && row.status !== "DRAFT" && !metaKeys.has(key);
+    })
+    .map((row) => row.id);
 }
 
 export async function upsertLocalTemplateSubmission(params: {

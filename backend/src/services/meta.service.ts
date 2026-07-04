@@ -169,6 +169,7 @@ export async function getMetaAccountDiagnostics(account: any) {
         token_permissions: null,
         phone_number_access: null,
         waba_access: null,
+        business_verification: null,
         webhook_subscription: null,
         issue_codes: [],
         reconnect_required: false,
@@ -222,6 +223,23 @@ export async function getMetaAccountDiagnostics(account: any) {
     }
 
     if (account?.whatsapp_business_account_id) {
+        try {
+            const businessRes = await fetch(
+                `https://graph.facebook.com/${GRAPH_API_VERSION}/${account.whatsapp_business_account_id}?fields=id,name,account_review_status,business_verification_status,owner_business_info&access_token=${encodeURIComponent(token)}`
+            );
+            const businessJson: any = await businessRes.json();
+            if (businessRes.ok && !businessJson.error) {
+                diagnostics.business_verification = {
+                    status: businessJson.business_verification_status || 'unknown',
+                    account_review_status: businessJson.account_review_status || null,
+                    business_name: businessJson.owner_business_info?.name || businessJson.name || null,
+                    business_id: businessJson.owner_business_info?.id || null,
+                };
+            }
+        } catch (err: any) {
+            console.warn('[Meta diagnostics] Business verification check failed:', err.message);
+        }
+
         try {
             const wabaRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${account.whatsapp_business_account_id}/phone_numbers?access_token=${encodeURIComponent(token)}`);
             const wabaJson: any = await wabaRes.json();

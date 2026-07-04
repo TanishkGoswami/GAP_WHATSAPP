@@ -78,6 +78,16 @@ export default function WhatsAppConnect() {
     }, [session?.access_token])
 
     useEffect(() => {
+        const refreshMetaStatuses = () => {
+            accounts
+                .filter(account => account.whatsapp_business_account_id)
+                .forEach(account => runAccountDiagnostics(account.id, { silent: true }))
+        }
+        window.addEventListener('focus', refreshMetaStatuses)
+        return () => window.removeEventListener('focus', refreshMetaStatuses)
+    }, [accounts])
+
+    useEffect(() => {
         if (import.meta.env.VITE_ENABLE_COOKIE_CONSENT === 'true') {
             if (hasIntegrationConsent) {
                 setIsSdkLoading(true)
@@ -937,6 +947,11 @@ function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDi
     const messagingStatus = currentStatus === 'connected' ? 'Send Ready' : currentStatus === 'failed' ? 'Paused' : 'Pending'
     const templateStatus = currentStatus === 'connected' ? 'Unlocked' : currentStatus === 'failed' ? 'Reconnect' : 'Needs Check'
     const noticeClass = config.bannerClass
+    const businessVerification = diagnostics?.business_verification
+    const businessVerified = String(businessVerification?.status || '').toLowerCase() === 'verified'
+    const verificationUrl = businessVerification?.business_id
+        ? `https://business.facebook.com/settings/security?business_id=${encodeURIComponent(businessVerification.business_id)}`
+        : 'https://business.facebook.com/settings/security'
 
     const [showFullWarning, setShowFullWarning] = useState(false)
     const isLongSummary = summary && summary.length > 80
@@ -980,6 +995,34 @@ function AccountCard({ account, diagnostics, loading, onCheck, onReconnect, onDi
                     <span className="text-gray-900">{account.connection_type === 'qr_session' ? 'QR' : 'Cloud'}</span>
                 </div>
             </div>
+
+            {account.connection_type !== 'qr_session' && businessVerification && (
+                <div className={`mb-4 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between ${businessVerified ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+                    <div className="flex min-w-0 items-start gap-2.5">
+                        {businessVerified
+                            ? <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                            : <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />}
+                        <div className="min-w-0">
+                            <p className={`text-xs font-semibold ${businessVerified ? 'text-emerald-900' : 'text-amber-950'}`}>
+                                Business verification: {businessVerified ? 'Verified' : 'Action required'}
+                            </p>
+                            <p className={`mt-0.5 truncate text-[10px] ${businessVerified ? 'text-emerald-700' : 'text-amber-800'}`}>
+                                {businessVerification.business_name || 'Meta Business Portfolio'} · {String(businessVerification.status || 'unknown').replaceAll('_', ' ')}
+                            </p>
+                        </div>
+                    </div>
+                    {!businessVerified && (
+                        <a
+                            href={verificationUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-lg bg-amber-600 px-3 text-[10px] font-semibold text-white transition hover:bg-amber-700"
+                        >
+                            Start on Meta <ArrowRight className="h-3 w-3" />
+                        </a>
+                    )}
+                </div>
+            )}
 
             <div className={`flex items-start gap-2.5 rounded-xl p-3 text-[13px] font-medium border ${noticeClass}`}>
                 {currentStatus === 'connected' ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" /> : <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
