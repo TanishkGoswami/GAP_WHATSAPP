@@ -274,7 +274,21 @@ export default function Broadcast() {
 
         apiCall(`${API_URL}/api/whatsapp/accounts`)
             .then(res => res.json())
-            .then(data => { setWaAccounts(Array.isArray(data) ? data : []); setIsLoading(p => ({ ...p, accounts: false })) })
+            .then(data => {
+                const accounts = Array.isArray(data) ? data : [];
+                setWaAccounts(accounts);
+                setIsLoading(p => ({ ...p, accounts: false }));
+                
+                const validAccounts = accounts.filter(acc => acc.whatsapp_business_account_id);
+                if (validAccounts.length > 0) {
+                    setCampaign(prev => {
+                        if (!prev.wa_account_id) {
+                            return { ...prev, wa_account_id: validAccounts[0].id };
+                        }
+                        return prev;
+                    });
+                }
+            })
             .catch(() => setIsLoading(p => ({ ...p, accounts: false })));
 
         apiCall(`${API_URL}/api/broadcasts/tags`)
@@ -1164,16 +1178,21 @@ export default function Broadcast() {
                     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm flex flex-col overflow-hidden">
                         <div className="flex-1">
                         {currentStep === 1 && (
-                            <div className="mx-auto grid max-w-4xl gap-0 lg:grid-cols-[minmax(260px,0.8fr)_minmax(420px,1.2fr)]">
-                                <div className="border-b border-gray-100 bg-gray-50 p-4 md:p-6 lg:border-b-0 lg:border-r lg:p-8">
+                            <div className="grid gap-0 lg:grid-cols-[minmax(260px,0.8fr)_minmax(420px,1.2fr)] w-full">
+                                <div className="bg-gray-50/80 p-6 md:p-8 lg:p-10 text-gray-955 rounded-t-2xl lg:rounded-t-none lg:rounded-l-2xl border-b border-gray-200 lg:border-b-0 lg:border-r flex flex-col justify-center min-h-[280px]">
                                     <div className="flex h-full flex-col justify-center">
-                                        <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef7ff] text-[#0064b7]">
+                                        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white border border-gray-200 text-indigo-600 shadow-sm">
                                             <LayoutGrid className="h-5 w-5" />
                                         </div>
-                                        <h2 className="mt-4 md:mt-5 text-lg md:text-xl font-semibold text-gray-950">Campaign setup</h2>
-                                        <p className="mt-2 md:mt-3 text-xs md:text-sm leading-relaxed text-gray-600">Name your campaign, choose an official WhatsApp account, and decide when it should send.</p>
-                                        <div className="mt-4 md:mt-6 rounded-lg border border-blue-100 bg-blue-50 p-3 md:p-4 text-xs md:text-sm leading-relaxed text-blue-900">
-                                            Broadcasts require an official Meta API account with approved template access.
+                                        <h3 className="mt-5 text-lg md:text-xl font-bold text-gray-900 tracking-tight">Campaign Setup</h3>
+                                        <p className="mt-2.5 text-xs md:text-sm text-gray-500 leading-relaxed">
+                                            Name your campaign, select a verified WhatsApp business account, and schedule your broadcast delivery.
+                                        </p>
+                                        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 text-xs text-gray-650 leading-relaxed font-semibold shadow-sm flex gap-2.5 items-start">
+                                            <ShieldCheck className="h-4 w-4 shrink-0 text-indigo-500 mt-0.5" />
+                                            <span>
+                                                Official Meta API connection is required. Templates must be pre-approved in the Meta WhatsApp Manager dashboard.
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -1315,7 +1334,7 @@ export default function Broadcast() {
                                         <h2 className="text-xl font-semibold text-gray-950">Select Audience</h2>
                                         <p className="mt-1 text-sm text-gray-500">Choose exactly who should receive this broadcast.</p>
                                     </div>
-                                    <div className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm font-semibold text-gray-700">
+                                    <div className={`rounded-full border px-3 py-1 text-sm font-semibold transition-all ${selectedContactKeys ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
                                         {filteredContacts.length} recipients selected
                                     </div>
                                 </div>
@@ -1443,24 +1462,41 @@ export default function Broadcast() {
                                     )}
                                 </div>
 
-                                <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50">
-                                    <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-                                        <h3 className="text-sm font-semibold text-gray-800">Preview Audience</h3>
+                                <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 shadow-sm overflow-visible">
+                                    <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 bg-white rounded-t-xl">
+                                        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                                            <Users className="w-4 h-4 text-gray-400" />
+                                            Preview Audience
+                                        </h3>
                                         <div className="flex items-center gap-2">
+                                            {selectedContactKeys && (
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100/60 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                                                    Customized
+                                                </span>
+                                            )}
                                             {baseAudienceContacts.length > 0 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        const keysSet = new Set(filteredContacts.map(getContactKey));
-                                                        setTempSelectedKeys(keysSet);
-                                                        setPopupSearch('');
-                                                        setPopupFilter('all');
-                                                        setIsContactsPopupOpen(true);
-                                                    }}
-                                                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md transition-colors"
-                                                >
-                                                    Customize List
-                                                </button>
+                                                <div className="relative group flex items-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const keysSet = new Set(filteredContacts.map(getContactKey));
+                                                            setTempSelectedKeys(keysSet);
+                                                            setPopupSearch('');
+                                                            setPopupFilter('all');
+                                                            setIsContactsPopupOpen(true);
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:text-white bg-indigo-50 hover:bg-indigo-600 border border-indigo-100/80 hover:border-indigo-600 rounded-lg shadow-sm transition-all duration-200"
+                                                    >
+                                                        <Users className="w-3.5 h-3.5" />
+                                                        Customize List
+                                                    </button>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center pointer-events-none z-30">
+                                                        <div className="bg-gray-900 text-white text-[10px] font-medium px-2.5 py-1.5 rounded-lg shadow-lg whitespace-nowrap border border-gray-800">
+                                                            Select or deselect specific contacts for this broadcast
+                                                        </div>
+                                                        <div className="w-1.5 h-1.5 bg-gray-900 rotate-45 -mt-1 border-r border-b border-gray-800"></div>
+                                                    </div>
+                                                </div>
                                             )}
                                             <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 ring-1 ring-gray-200">{filteredContacts.length} contacts</span>
                                         </div>
