@@ -425,16 +425,16 @@
 
   .meta-template-card {
     background-color: #ffffff;
-    border: 1px solid #e8edf3 !important;
-    border-radius: 12px !important;
-    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04) !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 16px !important;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.045) !important;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
   }
 
   .meta-template-card:hover {
-    transform: translateY(-2px) !important;
-    border-color: rgba(24, 119, 242, 0.45) !important;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08) !important;
+    transform: translateY(-3px) !important;
+    border-color: rgba(0, 112, 209, 0.38) !important;
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.09) !important;
   }
 
   .wa-template-canvas {

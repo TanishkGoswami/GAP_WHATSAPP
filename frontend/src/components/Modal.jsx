@@ -40,6 +40,8 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = 'ma
                                         {title}
                                     </Dialog.Title>
                                     <button
+                                        type="button"
+                                        aria-label="Close dialog"
                                         onClick={onClose}
                                         className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-500 transition-colors"
                                     >

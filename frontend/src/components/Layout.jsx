@@ -14,6 +14,7 @@ export default function Layout() {
     const { user, userRole, loading, isProfileLoading, memberProfile, signOut, updateMyProfile, apiCall, updateMyOnlineStatus, setMemberProfile } = useAuth()
     const navigate = useNavigate()
     const location = useLocation()
+    const isTemplateWizard = location.pathname === '/templates/new'
     const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false)
     const [isLoggingOut, setIsLoggingOut] = useState(false)
     const [isProfileOpen, setIsProfileOpen] = useState(false)
@@ -737,7 +738,7 @@ export default function Layout() {
                     </header>
 
                     {/* Main Content */}
-                    <main data-tour="page-content" className={`min-w-0 flex-1 ${isLiveChat ? 'overflow-hidden p-0' : (isFlowBuilder || isIndustryLibrary) ? 'overflow-y-auto p-0' : 'overflow-y-auto p-3 sm:p-5 lg:p-6'}`}>
+                    <main data-tour="page-content" className={`min-w-0 flex-1 ${isLiveChat ? 'overflow-hidden p-0' : (isFlowBuilder || isIndustryLibrary || isTemplateWizard) ? 'overflow-y-auto p-0' : 'overflow-y-auto p-3 sm:p-5 lg:p-6'}`}>
                         <Outlet />
                     </main>
 

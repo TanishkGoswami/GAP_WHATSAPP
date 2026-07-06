@@ -5,12 +5,14 @@ import {
   getNumberRequests,
   createNumberRequest,
   getAccounts,
+  getAccountMessagingLimits,
   addMetaAccount,
   deleteAccount,
   getAccountDiagnostics,
   getBusinessProfile,
   updateBusinessProfile,
   getTemplates,
+  getTemplateContext,
   validateTemplate,
   createTemplate,
   deleteTemplate,
@@ -18,7 +20,7 @@ import {
 } from "../controllers/whatsapp.controller.js";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
 // Base path: /api/whatsapp
 
@@ -26,6 +28,7 @@ router.get("/number-requests", authMiddleware, getNumberRequests);
 router.post("/number-requests", authMiddleware, createNumberRequest);
 
 router.get("/accounts", authMiddleware, getAccounts);
+router.get("/accounts/:id/messaging-limits", authMiddleware, getAccountMessagingLimits);
 router.post("/accounts/meta", authMiddleware, addMetaAccount);
 router.delete("/accounts/:id", authMiddleware, deleteAccount);
 router.get("/accounts/:id/diagnostics", authMiddleware, getAccountDiagnostics);
@@ -42,6 +45,7 @@ router.patch(
 );
 
 router.get("/templates", authMiddleware, getTemplates);
+router.get("/template-context", authMiddleware, getTemplateContext);
 router.get("/templates/library", authMiddleware, getTemplateLibrary);
 router.post("/templates/validate", authMiddleware, validateTemplate);
 router.post(

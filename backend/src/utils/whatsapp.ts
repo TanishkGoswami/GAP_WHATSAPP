@@ -10,6 +10,9 @@ export const TEMPLATE_HEADER_FORMATS = new Set(['TEXT', 'IMAGE', 'VIDEO', 'DOCUM
 export const TEMPLATE_LANG_RE = /^[a-z]{2}(?:_[A-Z]{2})?$/;
 export const PROMOTIONAL_WORD_RE = /\b(discount|offer|sale|deal|promo|coupon|cashback|free|limited time|buy now|save|off|exclusive|hurry|register now|enroll now|launch|upgrade)\b/i;
 export const OTP_WORD_RE = /\b(otp|one[-\s]?time|verification code|login code|security code|passcode|authentication)\b/i;
+export const PLACEHOLDER_COPY_RE = /\b(test(?:ing)?|dummy|ignore(?:\s+it)?|sample\s*(?:message|template)?|lorem ipsum)\b/i;
+export const UTILITY_CONTEXT_RE = /\b(order|payment|invoice|receipt|appointment|booking|delivery|shipment|ticket|account|subscription|request|transaction|refund|verification|confirmed|scheduled|cancelled|resolved|updated)\b/i;
+export const GENERIC_SAMPLE_RE = /^(?:info|sample(?:\s*\d+)?|test|dummy|value(?:\s*\d+)?)$/i;
 
 export function extractTemplateVariables(text: string) {
     return [...String(text || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map(match => Number(match[1]));
@@ -92,6 +95,15 @@ export function validateWhatsappTemplatePayload(payload: any) {
             issues.push({ code: 'BODY_TOO_LONG', severity: 'error', field: 'body', message: 'Body text must be 1024 characters or less.' });
         }
         validateVariableSequence(bodyText, getBodyExampleValues(body), 'body', issues);
+        if (PLACEHOLDER_COPY_RE.test(bodyText)) {
+            issues.push({ code: 'PLACEHOLDER_COPY', severity: 'error', field: 'body', message: 'Testing, dummy, sample, or “ignore” copy cannot be submitted to Meta. Use a real customer message.' });
+        }
+        if (/^\s*\{\{\d+\}\}/.test(bodyText) || /\{\{\d+\}\}\s*$/.test(bodyText)) {
+            issues.push({ code: 'VARIABLE_AT_BOUNDARY', severity: 'error', field: 'body', message: 'Do not place a variable at the very beginning or end of the message.' });
+        }
+        if (getBodyExampleValues(body).some(value => GENERIC_SAMPLE_RE.test(String(value).trim()))) {
+            issues.push({ code: 'GENERIC_VARIABLE_SAMPLE', severity: 'error', field: 'body', message: 'Replace generic samples like “Sample 1” or “info” with realistic values.' });
+        }
     }
 
     if (headers.length > 1) {
@@ -132,7 +144,7 @@ export function validateWhatsappTemplatePayload(payload: any) {
 
     buttons.forEach((button: any, index: number) => {
         const label = String(button?.text || '').trim();
-        if (!label) issues.push({ code: 'BUTTON_TEXT_REQUIRED', severity: 'error', field: `buttons.${index}`, message: 'Button text is required.' });
+        if (!label && !['COPY_CODE', 'OTP'].includes(String(button?.type || ''))) issues.push({ code: 'BUTTON_TEXT_REQUIRED', severity: 'error', field: `buttons.${index}`, message: 'Button text is required.' });
         if (label.length > 25) issues.push({ code: 'BUTTON_TEXT_TOO_LONG', severity: 'error', field: `buttons.${index}`, message: 'Button text must be 25 characters or less.' });
         if (button?.type === 'URL') {
             const url = String(button.url || '').trim();
@@ -145,13 +157,22 @@ export function validateWhatsappTemplatePayload(payload: any) {
         if (button?.type === 'PHONE_NUMBER' && !/^\+[1-9]\d{7,14}$/.test(String(button.phone_number || ''))) {
             issues.push({ code: 'INVALID_PHONE_BUTTON', severity: 'error', field: `buttons.${index}.phone_number`, message: 'Phone button must use E.164 format, for example +919999999999.' });
         }
-        if (!['QUICK_REPLY', 'URL', 'PHONE_NUMBER', 'COPY_CODE', 'OTP'].includes(String(button?.type || ''))) {
+        if (button?.type === 'FLOW' && (!String(button.flow_id || '').trim() || !String(button.navigate_screen || '').trim())) {
+            issues.push({ code: 'INVALID_FLOW_BUTTON', severity: 'error', field: `buttons.${index}`, message: 'Flow button requires a published flow and destination screen.' });
+        }
+        if (button?.type === 'COPY_CODE' && !String(button.example || '').trim()) {
+            issues.push({ code: 'COPY_CODE_EXAMPLE_REQUIRED', severity: 'error', field: `buttons.${index}`, message: 'Copy code button requires an example code.' });
+        }
+        if (!['QUICK_REPLY', 'URL', 'PHONE_NUMBER', 'COPY_CODE', 'OTP', 'CATALOG', 'FLOW'].includes(String(button?.type || ''))) {
             issues.push({ code: 'INVALID_BUTTON_TYPE', severity: 'error', field: `buttons.${index}.type`, message: 'Unsupported button type.' });
         }
     });
 
     if (normalized.category === 'UTILITY' && PROMOTIONAL_WORD_RE.test(allText)) {
         issues.push({ code: 'UTILITY_PROMOTIONAL_CONTENT', severity: 'error', field: 'category', message: 'Utility templates cannot include promotional language. Use Marketing for offers, discounts, sales, or acquisition CTAs.' });
+    }
+    if (normalized.category === 'UTILITY' && body?.text && !UTILITY_CONTEXT_RE.test(String(body.text))) {
+        issues.push({ code: 'UTILITY_CONTEXT_REQUIRED', severity: 'error', field: 'category', message: 'Utility templates must describe a specific transaction or customer-requested update. Use Marketing for general outreach.' });
     }
     if (normalized.category !== 'AUTHENTICATION' && OTP_WORD_RE.test(allText)) {
         issues.push({ code: 'OTP_REQUIRES_AUTHENTICATION', severity: 'error', field: 'category', message: 'OTP or verification-code content must use the Authentication category.' });
@@ -222,9 +243,9 @@ export function enrichTemplateExamplesWithRealisticSamples(components: any[]) {
                         }
                         return "info";
                     });
-                    comp.example = {
-                        body_text: [samples]
-                    };
+                    if (!getBodyExampleValues(comp).some(value => String(value).trim())) {
+                        comp.example = { body_text: [samples] };
+                    }
                 }
             }
         } else if (comp.type === 'HEADER' && comp.format === 'TEXT' && typeof comp.text === 'string') {
@@ -246,9 +267,9 @@ export function enrichTemplateExamplesWithRealisticSamples(components: any[]) {
                         }
                         return "heading";
                     });
-                    comp.example = {
-                        header_text: samples
-                    };
+                    if (!Array.isArray(comp.example?.header_text) || !comp.example.header_text.some((value: any) => String(value).trim())) {
+                        comp.example = { header_text: samples };
+                    }
                 }
             }
         }

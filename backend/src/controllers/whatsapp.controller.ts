@@ -16,10 +16,10 @@ import {
   fetchMetaBusinessProfile,
   uploadMetaProfilePicture,
   updateMetaBusinessProfile,
-  subscribeMetaAppToWaba,
 } from '../services/meta.service.js';
+import { buildMetaTemplatePayload } from '../utils/templateBuilder.js';
 
-const GRAPH_API_VERSION = process.env.META_API_VERSION || "v20.0";
+const GRAPH_API_VERSION = process.env.META_GRAPH_VERSION || process.env.META_API_VERSION || "v21.0";
 
 export async function getNumberRequests(req: any, res: Response) {
   const orgId = req.organization_id;
@@ -63,8 +63,8 @@ export async function createNumberRequest(req: any, res: Response) {
     const expectedMonthlyMessagesRaw = req.body?.expected_monthly_messages;
     const expectedMonthlyMessages =
       expectedMonthlyMessagesRaw === "" ||
-      expectedMonthlyMessagesRaw === null ||
-      expectedMonthlyMessagesRaw === undefined
+        expectedMonthlyMessagesRaw === null ||
+        expectedMonthlyMessagesRaw === undefined
         ? null
         : Number(expectedMonthlyMessagesRaw);
 
@@ -146,15 +146,57 @@ export async function getAccounts(req: any, res: Response) {
   }
 }
 
+export async function getAccountMessagingLimits(req: any, res: Response) {
+  const orgId = req.organization_id;
+
+  try {
+    if (!orgId) return res.status(400).json({ error: "No organization found" });
+
+    const account = await getOrgWhatsappAccount(req.params.id, orgId);
+    if (!account.phone_number_id || !account.access_token_encrypted) {
+      return res.status(400).json({ error: "This account is not connected through Meta Cloud API" });
+    }
+
+    const token = decryptToken(account.access_token_encrypted);
+    const fields = "id,display_phone_number,verified_name,quality_rating,messaging_limit_tier,code_verification_status";
+    const response = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${encodeURIComponent(account.phone_number_id)}?fields=${fields}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const data: any = await response.json();
+
+    if (!response.ok || data.error) {
+      return res.status(response.status || 502).json({
+        error: data.error?.message || "Meta could not load messaging limits",
+      });
+    }
+
+    res.json({
+      messaging_limit_tier: data.messaging_limit_tier || null,
+      quality_rating: data.quality_rating || null,
+      code_verification_status: data.code_verification_status || null,
+      verified_name: data.verified_name || null,
+      display_phone_number: data.display_phone_number || null,
+      fetched_at: new Date().toISOString(),
+      source: "meta_live",
+    });
+  } catch (err: any) {
+    console.error("[whatsapp/messaging-limits] Error:", err);
+    res.status(/not found/i.test(err.message) ? 404 : 500).json({
+      error: err.message || "Failed to load messaging limits",
+    });
+  }
+}
+
 export async function addMetaAccount(req: any, res: Response) {
   const { phone_number_id, waba_id, access_token, display_phone_number, name } =
     req.body;
   const orgId = req.organization_id;
 
-  if (!phone_number_id || !waba_id || !access_token) {
+  if (!phone_number_id || !access_token) {
     return res
       .status(400)
-      .json({ error: "phone_number_id, waba_id and access_token are required" });
+      .json({ error: "phone_number_id and access_token are required" });
   }
 
   try {
@@ -194,10 +236,6 @@ export async function addMetaAccount(req: any, res: Response) {
     const normalizedPhoneNumberId = String(phone_number_id).trim();
 
     await enforceWhatsAppCloudNumberLimit(orgId, normalizedPhoneNumberId);
-    await subscribeMetaAppToWaba(
-      String(waba_id).trim(),
-      String(access_token).trim(),
-    );
 
     const { data, error } = await supabase
       .from("w_wa_accounts")
@@ -401,6 +439,7 @@ function mergeTemplateRows(metaRows: any[], localRows: any[]) {
       submitted_at: row.submitted_at,
       approved_at: row.approved_at,
       rejected_at: row.rejected_at,
+      last_synced_at: row.last_synced_at,
       last_updated: row.updated_at,
       source: "local",
     });
@@ -422,6 +461,22 @@ function mergeTemplateRows(metaRows: any[], localRows: any[]) {
   return [...byKey.values()].sort((a, b) =>
     String(a.name || "").localeCompare(String(b.name || "")),
   );
+}
+
+export function findStaleMetaTemplateIds(metaRows: any[], localRows: any[]) {
+  const metaKeys = new Set(
+    metaRows.map(
+      (row) =>
+        `${String(row.name || "").toLowerCase()}::${String(row.language || "en_US")}`,
+    ),
+  );
+
+  return localRows
+    .filter((row) => {
+      const key = `${String(row.name || "").toLowerCase()}::${String(row.language || "en_US")}`;
+      return row.template_id && row.status !== "DRAFT" && !metaKeys.has(key);
+    })
+    .map((row) => row.id);
 }
 
 export async function upsertLocalTemplateSubmission(params: {
@@ -505,76 +560,96 @@ export async function upsertLocalTemplateSubmission(params: {
 }
 
 export async function bulkUpsertLocalTemplateSubmissions(
-    orgId: string,
-    waAccountId: string,
-    wabaId: string,
-    metaTemplates: any[]
+  orgId: string,
+  waAccountId: string,
+  wabaId: string,
+  metaTemplates: any[]
 ) {
-    if (metaTemplates.length === 0) return;
-    const now = new Date().toISOString();
+  const now = new Date().toISOString();
 
-    // Fetch existing records for this account
-    const { data: existingRows } = await supabase
-        .from('w_template_submissions')
-        .select('name, language, status, submitted_at, approved_at, rejected_at, submitted_by')
-        .eq('organization_id', orgId)
-        .eq('wa_account_id', waAccountId);
+  // Fetch existing records for this account, including the primary key ID
+  const { data: existingRows } = await supabase
+    .from('w_template_submissions')
+    .select('id, name, language, status, submitted_at, approved_at, rejected_at, submitted_by')
+    .eq('organization_id', orgId)
+    .eq('wa_account_id', waAccountId);
 
-    const existingMap = new Map<string, any>();
-    for (const r of existingRows || []) {
-        const key = `${String(r.name).toLowerCase()}::${String(r.language || 'en_US')}`;
-        existingMap.set(key, r);
+  const existingMap = new Map<string, any>();
+  for (const r of existingRows || []) {
+    const key = `${String(r.name).toLowerCase()}::${String(r.language || 'en_US')}`;
+    existingMap.set(key, r);
+  }
+
+  // Identify and delete local templates that no longer exist in Meta (ignoring DRAFTs)
+  const metaKeys = new Set((metaTemplates || []).map((t: any) => `${String(t.name).toLowerCase()}::${String(t.language || 'en_US')}`));
+  const toDeleteIds = (existingRows || [])
+    .filter((r: any) => r.status !== 'DRAFT' && !metaKeys.has(`${String(r.name).toLowerCase()}::${String(r.language || 'en_US')}`))
+    .map((r: any) => r.id);
+
+  if (toDeleteIds.length > 0) {
+    const { error: delErr } = await supabase
+      .from('w_template_submissions')
+      .delete()
+      .in('id', toDeleteIds);
+    if (delErr) {
+      console.warn('[Templates] Local cache delete of removed templates failed:', delErr.message);
+    } else {
+      console.log(`[Templates] Deleted ${toDeleteIds.length} obsolete templates from local cache.`);
+    }
+  }
+
+  // If there are no templates returned from Meta, we are done
+  if (!metaTemplates || metaTemplates.length === 0) return;
+
+  const payloads = metaTemplates.map((template: any) => {
+    const status = normalizeMetaTemplateStatus(template.status);
+    const key = `${String(template.name).toLowerCase()}::${String(template.language || 'en_US')}`;
+    const existing = existingMap.get(key);
+
+    let submitted_at = existing?.submitted_at || null;
+    if (status === 'PENDING' && (!submitted_at || existing?.status !== 'PENDING')) {
+      submitted_at = now;
     }
 
-    const payloads = metaTemplates.map((template: any) => {
-        const status = normalizeMetaTemplateStatus(template.status);
-        const key = `${String(template.name).toLowerCase()}::${String(template.language || 'en_US')}`;
-        const existing = existingMap.get(key);
+    let approved_at = existing?.approved_at || null;
+    if (status === 'APPROVED' && (!approved_at || existing?.status !== 'APPROVED')) {
+      approved_at = now;
+    }
 
-        let submitted_at = existing?.submitted_at || null;
-        if (status === 'PENDING' && (!submitted_at || existing?.status !== 'PENDING')) {
-            submitted_at = now;
-        }
+    let rejected_at = existing?.rejected_at || null;
+    if (status === 'REJECTED' && (!rejected_at || existing?.status !== 'REJECTED')) {
+      rejected_at = now;
+    }
 
-        let approved_at = existing?.approved_at || null;
-        if (status === 'APPROVED' && (!approved_at || existing?.status !== 'APPROVED')) {
-            approved_at = now;
-        }
+    return {
+      organization_id: orgId,
+      wa_account_id: waAccountId,
+      waba_id: wabaId,
+      template_id: template.id || null,
+      name: template.name,
+      language: template.language || 'en_US',
+      category: String(template.category || 'MARKETING').toUpperCase(),
+      status,
+      quality_score: template.quality_score || null,
+      rejection_reason: template.rejected_reason || template.reason || null,
+      components: template.components || [],
+      normalized_payload: template,
+      validation_issues: [],
+      risk_score: 0,
+      meta_response: template,
+      submitted_by: existing?.submitted_by || null,
+      submitted_at,
+      approved_at,
+      rejected_at,
+      last_synced_at: now,
+      updated_at: now,
+    };
+  });
 
-        let rejected_at = existing?.rejected_at || null;
-        if (status === 'REJECTED' && (!rejected_at || existing?.status !== 'REJECTED')) {
-            rejected_at = now;
-        }
-
-        return {
-            organization_id: orgId,
-            wa_account_id: waAccountId,
-            waba_id: wabaId,
-            template_id: template.id || null,
-            name: template.name,
-            language: template.language || 'en_US',
-            category: String(template.category || 'MARKETING').toUpperCase(),
-            status,
-            quality_score: template.quality_score || null,
-            rejection_reason: template.rejected_reason || template.reason || null,
-            components: template.components || [],
-            normalized_payload: template,
-            validation_issues: [],
-            risk_score: 0,
-            meta_response: template,
-            submitted_by: existing?.submitted_by || null,
-            submitted_at,
-            approved_at,
-            rejected_at,
-            last_synced_at: now,
-            updated_at: now,
-        };
-    });
-
-    const { error } = await supabase
-        .from('w_template_submissions')
-        .upsert(payloads, { onConflict: 'organization_id,wa_account_id,name,language' });
-    if (error) console.warn('[Templates] Local cache bulk upsert failed:', error.message);
+  const { error } = await supabase
+    .from('w_template_submissions')
+    .upsert(payloads, { onConflict: 'organization_id,wa_account_id,name,language' });
+  if (error) console.warn('[Templates] Local cache bulk upsert failed:', error.message);
 }
 
 export async function getTemplates(req: any, res: Response) {
@@ -591,43 +666,132 @@ export async function getTemplates(req: any, res: Response) {
       .not("whatsapp_business_account_id", "is", null)
       .order("created_at", { ascending: false });
 
-        if (!accounts || accounts.length === 0) {
-            return res.json([]);
-        }
-
-        const account = accounts[0];
-        const token = decryptToken(account.access_token_encrypted);
-        const waba_id = account.whatsapp_business_account_id;
-
-        const response = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?fields=id,name,language,status,category,components,quality_score,rejected_reason&limit=250`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
-        const json = await response.json();
-
-        if (!response.ok) {
-            console.error('Meta API Error:', json);
-            return res.status(response.status).json({ error: json.error?.message || 'Failed to fetch templates from Meta' });
-        }
-        const metaTemplates = json.data || [];
-        await bulkUpsertLocalTemplateSubmissions(orgId, account.id, waba_id, metaTemplates);
-
-        const { data: localRows, error: localErr } = await supabase
-            .from('w_template_submissions')
-            .select('*')
-            .eq('organization_id', orgId)
-            .eq('wa_account_id', account.id);
-        if (localErr) console.warn('[Templates] Local cache read failed:', localErr.message);
-
-        res.json(mergeTemplateRows(metaTemplates, localRows || []));
-    } catch (err: any) {
-        console.error('Error fetching templates:', err);
-        res.status(500).json({ error: err.message });
+    if (!accounts || accounts.length === 0) {
+      return res.json([]);
     }
+
+    const account = accounts[0];
+    const token = decryptToken(account.access_token_encrypted);
+    const waba_id = account.whatsapp_business_account_id;
+
+    const response = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?fields=id,name,language,status,category,components,quality_score,rejected_reason&limit=250`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const json = await response.json();
+
+    if (!response.ok) {
+      console.error('Meta API Error:', json);
+      return res.status(response.status).json({ error: json.error?.message || 'Failed to fetch templates from Meta' });
+    }
+    const metaTemplates = json.data || [];
+    await bulkUpsertLocalTemplateSubmissions(orgId, account.id, waba_id, metaTemplates);
+
+    const { data: localRows, error: localErr } = await supabase
+      .from('w_template_submissions')
+      .select('*')
+      .eq('organization_id', orgId)
+      .eq('wa_account_id', account.id);
+    if (localErr) console.warn('[Templates] Local cache read failed:', localErr.message);
+
+    res.json(mergeTemplateRows(metaTemplates, localRows || []));
+  } catch (err: any) {
+    console.error('Error fetching templates:', err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
+export async function getTemplateContext(req: any, res: Response) {
+  const orgId = req.organization_id;
+  try {
+    if (!orgId) return res.status(400).json({ error: 'No organization found' });
+    const { data: accounts } = await supabase
+      .from('w_wa_accounts')
+      .select('id, phone_number_id, display_phone_number, whatsapp_business_account_id, access_token_encrypted, status')
+      .eq('organization_id', orgId)
+      .neq('status', 'disconnected')
+      .not('whatsapp_business_account_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const account = accounts?.[0];
+    if (!account) return res.status(400).json({ error: 'No connected Meta account found' });
+
+    const token = decryptToken(account.access_token_encrypted);
+    const headers = { Authorization: `Bearer ${token}` };
+    const base = `https://graph.facebook.com/${GRAPH_API_VERSION}/${account.whatsapp_business_account_id}`;
+    const [catalogResponse, flowResponse] = await Promise.all([
+      fetch(`${base}/product_catalogs?fields=id,name&limit=100`, { headers }),
+      fetch(`${base}/flows?fields=id,name,status,categories,validation_errors,json_version&limit=100`, { headers }),
+    ]);
+    const [catalogJson, flowJson] = await Promise.all([
+      catalogResponse.json().catch(() => ({})),
+      flowResponse.json().catch(() => ({})),
+    ]);
+    const catalogs = catalogResponse.ok ? (catalogJson.data || []) : [];
+    const publishedFlows = flowResponse.ok
+      ? (flowJson.data || []).filter((flow: any) => String(flow.status).toUpperCase() === 'PUBLISHED')
+      : [];
+    const flows = await Promise.all(publishedFlows.map(async (flow: any) => {
+      try {
+        const assetsResponse = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${flow.id}/assets`, { headers });
+        const assetsJson: any = await assetsResponse.json();
+        const flowAsset = assetsJson.data?.find((asset: any) => asset.asset_type === 'FLOW_JSON' || asset.name === 'flow.json');
+        if (!assetsResponse.ok || !flowAsset?.download_url) return { ...flow, screens: [] };
+        const definitionResponse = await fetch(flowAsset.download_url, { headers });
+        const definition: any = await definitionResponse.json();
+        return {
+          ...flow,
+          screens: Array.isArray(definition.screens)
+            ? definition.screens.map((screen: any) => ({ id: screen.id, title: screen.title || screen.id }))
+            : [],
+        };
+      } catch {
+        return { ...flow, screens: [] };
+      }
+    }));
+    const callingEnabled = process.env.META_WHATSAPP_CALLING_ENABLED === 'true';
+
+    res.json({
+      account: {
+        id: account.id,
+        waba_id: account.whatsapp_business_account_id,
+        phone_number_id: account.phone_number_id,
+        display_phone_number: account.display_phone_number,
+      },
+      catalogs,
+      flows,
+      capabilities: {
+        DEFAULT: { enabled: true },
+        AUTHENTICATION: { enabled: true },
+        CATALOG: { enabled: catalogs.length > 0, reason: catalogs.length ? null : 'Connect a Meta commerce catalog to this WhatsApp account first.' },
+        FLOW: { enabled: flows.length > 0, reason: flows.length ? null : 'Publish a Meta WhatsApp Flow before creating this template.' },
+        CALL_PERMISSION_REQUEST: {
+          enabled: callingEnabled,
+          reason: callingEnabled ? null : 'WhatsApp Calling eligibility has not been enabled for this business number.',
+        },
+      },
+      discovery_warnings: [
+        ...(!catalogResponse.ok ? ['Meta catalog discovery is unavailable for this account.'] : []),
+        ...(!flowResponse.ok ? ['Meta Flow discovery is unavailable for this account.'] : []),
+      ],
+    });
+  } catch (err: any) {
+    console.error('[Templates] Context error:', err);
+    res.status(500).json({ error: err.message || 'Failed to load template setup data' });
+  }
 }
 
 export async function validateTemplate(req: any, res: Response) {
   try {
-    const result = validateWhatsappTemplatePayload(req.body || {});
+    const result = req.body?.template_type
+      ? buildMetaTemplatePayload({
+          name: req.body.name,
+          category: req.body.category,
+          language: req.body.language,
+          templateType: req.body.template_type,
+          components: req.body.components,
+          typeConfig: req.body.type_config,
+        })
+      : validateWhatsappTemplatePayload(req.body || {});
     res.json(result);
   } catch (err: any) {
     console.error("Validate Template Error:", err);
@@ -640,6 +804,7 @@ export async function validateTemplate(req: any, res: Response) {
 export async function createTemplate(req: any, res: Response) {
   const orgId = req.organization_id;
   const { name, category, language, components } = req.body;
+  const templateType = String(req.body.template_type || 'DEFAULT').toUpperCase();
   const file = req.file;
 
   try {
@@ -653,192 +818,186 @@ export async function createTemplate(req: any, res: Response) {
       .not("whatsapp_business_account_id", "is", null)
       .order("created_at", { ascending: false });
 
-        if (!accounts || accounts.length === 0) {
-            return res.status(400).json({ error: 'No connected Meta account found' });
-        }
-
-        const account = accounts[0];
-        const token = decryptToken(account.access_token_encrypted);
-        const waba_id = account.whatsapp_business_account_id;
-
-        let parsedComponents = [];
-        try {
-            parsedComponents = JSON.parse(components || '[]');
-        } catch (e) {
-            return res.status(400).json({ error: 'Invalid components format' });
-        }
-
-        // Enrich template variables with realistic sample values before Meta validation.
-        parsedComponents = enrichTemplateExamplesWithRealisticSamples(parsedComponents);
-
-        if (file) {
-            const appId = process.env.META_APP_ID;
-            if (!appId) throw new Error('META_APP_ID is not configured. Cannot upload media for templates.');
-
-            const initUrl = new URL(`https://graph.facebook.com/v20.0/${appId}/uploads`);
-            initUrl.searchParams.set('file_length', String(file.size));
-            initUrl.searchParams.set('file_type', file.mimetype);
-            initUrl.searchParams.set('access_token', token);
-
-            const initRes = await fetch(initUrl, { method: 'POST' });
-            const initJson = await initRes.json();
-            if (!initRes.ok) throw new Error(initJson.error?.message || 'Upload initialization failed');
-
-            const uploadSessionId = initJson.id;
-
-            const uploadRes = await fetch(`https://graph.facebook.com/v20.0/${uploadSessionId}`, {
-                method: 'POST',
-                headers: {
-                    Authorization: `OAuth ${token}`,
-                    file_offset: '0',
-                    'Content-Type': file.mimetype || 'application/octet-stream'
-                },
-                body: file.buffer as any
-            });
-            const uploadJson = await uploadRes.json();
-            if (!uploadRes.ok) throw new Error(uploadJson.error?.message || 'File upload failed');
-
-            const handle = uploadJson.h;
-
-            const headerObj = parsedComponents.find((c: any) => c.type === 'HEADER');
-            if (headerObj && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerObj.format)) {
-                headerObj.example = { header_handle: [handle] };
-            }
-        }
-
-        const payload = { name, category, language, components: parsedComponents };
-        const validation = validateWhatsappTemplatePayload(payload);
-        if (!validation.canSubmit) {
-            return res.status(400).json({
-                error: 'Template has approval-risk issues. Fix the highlighted fields before submitting to Meta.',
-                validation,
-            });
-        }
-
-        const existingRes = await fetch(
-            `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?name=${encodeURIComponent(validation.normalized.name)}&fields=id,name,language,status&limit=50`,
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
-        const existingJson = await existingRes.json().catch(() => ({}));
-        if (existingRes.ok && Array.isArray(existingJson.data) && existingJson.data.some((tpl: any) => tpl.name === validation.normalized.name && tpl.language === validation.normalized.language)) {
-            return res.status(409).json({
-                error: `Template "${validation.normalized.name}" already exists for ${validation.normalized.language}. Use a new template name before submitting.`,
-                code: 'DUPLICATE_TEMPLATE_NAME',
-                suggested_name: `${validation.normalized.name}_${Date.now().toString().slice(-6)}`,
-            });
-        }
-
-        let metaComponents = parsedComponents;
-        if (category === 'AUTHENTICATION') {
-            const hasSecurityWording = parsedComponents.some((c: any) => 
-                c.type === 'BODY' && typeof c.text === 'string' && 
-                /\b(security|share|anyone)\b/i.test(c.text)
-            );
-
-            const authComponents: any[] = [
-                {
-                    type: 'BODY',
-                    add_security_recommendation: hasSecurityWording
-                }
-            ];
-
-            const buttonsComp = parsedComponents.find((c: any) => c.type === 'BUTTONS');
-            const copyCodeBtn = buttonsComp?.buttons?.find((b: any) => 
-                String(b.type).toUpperCase() === 'COPY_CODE' || 
-                String(b.text).toLowerCase().includes('copy')
-            );
-
-            if (copyCodeBtn) {
-                authComponents.push({
-                    type: 'BUTTONS',
-                    buttons: [
-                        {
-                            type: 'OTP',
-                            otp_type: 'COPY_CODE',
-                            text: copyCodeBtn.text || 'Copy Code'
-                        }
-                    ]
-                });
-            } else {
-                authComponents.push({
-                    type: 'BUTTONS',
-                    buttons: [
-                        {
-                            type: 'OTP',
-                            otp_type: 'COPY_CODE',
-                            text: 'Copy Code'
-                        }
-                    ]
-                });
-            }
-
-            metaComponents = authComponents;
-        }
-
-        const metaPayload = { name, category, language, components: metaComponents };
-
-        const response = await fetch(`https://graph.facebook.com/v20.0/${waba_id}/message_templates`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(metaPayload)
-        });
-        const json = await response.json();
-
-        if (!response.ok) {
-            const errMsg = json.error?.error_user_msg || json.error?.message || 'Template creation failed';
-            const errSubcode = json.error?.error_subcode || json.error?.code || null;
-            const errData = json.error?.error_data || null;
-            await upsertLocalTemplateSubmission({
-                organization_id: orgId,
-                wa_account_id: account.id,
-                waba_id,
-                name: validation.normalized.name,
-                language: validation.normalized.language,
-                category: validation.normalized.category,
-                status: 'REJECTED',
-                rejection_reason: errMsg,
-                components: validation.normalized.components,
-                normalized_payload: validation.normalized,
-                validation_issues: validation.issues,
-                risk_score: validation.riskScore,
-                meta_response: json,
-                submitted_by: req.user?.id || null,
-            });
-            return res.status(response.status).json({
-                error: errMsg,
-                code: /already exists|duplicate/i.test(errMsg) ? 'DUPLICATE_TEMPLATE_NAME' : 'META_TEMPLATE_CREATE_FAILED',
-                suggested_name: /already exists|duplicate/i.test(errMsg) ? `${validation.normalized.name}_${Date.now().toString().slice(-6)}` : undefined,
-                error_subcode: errSubcode,
-                error_data: errData,
-                validation,
-                meta_error: json.error
-            });
-        }
-        await upsertLocalTemplateSubmission({
-            organization_id: orgId,
-            wa_account_id: account.id,
-            waba_id,
-            template_id: json.id || json.data?.id || null,
-            name: validation.normalized.name,
-            language: validation.normalized.language,
-            category: validation.normalized.category,
-            status: json.status || 'PENDING',
-            components: validation.normalized.components,
-            normalized_payload: validation.normalized,
-            validation_issues: validation.issues,
-            risk_score: validation.riskScore,
-            meta_response: json,
-            submitted_by: req.user?.id || null,
-            submitted_at: new Date().toISOString(),
-        });
-        res.json({ success: true, data: json });
-    } catch (err: any) {
-        console.error('Create Template Error:', err);
-        res.status(500).json({ error: err.message });
+    if (!accounts || accounts.length === 0) {
+      return res.status(400).json({ error: 'No connected Meta account found' });
     }
+
+    const account = accounts[0];
+    const token = decryptToken(account.access_token_encrypted);
+    const waba_id = account.whatsapp_business_account_id;
+
+    let parsedComponents = [];
+    let typeConfig: Record<string, any> = {};
+    try {
+      parsedComponents = JSON.parse(components || '[]');
+      typeConfig = req.body.type_config ? JSON.parse(req.body.type_config) : {};
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid template components or type configuration.' });
+    }
+
+    // Enrich template variables with realistic sample values before Meta validation.
+    parsedComponents = enrichTemplateExamplesWithRealisticSamples(parsedComponents);
+
+    if (file) {
+      const headerFormat = parsedComponents.find((component: any) => component?.type === 'HEADER')?.format;
+      const mediaRules: Record<string, { max: number; types: RegExp }> = {
+        IMAGE: { max: 5 * 1024 * 1024, types: /^image\/(jpeg|png)$/ },
+        VIDEO: { max: 16 * 1024 * 1024, types: /^video\/mp4$/ },
+        DOCUMENT: { max: 100 * 1024 * 1024, types: /^(application\/pdf|application\/msword|application\/vnd\.|application\/octet-stream)/ },
+      };
+      const rule = mediaRules[headerFormat];
+      if (!rule || file.size > rule.max || !rule.types.test(file.mimetype)) {
+        return res.status(400).json({ error: 'Uploaded header file type or size is not supported by Meta.' });
+      }
+      const appId = process.env.META_APP_ID;
+      if (!appId) throw new Error('META_APP_ID is not configured. Cannot upload media for templates.');
+
+      const initUrl = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/${appId}/uploads`);
+      initUrl.searchParams.set('file_length', String(file.size));
+      initUrl.searchParams.set('file_type', file.mimetype);
+      initUrl.searchParams.set('access_token', token);
+
+      const initRes = await fetch(initUrl, { method: 'POST' });
+      const initJson = await initRes.json();
+      if (!initRes.ok) throw new Error(initJson.error?.message || 'Upload initialization failed');
+
+      const uploadSessionId = initJson.id;
+
+      const uploadRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${uploadSessionId}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `OAuth ${token}`,
+          file_offset: '0',
+          'Content-Type': file.mimetype || 'application/octet-stream'
+        },
+        body: file.buffer as any
+      });
+      const uploadJson = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error(uploadJson.error?.message || 'File upload failed');
+
+      const handle = uploadJson.h;
+
+      const headerObj = parsedComponents.find((c: any) => c.type === 'HEADER');
+      if (headerObj && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(headerObj.format)) {
+        headerObj.example = { header_handle: [handle] };
+      }
+    }
+
+    const built = buildMetaTemplatePayload({
+      name,
+      category: String(category || '').toUpperCase(),
+      language,
+      templateType,
+      components: parsedComponents,
+      typeConfig: {
+        ...typeConfig,
+        calling_enabled: process.env.META_WHATSAPP_CALLING_ENABLED === 'true',
+      },
+    });
+    if (!built.canSubmit) {
+      return res.status(400).json({
+        error: 'Template has approval-risk issues. Fix the highlighted fields before submitting to Meta.',
+        validation: built,
+      });
+    }
+    if (templateType === 'CATALOG' || templateType === 'FLOW') {
+      const assetUrl = templateType === 'CATALOG'
+        ? `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/product_catalogs?fields=id&limit=100`
+        : `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/flows?fields=id,status&limit=100`;
+      const assetResponse = await fetch(assetUrl, { headers: { Authorization: `Bearer ${token}` } });
+      const assetJson: any = await assetResponse.json().catch(() => ({}));
+      const requestedId = String(templateType === 'CATALOG' ? typeConfig.catalog_id : typeConfig.flow_id);
+      const asset = assetJson.data?.find((item: any) => String(item.id) === requestedId);
+      const valid = assetResponse.ok && asset && (templateType !== 'FLOW' || String(asset.status).toUpperCase() === 'PUBLISHED');
+      if (!valid) {
+        return res.status(400).json({
+          error: templateType === 'CATALOG'
+            ? 'The selected catalog is not connected to this WhatsApp account.'
+            : 'The selected Meta Flow is not published for this WhatsApp account.',
+        });
+      }
+    }
+    const validation = templateType === 'AUTHENTICATION'
+      ? { normalized: built.payload, issues: built.issues, riskScore: 0 }
+      : validateWhatsappTemplatePayload(built.payload);
+
+    const existingRes = await fetch(
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?name=${encodeURIComponent(built.payload.name)}&fields=id,name,language,status&limit=50`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const existingJson = await existingRes.json().catch(() => ({}));
+    if (existingRes.ok && Array.isArray(existingJson.data) && existingJson.data.some((tpl: any) => tpl.name === built.payload.name && tpl.language === built.payload.language)) {
+      return res.status(409).json({
+        error: `Template "${built.payload.name}" already exists for ${built.payload.language}. Use a new template name before submitting.`,
+        code: 'DUPLICATE_TEMPLATE_NAME',
+        suggested_name: `${built.payload.name}_${Date.now().toString().slice(-6)}`,
+      });
+    }
+
+    const metaPayload = built.payload;
+
+    const response = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(metaPayload)
+    });
+    const json = await response.json();
+
+    if (!response.ok) {
+      const errMsg = json.error?.error_user_msg || json.error?.message || 'Template creation failed';
+      const errSubcode = json.error?.error_subcode || json.error?.code || null;
+      const errData = json.error?.error_data || null;
+      await upsertLocalTemplateSubmission({
+        organization_id: orgId,
+        wa_account_id: account.id,
+        waba_id,
+        name: validation.normalized.name,
+        language: validation.normalized.language,
+        category: validation.normalized.category,
+        status: 'REJECTED',
+        rejection_reason: errMsg,
+        components: validation.normalized.components,
+        normalized_payload: validation.normalized,
+        validation_issues: validation.issues,
+        risk_score: validation.riskScore,
+        meta_response: json,
+        submitted_by: req.user?.id || null,
+      });
+      return res.status(response.status).json({
+        error: errMsg,
+        code: /already exists|duplicate/i.test(errMsg) ? 'DUPLICATE_TEMPLATE_NAME' : 'META_TEMPLATE_CREATE_FAILED',
+        suggested_name: /already exists|duplicate/i.test(errMsg) ? `${validation.normalized.name}_${Date.now().toString().slice(-6)}` : undefined,
+        error_subcode: errSubcode,
+        error_data: errData,
+        validation,
+        meta_error: json.error
+      });
+    }
+    await upsertLocalTemplateSubmission({
+      organization_id: orgId,
+      wa_account_id: account.id,
+      waba_id,
+      template_id: json.id || json.data?.id || null,
+      name: validation.normalized.name,
+      language: validation.normalized.language,
+      category: validation.normalized.category,
+      status: json.status || 'PENDING',
+      components: validation.normalized.components,
+      normalized_payload: validation.normalized,
+      validation_issues: validation.issues,
+      risk_score: validation.riskScore,
+      meta_response: json,
+      submitted_by: req.user?.id || null,
+      submitted_at: new Date().toISOString(),
+    });
+    res.json({ success: true, data: json });
+  } catch (err: any) {
+    console.error('Create Template Error:', err);
+    res.status(500).json({ error: err.message });
+  }
 }
 
 export async function deleteTemplate(req: any, res: Response) {
@@ -1000,7 +1159,7 @@ export async function getTemplateLibrary(req: any, res: Response) {
     if (!queryParams.has("limit")) {
       queryParams.set("limit", "250");
     }
-    
+
     if (!queryParams.has("fields")) {
       queryParams.set("fields", "name,category,components,language,status");
     }
@@ -1011,9 +1170,9 @@ export async function getTemplateLibrary(req: any, res: Response) {
       headers: { Authorization: `Bearer ${token}` },
     });
     const json = await response.json();
-    
+
     if (json.data && json.data.length > 0) {
-        console.log("META API DEBUG: First template components:", JSON.stringify(json.data[0].components, null, 2));
+      console.log("META API DEBUG: First template components:", JSON.stringify(json.data[0].components, null, 2));
     }
 
     if (!response.ok) {

@@ -63,12 +63,7 @@ export default function Settings() {
     const [isDraggingKnowledge, setIsDraggingKnowledge] = useState(false)
     const knowledgeFileInputRef = useRef(null)
 
-    const [members, setMembers] = useState([])
-    const [isInviteOpen, setIsInviteOpen] = useState(false)
-    const [inviteForm, setInviteForm] = useState({ name: '', email: '', role: 'agent' })
-    const [isInviting, setIsInviting] = useState(false)
-    const [isLoadingMembers, setIsLoadingMembers] = useState(false)
-    const [resendingMemberId, setResendingMemberId] = useState(null)
+
     const [accounts, setAccounts] = useState([])
     const [selectedAccountId, setSelectedAccountId] = useState('')
     const [isLoadingAccounts, setIsLoadingAccounts] = useState(true)
@@ -568,121 +563,6 @@ export default function Settings() {
         }
     }, [activeTab, selectedAccountId])
 
-    const handleInvite = async (e) => {
-        e.preventDefault()
-        if (!inviteForm.email || !inviteForm.name) return
-        setIsInviting(true)
-        try {
-            const res = await fetch(`${BACKEND_BASE}/api/team/invite`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${session.access_token}`,
-                    'X-Auth-Portal': loginType || 'owner'
-                },
-                body: JSON.stringify(inviteForm)
-            })
-            if (res.ok) {
-                setIsInviteOpen(false)
-                setInviteForm({ name: '', email: '', password: '', role: 'agent' })
-                fetchMembers()
-            } else {
-                const err = await res.json()
-                alertDialog(err.error || "Invite failed", { title: 'Invite failed', tone: 'danger' })
-            }
-        } catch (e) {
-            console.error("Invite failed", e)
-        } finally {
-            setIsInviting(false)
-        }
-    }
-
-    const getInviteStatus = (member) => {
-        if (member.invite_status) return member.invite_status
-        if (member.is_active) return 'active'
-        const expiresAt = member.invite_expires_at ? new Date(member.invite_expires_at) : null
-        if (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt.getTime() <= Date.now()) return 'expired'
-        return 'pending'
-    }
-
-    const formatInviteExpiry = (value) => {
-        if (!value) return ''
-        const date = new Date(value)
-        if (Number.isNaN(date.getTime())) return ''
-        return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-    }
-
-    const resendInvite = async (member) => {
-        if (!member?.id) return
-        setResendingMemberId(member.id)
-        try {
-            const res = await fetch(`${BACKEND_BASE}/api/team/members/${member.id}/resend-invite`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${session.access_token}`,
-                    'X-Auth-Portal': loginType || 'owner'
-                }
-            })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data?.error || 'Failed to resend invitation')
-            fetchMembers()
-        } catch (e) {
-            alertDialog(e.message || 'Failed to resend invitation', { title: 'Invite failed', tone: 'danger' })
-        } finally {
-            setResendingMemberId(null)
-        }
-    }
-
-    const updateRole = async (memberId, role) => {
-        try {
-            const res = await fetch(`${BACKEND_BASE}/api/team/members/${memberId}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${session.access_token}`
-                },
-                body: JSON.stringify({ role })
-            })
-            if (res.ok) fetchMembers()
-        } catch (e) {
-            console.error("Update failed", e)
-        }
-    }
-
-    const removeMember = async (memberId) => {
-        const confirmed = await confirmDialog('Are you sure you want to remove this member?', {
-            title: 'Remove team member',
-            tone: 'danger',
-            confirmLabel: 'Remove member',
-        })
-        if (!confirmed) return
-        try {
-            const res = await fetch(`${BACKEND_BASE}/api/team/members/${memberId}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${session.access_token}` }
-            })
-            if (res.ok) fetchMembers()
-        } catch (e) {
-            console.error("Remove failed", e)
-        }
-    }
-
-    const toggleOnlineStatus = async (currentStatus) => {
-        try {
-            const res = await apiCall(`${BACKEND_BASE}/api/team/status`, {
-                method: 'PATCH',
-                body: JSON.stringify({ is_online: !currentStatus })
-            })
-            if (res.ok) {
-                fetchMembers()
-            }
-        } catch (e) {
-            console.error("Failed to toggle online status", e)
-        }
-    }
-
-    const isAdmin = userRole === 'admin' || userRole === 'owner'
     const selectedNotificationSound = notificationSounds.find(sound => sound.id === selectedSoundId) || notificationSounds[0]
 
     return (

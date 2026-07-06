@@ -536,15 +536,16 @@ function ButtonConfig({ config, updateConfig }) {
                         >
                             <option value="reply">Quick Reply (next node se link hoga)</option>
                             <option value="url">URL Open karo</option>
+                            <option value="form">Open Form (GetAiPilot)</option>
                             <option value="phone">Phone Call</option>
                         </select>
 
-                        {button.type === 'url' && (
+                        {(button.type === 'url' || button.type === 'form') && (
                             <input
                                 type="url"
                                 value={button.url || ''}
                                 onChange={(e) => updateButton(index, 'url', e.target.value)}
-                                placeholder="https://..."
+                                placeholder={button.type === 'form' ? "Paste Form URL (https://getaipilot.in/f/...)" : "https://..."}
                                 className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg"
                             />
                         )}

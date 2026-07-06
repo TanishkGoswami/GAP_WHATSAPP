@@ -713,50 +713,84 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
 
 function UsageBarChart({ bars, max, isHourly, peak, total }) {
     return (
-        <div className="mt-2.5 sm:mt-4 rounded-2xl border border-[#dfe8f6] bg-gradient-to-br from-[#fbfdff] via-white to-[#f7f4ff] p-2.5 sm:p-4 shadow-[0_12px_32px_rgba(109,92,231,0.08)]">
-            <div className="mb-2 sm:mb-4 flex items-center justify-between gap-2 sm:gap-3">
+        <div className="mt-2.5 sm:mt-4 rounded-2xl border border-gray-100 bg-white p-4 sm:p-5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] ring-1 ring-gray-900/5">
+            <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <p className="text-xs font-medium text-gray-500">Total volume</p>
-                    <p className="text-lg sm:text-xl font-semibold text-gray-950">{fmt(total)}</p>
+                    <div className="flex items-center gap-2 mb-1">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50 text-blue-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+                        </div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Total volume</p>
+                    </div>
+                    <p className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">{fmt(total)}</p>
                 </div>
-                <div className="flex items-center gap-2 rounded-full border border-blue-100 bg-white px-3 py-2 shadow-sm">
-                    <span className="h-2 w-2 rounded-full bg-blue-500" />
-                    <span className="text-xs font-semibold text-gray-600">Peak</span>
-                    <span className="text-sm font-semibold text-blue-700">{peak ? fmt(peak.total) : 0}</span>
+                <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/50 px-4 py-2.5 shadow-sm">
+                    <div className="flex items-center gap-2">
+                        <span className="relative flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                        </span>
+                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Peak</span>
+                    </div>
+                    <div className="h-4 w-px bg-gray-200" />
+                    <span className="text-base font-bold text-blue-600">{peak ? fmt(peak.total) : 0}</span>
                 </div>
             </div>
-            <div className="relative h-[285px] overflow-hidden rounded-xl border border-gray-200 bg-white px-3 pt-3">
-                <div className="absolute inset-x-3 top-3 border-t border-dashed border-gray-200" />
-                <div className="absolute inset-x-0 top-1/3 border-t border-dashed border-gray-200" />
-                <div className="absolute inset-x-0 top-2/3 border-t border-dashed border-gray-200" />
-                <div className="absolute inset-x-3 bottom-10 border-t border-gray-200" />
-                <div className="absolute inset-x-3 bottom-11 top-5 flex items-end justify-between gap-1.5">
+            
+            <div className="relative h-[260px] overflow-visible rounded-xl bg-gradient-to-b from-gray-50/50 to-white px-2 sm:px-4 pt-4 border border-gray-100/50">
+                {/* Horizontal Grid Lines */}
+                <div className="absolute inset-x-4 top-4 border-t border-dashed border-gray-200" />
+                <div className="absolute inset-x-4 top-[38%] border-t border-dashed border-gray-200" />
+                <div className="absolute inset-x-4 top-[70%] border-t border-dashed border-gray-200" />
+                <div className="absolute inset-x-4 bottom-8 border-t border-gray-200" />
+                
+                {/* Bars Container */}
+                <div className="absolute inset-x-4 bottom-9 top-6 flex items-end justify-between gap-1 sm:gap-2">
                     {bars.map((point, index) => {
                         const value = n(point.total)
-                        const height = value === 0 ? '3px' : `${Math.max(5, (value / max) * 100)}%`
+                        const height = value === 0 ? '4px' : `${Math.max(5, (value / max) * 100)}%`
                         const key = isHourly ? point.hour : point.date
                         const label = isHourly ? point.hour : point.date?.slice(5)
                         const showLabel = isHourly ? index % 4 === 0 : index === 0 || index === bars.length - 1
+                        
                         return (
-                            <div key={`${key}-${index}`} className="group relative flex min-w-0 flex-1 flex-col items-center justify-end gap-2 h-full">
-                                <div className="pointer-events-none absolute bottom-[calc(100%+10px)] z-10 hidden min-w-[104px] rounded-xl border border-gray-200 bg-white px-3 py-2 text-center text-xs shadow-[0_16px_40px_rgba(15,23,42,0.14)] group-hover:block">
-                                    <p className="font-semibold text-gray-900">{label}</p>
-                                    <p className="mt-1 text-gray-600">{fmt(value)} messages</p>
+                            <div key={`${key}-${index}`} className="group relative flex min-w-0 flex-1 flex-col items-center justify-end gap-2 h-full cursor-default">
+                                {/* Premium Tooltip */}
+                                <div className="pointer-events-none absolute bottom-[calc(100%+12px)] z-50 hidden min-w-[110px] transform rounded-xl border border-white/10 bg-gray-900/95 px-3 py-2.5 text-center shadow-2xl backdrop-blur-md transition-all duration-200 group-hover:block animate-in fade-in slide-in-from-bottom-2">
+                                    <p className="text-[11px] font-bold tracking-wider text-gray-400 uppercase mb-0.5">{label}</p>
+                                    <div className="flex items-center justify-center gap-1.5 font-bold text-white text-sm">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)]" />
+                                        {fmt(value)}
+                                    </div>
+                                    <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-900/95" />
                                 </div>
+                                
+                                {/* 3D Glow Bar */}
                                 <div
-                                    className="w-full max-w-8 rounded-t-xl bg-gradient-to-t from-blue-600 to-blue-400 transition-all duration-300 group-hover:scale-x-110 group-hover:from-blue-700 group-hover:to-blue-500"
+                                    className={`relative w-full max-w-[28px] rounded-t-[6px] transition-all duration-300 group-hover:scale-x-110 group-hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] ${
+                                        value === 0 
+                                            ? 'bg-gray-100 group-hover:bg-gray-200' 
+                                            : 'bg-gradient-to-t from-blue-600 to-blue-400 group-hover:from-blue-500 group-hover:to-blue-300'
+                                    }`}
                                     style={{ height }}
-                                    title={`${label}: ${fmt(value)} messages`}
-                                />
-                                <span className="h-4 w-12 truncate text-center text-[10px] font-medium text-gray-500">{showLabel ? label : ''}</span>
+                                >
+                                    {value > 0 && (
+                                        <div className="absolute inset-0 rounded-t-[6px] border-l border-r border-t border-white/30 bg-gradient-to-b from-white/30 to-transparent mix-blend-overlay opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                                    )}
+                                </div>
+                                
+                                <span className={`h-4 w-12 truncate text-center text-[10px] font-semibold transition-colors ${showLabel ? 'text-gray-400 group-hover:text-gray-900' : 'text-transparent'}`}>
+                                    {showLabel ? label : ''}
+                                </span>
                             </div>
                         )
                     })}
                 </div>
             </div>
-            <div className="mt-2.5 sm:mt-3 flex items-center justify-between text-[11px] sm:text-xs text-gray-500">
+            
+            <div className="mt-4 flex items-center justify-between text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">
                 <span>{isHourly ? '00:00' : bars[0]?.date?.slice(5) || 'Start'}</span>
-                <span className="hidden sm:inline">{isHourly ? 'Hourly WhatsApp message activity' : 'Daily WhatsApp message activity'}</span>
+                <span className="hidden sm:inline bg-gray-50 px-3 py-1 rounded-full">{isHourly ? 'Hourly distribution' : 'Daily distribution'}</span>
                 <span>{isHourly ? '23:00' : bars[bars.length - 1]?.date?.slice(5) || 'End'}</span>
             </div>
         </div>

@@ -22,7 +22,7 @@ const categoryLabels = {
 }
 
 const useCaseLabels = {
-    'All Use Cases': 'All use cases',
+    'All Use Cases': 'All Use Cases',
     ACCOUNT_UPDATES: 'Account updates',
     ORDER_MANAGEMENT: 'Order management',
     EVENT_REMINDER: 'Event reminders',
@@ -93,6 +93,7 @@ function SelectField({ label, icon: Icon, value, options, onChange }) {
 }
 
 function MessagePreview({ template }) {
+    const header = template.components?.find((component) => component.type === 'HEADER')?.text || ''
     const body = template.components?.find((component) => component.type === 'BODY')?.text || ''
     const buttons = template.components?.find((component) => component.type === 'BUTTONS')?.buttons || []
     const parts = body.split(/(\{\{\d+\}\})/g)
@@ -100,6 +101,7 @@ function MessagePreview({ template }) {
     return (
         <div className="meta-library-chat">
             <div className="relative z-10 max-w-[94%] rounded-[10px_10px_10px_3px] bg-white px-3 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.12)]">
+                {header ? <p className="mb-1.5 text-[12px] font-bold leading-4 text-slate-800">{header}</p> : null}
                 <p className="line-clamp-4 text-[12px] font-medium leading-[1.65] text-slate-700">
                     {parts.map((part, index) => /^\{\{\d+\}\}$/.test(part)
                         ? <span key={`${part}-${index}`} className="rounded bg-[#eaf8f1] px-1 py-0.5 font-mono text-[10px] font-semibold text-[#087a55]">{part}</span>
@@ -132,8 +134,9 @@ export default function MetaTemplateLibrary({
     setSearch,
     showFilters,
     setShowFilters,
-    onOpen,
     onUse,
+    loading,
+    error,
 }) {
     const industries = ['All Industries', ...new Set(templates.flatMap((item) => Array.isArray(item.industry) ? item.industry : [item.industry || 'General']))]
     const useCases = ['All Use Cases', ...new Set(templates.map((item) => item.useCase).filter(Boolean))]
@@ -176,7 +179,7 @@ export default function MetaTemplateLibrary({
                             <SelectField label="Industry" icon={Building2} value={industry} onChange={setIndustry} options={industries.map((value) => ({ value, label: value }))} />
                         </div>
                         <div className={`${showFilters ? 'block' : 'hidden'} lg:block`}>
-                            <SelectField label="Use case" icon={MessageCircle} value={useCase} onChange={setUseCase} options={useCases.map((value) => ({ value, label: useCaseLabels[value] || value }))} />
+                            <SelectField label="Use Case" icon={MessageCircle} value={useCase} onChange={setUseCase} options={useCases.map((value) => ({ value, label: useCaseLabels[value] || value }))} />
                         </div>
                     </div>
                 </section>
@@ -189,22 +192,20 @@ export default function MetaTemplateLibrary({
                     {hasFilters ? <button onClick={resetFilters} className="text-xs font-semibold text-[#0064b7] hover:underline">Clear all filters</button> : null}
                 </div>
 
-                {filteredTemplates.length ? (
-                    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {loading ? (
+                    <section className="flex min-h-56 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm text-slate-500">Loading official Meta library...</section>
+                ) : error ? (
+                    <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-sm text-amber-800">{error}</section>
+                ) : filteredTemplates.length ? (
+                    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                         {filteredTemplates.map((template) => (
-                            <article key={template.id} className="group overflow-hidden rounded-xl border border-slate-200 bg-white transition duration-200 hover:-translate-y-1 hover:border-[#9bcaf3] hover:shadow-[0_16px_35px_rgba(15,23,42,0.08)]">
-                                <button onClick={() => onOpen(template)} className="block w-full p-4 text-left">
-                                    <div className="mb-3 flex items-start justify-between gap-3">
-                                        <span className="rounded-full bg-[#eaf8f1] px-2.5 py-1 text-[10px] font-bold tracking-wide text-[#087a55]">{template.category}</span>
-                                        <span className="max-w-[48%] truncate rounded-md bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500">{useCaseLabels[template.useCase] || template.useCase}</span>
-                                    </div>
-                                    <h2 className="truncate text-[15px] font-semibold text-slate-900 transition group-hover:text-[#0064b7]">{template.displayName}</h2>
-                                    <p className="mb-3 mt-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">{template.industry || 'General'} industry</p>
+                            <article key={template.id} className="group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[#9bcaf3] hover:shadow-[0_12px_28px_rgba(15,23,42,0.09)]">
+                                <button onClick={() => onUse(template)} className="block w-full p-3 text-left">
                                     <MessagePreview template={template} />
                                 </button>
-                                <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/70 px-4 py-3">
-                                    <span className="flex items-center gap-1.5 text-[10px] font-medium text-slate-500"><ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />Pre-approved</span>
-                                    <button onClick={() => onUse(template)} className="meta-template-action rounded-full px-4 py-2 text-xs font-semibold text-white">Use template</button>
+                                <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-white px-3 py-2.5">
+                                    <span className="min-w-0 truncate text-[10px] font-medium text-slate-500">{template.name}</span>
+                                    <button onClick={() => onUse(template)} className="shrink-0 text-[10px] font-semibold text-[#0070d1] hover:underline">{template.source === 'meta_library' ? 'Import' : 'Customize'}</button>
                                 </div>
                             </article>
                         ))}
