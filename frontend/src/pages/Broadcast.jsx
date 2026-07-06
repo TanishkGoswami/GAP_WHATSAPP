@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet, Pause, Play, Phone, MessageSquare, ShieldCheck, TrendingUp } from 'lucide-react'
+import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet, Pause, Play, Phone, MessageSquare, ShieldCheck, TrendingUp, Search, X } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
@@ -220,13 +220,49 @@ export default function Broadcast() {
     const [headerMediaUrl, setHeaderMediaUrl] = useState('')
     const [isHeaderUploading, setIsHeaderUploading] = useState(false)
 
-    const filteredContacts = campaign.audience_type === 'CSV_UPLOAD'
+    // Popup custom selection states
+    const [isContactsPopupOpen, setIsContactsPopupOpen] = useState(false)
+    const [selectedContactKeys, setSelectedContactKeys] = useState(null)
+    const [tempSelectedKeys, setTempSelectedKeys] = useState(new Set())
+    const [popupSearch, setPopupSearch] = useState('')
+    const [popupFilter, setPopupFilter] = useState('all') // 'all' | 'sent' | 'unsent'
+
+    useEffect(() => {
+        setSelectedContactKeys(null);
+    }, [campaign.audience_type, campaign.audience_tag, csvData]);
+
+    const getContactKey = (c) => c.id || c.phone || c.wa_id;
+
+    const baseAudienceContacts = campaign.audience_type === 'CSV_UPLOAD'
         ? (csvData || [])
         : campaign.audience_type === 'tag' && campaign.audience_tag
             ? contacts.filter(c => Array.isArray(c.tags) && c.tags.includes(campaign.audience_tag))
             : campaign.audience_type === 'saved'
                 ? contacts.filter(c => c.saved_at != null)
                 : contacts;
+
+    const filteredContacts = selectedContactKeys
+        ? baseAudienceContacts.filter(c => selectedContactKeys.has(getContactKey(c)))
+        : baseAudienceContacts;
+
+    const visibleFilteredContacts = baseAudienceContacts.filter(c => {
+        // Search filter
+        const query = popupSearch.trim().toLowerCase();
+        const matchesSearch = !query || 
+            String(c.custom_name || c.name || '').toLowerCase().includes(query) ||
+            String(c.phone || c.wa_id || '').includes(query);
+        
+        // Tab/sent filter
+        let matchesTab = true;
+        if (popupFilter === 'sent') {
+            matchesTab = Number(c.broadcast_count || 0) > 0;
+        } else if (popupFilter === 'unsent') {
+            matchesTab = !c.broadcast_count || Number(c.broadcast_count) === 0;
+        }
+        
+        return matchesSearch && matchesTab;
+    });
+
     const availableCustomFields = [...new Set(
         filteredContacts.flatMap(contact => Object.keys(contact?.custom_fields || {}))
     )].sort((a, b) => a.localeCompare(b))
@@ -340,9 +376,9 @@ export default function Broadcast() {
                 const res = await apiCall(`${API_URL}/api/broadcasts/estimate`, {
                     method: 'POST',
                     body: JSON.stringify({
-                        audience_tag: campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag,
-                        audience_type: campaign.audience_type === 'CSV_UPLOAD' ? null : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag'),
-                        csv_data: campaign.audience_type === 'CSV_UPLOAD' ? csvData : null,
+                        audience_tag: selectedContactKeys ? null : (campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag),
+                        audience_type: selectedContactKeys ? 'CSV_UPLOAD' : (campaign.audience_type === 'CSV_UPLOAD' ? null : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag')),
+                        csv_data: selectedContactKeys ? filteredContacts : (campaign.audience_type === 'CSV_UPLOAD' ? csvData : null),
                         template_category: selectedTemplateCategory,
                     })
                 });
@@ -361,7 +397,7 @@ export default function Broadcast() {
 
         fetchEstimate();
         return () => { cancelled = true; };
-    }, [currentStep, token, campaign.audience_type, campaign.audience_tag, campaign.template_name, selectedTemplateCategory, csvData]);
+    }, [currentStep, token, campaign.audience_type, campaign.audience_tag, campaign.template_name, selectedTemplateCategory, csvData, selectedContactKeys]);
 
     const cancelCampaign = async (id) => {
         const confirmed = await confirmDialog('Are you sure you want to stop this campaign? It will be permanently cancelled.', {
@@ -660,9 +696,9 @@ export default function Broadcast() {
         const payload = {
             ...campaign,
             scheduled_at: formattedScheduledAt,
-            audience_tag: campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag,
-            audience_type: campaign.audience_type === 'CSV_UPLOAD' ? 'CSV_UPLOAD' : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag'),
-            csv_data: campaign.audience_type === 'CSV_UPLOAD' ? csvData : null,
+            audience_tag: selectedContactKeys ? null : (campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag),
+            audience_type: selectedContactKeys ? 'CSV_UPLOAD' : (campaign.audience_type === 'CSV_UPLOAD' ? 'CSV_UPLOAD' : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag')),
+            csv_data: selectedContactKeys ? filteredContacts : (campaign.audience_type === 'CSV_UPLOAD' ? csvData : null),
             idempotency_key: launchIdempotencyKey.current,
             variable_mapping: finalMapping,
             required_header_type: needsHeaderMedia ? selectedHeaderFormat.toLowerCase() : undefined,
@@ -694,6 +730,7 @@ export default function Broadcast() {
         setCurrentStep(1);
         setCsvData(null);
         setCsvFileName('');
+        setSelectedContactKeys(null);
         setCampaign({
             ...campaign,
             name: '',
@@ -1409,7 +1446,24 @@ export default function Broadcast() {
                                 <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50">
                                     <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
                                         <h3 className="text-sm font-semibold text-gray-800">Preview Audience</h3>
-                                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 ring-1 ring-gray-200">{filteredContacts.length} contacts</span>
+                                        <div className="flex items-center gap-2">
+                                            {baseAudienceContacts.length > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const keysSet = new Set(filteredContacts.map(getContactKey));
+                                                        setTempSelectedKeys(keysSet);
+                                                        setPopupSearch('');
+                                                        setPopupFilter('all');
+                                                        setIsContactsPopupOpen(true);
+                                                    }}
+                                                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md transition-colors"
+                                                >
+                                                    Customize List
+                                                </button>
+                                            )}
+                                            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 ring-1 ring-gray-200">{filteredContacts.length} contacts</span>
+                                        </div>
                                     </div>
                                     <div className="space-y-2 p-4">
                                         {filteredContacts.slice(0, 5).map((c, i) => (
@@ -1428,6 +1482,162 @@ export default function Broadcast() {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Custom contacts selection popup modal */}
+                                {isContactsPopupOpen && (
+                                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-950/40 backdrop-blur-sm animate-fade-in">
+                                        <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-gray-100 flex flex-col max-h-[80vh] overflow-hidden">
+                                            
+                                            {/* Header */}
+                                            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                                                <div>
+                                                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                                        <Users className="h-5 w-5 text-indigo-600" />
+                                                        Select Target Contacts
+                                                    </h3>
+                                                    <p className="text-xs text-gray-500 mt-1">Select individual contacts or filter list by campaign history.</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsContactsPopupOpen(false)}
+                                                    className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1.5 rounded-lg transition-colors"
+                                                >
+                                                    <X className="h-5 w-5" />
+                                                </button>
+                                            </div>
+
+                                            {/* Search and Filters */}
+                                            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center">
+                                                <div className="relative flex-1">
+                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Search contacts..."
+                                                        value={popupSearch}
+                                                        onChange={(e) => setPopupSearch(e.target.value)}
+                                                        className="h-10 w-full pl-9 pr-4 text-xs rounded-lg border border-gray-300 bg-white focus:outline-none focus:border-indigo-500 transition-all"
+                                                    />
+                                                </div>
+
+                                                <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200/40">
+                                                    {[
+                                                        { id: 'all', label: 'ALL' },
+                                                        { id: 'sent', label: 'Already Sent' },
+                                                        { id: 'unsent', label: 'Not Sent' }
+                                                    ].map(tab => (
+                                                        <button
+                                                            key={tab.id}
+                                                            type="button"
+                                                            onClick={() => setPopupFilter(tab.id)}
+                                                            className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${popupFilter === tab.id ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
+                                                        >
+                                                            {tab.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Contacts List */}
+                                            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+                                                <div className="flex items-center justify-between pb-2 border-b border-gray-100 text-xs text-gray-500 font-semibold">
+                                                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={visibleFilteredContacts.length > 0 && visibleFilteredContacts.every(c => tempSelectedKeys.has(getContactKey(c)))}
+                                                            onChange={(e) => {
+                                                                const nextKeys = new Set(tempSelectedKeys);
+                                                                if (e.target.checked) {
+                                                                    visibleFilteredContacts.forEach(c => nextKeys.add(getContactKey(c)));
+                                                                } else {
+                                                                    visibleFilteredContacts.forEach(c => nextKeys.delete(getContactKey(c)));
+                                                                }
+                                                                setTempSelectedKeys(nextKeys);
+                                                            }}
+                                                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                        />
+                                                        Select All Visible ({visibleFilteredContacts.length})
+                                                    </label>
+                                                    <span>
+                                                        {tempSelectedKeys.size} selected of {baseAudienceContacts.length}
+                                                    </span>
+                                                </div>
+
+                                                {visibleFilteredContacts.length === 0 ? (
+                                                    <div className="py-12 text-center text-xs text-gray-400">No contacts match search or filters.</div>
+                                                ) : (
+                                                    visibleFilteredContacts.map(c => {
+                                                        const key = getContactKey(c);
+                                                        const isSelected = tempSelectedKeys.has(key);
+                                                        return (
+                                                            <label
+                                                                key={key}
+                                                                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${isSelected ? 'border-indigo-150 bg-indigo-50/10' : 'border-gray-150 bg-white hover:bg-gray-50/40'}`}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isSelected}
+                                                                    onChange={() => {
+                                                                        const nextKeys = new Set(tempSelectedKeys);
+                                                                        if (isSelected) {
+                                                                            nextKeys.delete(key);
+                                                                        } else {
+                                                                            nextKeys.add(key);
+                                                                        }
+                                                                        setTempSelectedKeys(nextKeys);
+                                                                    }}
+                                                                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
+                                                                />
+                                                                <div className="min-w-0 flex-1 flex items-center justify-between gap-4">
+                                                                    <div className="min-w-0">
+                                                                        <span className="block text-sm font-semibold text-gray-900 truncate">
+                                                                            {c.custom_name || c.name || 'Unknown'}
+                                                                        </span>
+                                                                        <span className="block text-xs text-gray-500 font-mono mt-0.5">
+                                                                            {c.phone || c.wa_id}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 shrink-0">
+                                                                        {c.broadcast_count > 0 ? (
+                                                                            <span className="inline-flex items-center rounded bg-indigo-50 border border-indigo-100/50 px-2 py-0.5 text-[9px] font-bold text-indigo-600">
+                                                                                Broadcasts: {c.broadcast_count}
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="inline-flex items-center rounded bg-gray-50 border border-gray-150 px-2 py-0.5 text-[9px] font-bold text-gray-505">
+                                                                                Not Sent
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </label>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+
+                                            {/* Footer */}
+                                            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsContactsPopupOpen(false)}
+                                                    className="h-9 rounded-lg border border-gray-300 bg-white px-4 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedContactKeys(tempSelectedKeys);
+                                                        setIsContactsPopupOpen(false);
+                                                    }}
+                                                    className="h-9 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 text-xs font-semibold shadow-sm transition-colors"
+                                                >
+                                                    Save Selection
+                                                </button>
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 

@@ -575,7 +575,7 @@ export default function Contacts() {
                     const worksheet = workbook.Sheets[sheetName]
                     const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' })
                     const lines = rawData.map(row => row.map(cell => String(cell !== undefined && cell !== null ? cell : '').trim()))
-                                         .filter(row => row.some(cell => cell !== ''))
+                        .filter(row => row.some(cell => cell !== ''))
 
                     if (lines.length > 0) {
                         parsedLines = lines
@@ -608,7 +608,7 @@ export default function Contacts() {
                 phoneIdx = parsedLines[0].findIndex(cell => /^\+?[0-9\s-()]{10,20}$/.test(cell) && cell.replace(/\D/g, '').length >= 10)
                 if (phoneIdx !== -1) {
                     // Prepend dummy headers since the first row is actually data
-                    headers = parsedLines[0].map((_, i) => i === phoneIdx ? 'phone' : `column_${i+1}`)
+                    headers = parsedLines[0].map((_, i) => i === phoneIdx ? 'phone' : `column_${i + 1}`)
                     parsedLines.unshift(headers)
                     normalized = headers
                 }
@@ -854,7 +854,7 @@ export default function Contacts() {
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:flex-wrap sm:items-center sm:w-auto">
-                   
+
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -983,6 +983,7 @@ export default function Contacts() {
                                     <th className="px-5 py-3">Account</th>
                                     <th className="px-5 py-3">Tags</th>
                                     <th className="px-5 py-3">Business data</th>
+                                    <th className="px-5 py-3">Broadcasts</th>
                                     <th className="px-5 py-3">Activity</th>
                                     <th className="px-5 py-3 text-right">Action</th>
                                 </tr>
@@ -990,11 +991,11 @@ export default function Contacts() {
                             <tbody className="divide-y divide-gray-100">
                                 {contactsLoading ? (
                                     <tr>
-                                        <td colSpan="6" className="px-5 py-10 text-center text-sm text-gray-500">Loading contacts...</td>
+                                        <td colSpan="7" className="px-5 py-10 text-center text-sm text-gray-500">Loading contacts...</td>
                                     </tr>
                                 ) : filteredContacts.length === 0 ? (
                                     <tr>
-                                        <td colSpan="6" className="px-5 py-10 text-center text-sm text-gray-500">No contacts match this view.</td>
+                                        <td colSpan="7" className="px-5 py-10 text-center text-sm text-gray-500">No contacts match this view.</td>
                                     </tr>
                                 ) : filteredContacts.map(contact => (
                                     <tr key={contact.id} onClick={() => openContact(contact)} className="cursor-pointer bg-white transition hover:bg-gray-50">
@@ -1030,6 +1031,11 @@ export default function Contacts() {
                                             ) : (
                                                 <span className="text-xs text-gray-400">No fields</span>
                                             )}
+                                        </td>
+                                        <td className="px-5 py-4">
+                                            <span className="inline-flex items-center gap-1 rounded-md  px-2.5 py-1 text-xs font-semibold text-indigo-700">
+                                                {contact.broadcast_count || 0}
+                                            </span>
                                         </td>
                                         <td className="px-5 py-4 text-xs text-gray-500">
                                             <div className="flex items-center gap-1">
@@ -1070,7 +1076,7 @@ export default function Contacts() {
                                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-600 text-[10px] font-bold text-white shadow-sm">
                                         {String(getDisplayName(contact)).slice(0, 2).toUpperCase()}
                                     </div>
-                                    
+
                                     {/* Core Details */}
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-1.5">
@@ -1080,7 +1086,7 @@ export default function Contacts() {
                                                 {getAccountLabel(contact)}
                                             </span>
                                         </div>
-                                        
+
                                         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] sm:text-[10px] text-gray-400 font-mono">
                                             <span className="flex items-center gap-0.5">
                                                 <Phone className="h-2.5 w-2.5" />
@@ -1096,6 +1102,9 @@ export default function Contacts() {
 
                                     {/* Action Button & Tags */}
                                     <div className="flex items-center gap-1 shrink-0">
+                                        <span className="inline-flex shrink-0 items-center rounded bg-indigo-50 border border-indigo-100/50 px-1.5 py-0.2 text-[8px] font-bold text-indigo-600">
+                                            BC: {contact.broadcast_count || 0}
+                                        </span>
                                         {(contact.tags && contact.tags.length > 0) && (
                                             <div className="flex gap-0.5">
                                                 {contact.tags.slice(0, 1).map(tag => (
@@ -1164,6 +1173,7 @@ export default function Contacts() {
                                                 <InfoRow label="WhatsApp ID" value={activeContact.wa_id || '-'} mono />
                                                 <InfoRow label="Joined" value={activeContact.created_at ? format(new Date(activeContact.created_at), 'MMM d, yyyy') : '-'} />
                                                 <InfoRow label="Last active" value={activeContact.last_active ? format(new Date(activeContact.last_active), 'MMM d, yyyy h:mm a') : '-'} />
+                                                <InfoRow label="Broadcasts Sent" value={String(activeContact.broadcast_count || 0)} />
                                             </div>
                                         </section>
 
@@ -1494,11 +1504,10 @@ export default function Contacts() {
             )}
 
             {importStatus && (
-                <div className={`fixed bottom-6 right-6 z-[110] w-80 overflow-hidden rounded-xl shadow-2xl ring-1 animate-in slide-in-from-bottom-5 fade-in duration-300 ${
-                    importStatus.type === 'success' ? 'bg-green-50 ring-green-100/50' :
+                <div className={`fixed bottom-6 right-6 z-[110] w-80 overflow-hidden rounded-xl shadow-2xl ring-1 animate-in slide-in-from-bottom-5 fade-in duration-300 ${importStatus.type === 'success' ? 'bg-green-50 ring-green-100/50' :
                     importStatus.type === 'error' ? 'bg-red-50 ring-red-100/50' :
-                    'bg-blue-50 ring-blue-100/50'
-                }`}>
+                        'bg-blue-50 ring-blue-100/50'
+                    }`}>
                     <div className="p-4">
                         <div className="flex items-start gap-3">
                             {importStatus.type === 'info' && <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-blue-500 animate-pulse" />}
@@ -1506,32 +1515,28 @@ export default function Contacts() {
                             {importStatus.type === 'error' && <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />}
 
                             <div className="flex-1 min-w-0">
-                                <p className={`text-sm font-medium ${
-                                    importStatus.type === 'success' ? 'text-green-900' :
+                                <p className={`text-sm font-medium ${importStatus.type === 'success' ? 'text-green-900' :
                                     importStatus.type === 'error' ? 'text-red-900' :
-                                    'text-blue-900'
-                                }`}>{importStatus.message}</p>
+                                        'text-blue-900'
+                                    }`}>{importStatus.message}</p>
                                 {importStatus.progress && (
                                     <div className="mt-3">
-                                        <div className={`flex items-center justify-between text-xs font-semibold mb-1.5 ${
-                                            importStatus.type === 'success' ? 'text-green-700' :
+                                        <div className={`flex items-center justify-between text-xs font-semibold mb-1.5 ${importStatus.type === 'success' ? 'text-green-700' :
                                             importStatus.type === 'error' ? 'text-red-700' :
-                                            'text-blue-700'
-                                        }`}>
+                                                'text-blue-700'
+                                            }`}>
                                             <span>{Math.round((importStatus.progress.current / importStatus.progress.total) * 100)}%</span>
                                             <span>{importStatus.progress.current} / {importStatus.progress.total}</span>
                                         </div>
-                                        <div className={`h-1.5 w-full overflow-hidden rounded-full ${
-                                            importStatus.type === 'success' ? 'bg-green-200/50' :
+                                        <div className={`h-1.5 w-full overflow-hidden rounded-full ${importStatus.type === 'success' ? 'bg-green-200/50' :
                                             importStatus.type === 'error' ? 'bg-red-200/50' :
-                                            'bg-blue-200/50'
-                                        }`}>
+                                                'bg-blue-200/50'
+                                            }`}>
                                             <div
-                                                className={`h-full rounded-full transition-all duration-300 ease-out ${
-                                                    importStatus.type === 'success' ? 'bg-green-600' :
+                                                className={`h-full rounded-full transition-all duration-300 ease-out ${importStatus.type === 'success' ? 'bg-green-600' :
                                                     importStatus.type === 'error' ? 'bg-red-600' :
-                                                    'bg-blue-600'
-                                                }`}
+                                                        'bg-blue-600'
+                                                    }`}
                                                 style={{ width: `${Math.max(2, (importStatus.progress.current / importStatus.progress.total) * 100)}%` }}
                                             />
                                         </div>
@@ -1542,11 +1547,10 @@ export default function Contacts() {
                             {importStatus.type !== 'info' && (
                                 <button
                                     onClick={() => setImportStatus(null)}
-                                    className={`shrink-0 rounded-lg p-1 transition-colors ${
-                                        importStatus.type === 'success' ? 'text-green-600 hover:bg-green-100' :
+                                    className={`shrink-0 rounded-lg p-1 transition-colors ${importStatus.type === 'success' ? 'text-green-600 hover:bg-green-100' :
                                         importStatus.type === 'error' ? 'text-red-600 hover:bg-red-100' :
-                                        'text-blue-600 hover:bg-blue-100'
-                                    }`}
+                                            'text-blue-600 hover:bg-blue-100'
+                                        }`}
                                 >
                                     <X className="h-4 w-4" />
                                 </button>
