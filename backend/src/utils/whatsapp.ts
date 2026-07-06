@@ -144,7 +144,7 @@ export function validateWhatsappTemplatePayload(payload: any) {
 
     buttons.forEach((button: any, index: number) => {
         const label = String(button?.text || '').trim();
-        if (!label) issues.push({ code: 'BUTTON_TEXT_REQUIRED', severity: 'error', field: `buttons.${index}`, message: 'Button text is required.' });
+        if (!label && !['COPY_CODE', 'OTP'].includes(String(button?.type || ''))) issues.push({ code: 'BUTTON_TEXT_REQUIRED', severity: 'error', field: `buttons.${index}`, message: 'Button text is required.' });
         if (label.length > 25) issues.push({ code: 'BUTTON_TEXT_TOO_LONG', severity: 'error', field: `buttons.${index}`, message: 'Button text must be 25 characters or less.' });
         if (button?.type === 'URL') {
             const url = String(button.url || '').trim();
@@ -157,7 +157,13 @@ export function validateWhatsappTemplatePayload(payload: any) {
         if (button?.type === 'PHONE_NUMBER' && !/^\+[1-9]\d{7,14}$/.test(String(button.phone_number || ''))) {
             issues.push({ code: 'INVALID_PHONE_BUTTON', severity: 'error', field: `buttons.${index}.phone_number`, message: 'Phone button must use E.164 format, for example +919999999999.' });
         }
-        if (!['QUICK_REPLY', 'URL', 'PHONE_NUMBER', 'COPY_CODE', 'OTP'].includes(String(button?.type || ''))) {
+        if (button?.type === 'FLOW' && (!String(button.flow_id || '').trim() || !String(button.navigate_screen || '').trim())) {
+            issues.push({ code: 'INVALID_FLOW_BUTTON', severity: 'error', field: `buttons.${index}`, message: 'Flow button requires a published flow and destination screen.' });
+        }
+        if (button?.type === 'COPY_CODE' && !String(button.example || '').trim()) {
+            issues.push({ code: 'COPY_CODE_EXAMPLE_REQUIRED', severity: 'error', field: `buttons.${index}`, message: 'Copy code button requires an example code.' });
+        }
+        if (!['QUICK_REPLY', 'URL', 'PHONE_NUMBER', 'COPY_CODE', 'OTP', 'CATALOG', 'FLOW'].includes(String(button?.type || ''))) {
             issues.push({ code: 'INVALID_BUTTON_TYPE', severity: 'error', field: `buttons.${index}.type`, message: 'Unsupported button type.' });
         }
     });

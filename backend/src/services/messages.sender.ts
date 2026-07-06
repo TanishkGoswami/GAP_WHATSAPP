@@ -309,7 +309,7 @@ export async function sendInteractiveButtons(
   const url = `https://graph.facebook.com/v21.0/${fromId}/messages`;
 
   // Separate buttons by type — URL buttons need a completely different WA API format
-  const urlButtons = (buttons || []).filter((b) => b.type === 'url');
+  const urlButtons = (buttons || []).filter((b) => b.type === 'url' || b.type === 'form');
   const phoneButtons = (buttons || []).filter((b) => b.type === 'phone');
   const replyButtons = (buttons || []).filter((b) => !b.type || b.type === 'reply');
 

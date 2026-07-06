@@ -12,6 +12,7 @@ import {
   getBusinessProfile,
   updateBusinessProfile,
   getTemplates,
+  getTemplateContext,
   validateTemplate,
   createTemplate,
   deleteTemplate,
@@ -19,7 +20,7 @@ import {
 } from "../controllers/whatsapp.controller.js";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
 // Base path: /api/whatsapp
 
@@ -44,6 +45,7 @@ router.patch(
 );
 
 router.get("/templates", authMiddleware, getTemplates);
+router.get("/template-context", authMiddleware, getTemplateContext);
 router.get("/templates/library", authMiddleware, getTemplateLibrary);
 router.post("/templates/validate", authMiddleware, validateTemplate);
 router.post(

@@ -17,8 +17,9 @@ import {
   uploadMetaProfilePicture,
   updateMetaBusinessProfile,
 } from '../services/meta.service.js';
+import { buildMetaTemplatePayload } from '../utils/templateBuilder.js';
 
-const GRAPH_API_VERSION = process.env.META_API_VERSION || "v20.0";
+const GRAPH_API_VERSION = process.env.META_GRAPH_VERSION || process.env.META_API_VERSION || "v21.0";
 
 export async function getNumberRequests(req: any, res: Response) {
   const orgId = req.organization_id;
@@ -699,9 +700,98 @@ export async function getTemplates(req: any, res: Response) {
   }
 }
 
+export async function getTemplateContext(req: any, res: Response) {
+  const orgId = req.organization_id;
+  try {
+    if (!orgId) return res.status(400).json({ error: 'No organization found' });
+    const { data: accounts } = await supabase
+      .from('w_wa_accounts')
+      .select('id, phone_number_id, display_phone_number, whatsapp_business_account_id, access_token_encrypted, status')
+      .eq('organization_id', orgId)
+      .neq('status', 'disconnected')
+      .not('whatsapp_business_account_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const account = accounts?.[0];
+    if (!account) return res.status(400).json({ error: 'No connected Meta account found' });
+
+    const token = decryptToken(account.access_token_encrypted);
+    const headers = { Authorization: `Bearer ${token}` };
+    const base = `https://graph.facebook.com/${GRAPH_API_VERSION}/${account.whatsapp_business_account_id}`;
+    const [catalogResponse, flowResponse] = await Promise.all([
+      fetch(`${base}/product_catalogs?fields=id,name&limit=100`, { headers }),
+      fetch(`${base}/flows?fields=id,name,status,categories,validation_errors,json_version&limit=100`, { headers }),
+    ]);
+    const [catalogJson, flowJson] = await Promise.all([
+      catalogResponse.json().catch(() => ({})),
+      flowResponse.json().catch(() => ({})),
+    ]);
+    const catalogs = catalogResponse.ok ? (catalogJson.data || []) : [];
+    const publishedFlows = flowResponse.ok
+      ? (flowJson.data || []).filter((flow: any) => String(flow.status).toUpperCase() === 'PUBLISHED')
+      : [];
+    const flows = await Promise.all(publishedFlows.map(async (flow: any) => {
+      try {
+        const assetsResponse = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${flow.id}/assets`, { headers });
+        const assetsJson: any = await assetsResponse.json();
+        const flowAsset = assetsJson.data?.find((asset: any) => asset.asset_type === 'FLOW_JSON' || asset.name === 'flow.json');
+        if (!assetsResponse.ok || !flowAsset?.download_url) return { ...flow, screens: [] };
+        const definitionResponse = await fetch(flowAsset.download_url, { headers });
+        const definition: any = await definitionResponse.json();
+        return {
+          ...flow,
+          screens: Array.isArray(definition.screens)
+            ? definition.screens.map((screen: any) => ({ id: screen.id, title: screen.title || screen.id }))
+            : [],
+        };
+      } catch {
+        return { ...flow, screens: [] };
+      }
+    }));
+    const callingEnabled = process.env.META_WHATSAPP_CALLING_ENABLED === 'true';
+
+    res.json({
+      account: {
+        id: account.id,
+        waba_id: account.whatsapp_business_account_id,
+        phone_number_id: account.phone_number_id,
+        display_phone_number: account.display_phone_number,
+      },
+      catalogs,
+      flows,
+      capabilities: {
+        DEFAULT: { enabled: true },
+        AUTHENTICATION: { enabled: true },
+        CATALOG: { enabled: catalogs.length > 0, reason: catalogs.length ? null : 'Connect a Meta commerce catalog to this WhatsApp account first.' },
+        FLOW: { enabled: flows.length > 0, reason: flows.length ? null : 'Publish a Meta WhatsApp Flow before creating this template.' },
+        CALL_PERMISSION_REQUEST: {
+          enabled: callingEnabled,
+          reason: callingEnabled ? null : 'WhatsApp Calling eligibility has not been enabled for this business number.',
+        },
+      },
+      discovery_warnings: [
+        ...(!catalogResponse.ok ? ['Meta catalog discovery is unavailable for this account.'] : []),
+        ...(!flowResponse.ok ? ['Meta Flow discovery is unavailable for this account.'] : []),
+      ],
+    });
+  } catch (err: any) {
+    console.error('[Templates] Context error:', err);
+    res.status(500).json({ error: err.message || 'Failed to load template setup data' });
+  }
+}
+
 export async function validateTemplate(req: any, res: Response) {
   try {
-    const result = validateWhatsappTemplatePayload(req.body || {});
+    const result = req.body?.template_type
+      ? buildMetaTemplatePayload({
+          name: req.body.name,
+          category: req.body.category,
+          language: req.body.language,
+          templateType: req.body.template_type,
+          components: req.body.components,
+          typeConfig: req.body.type_config,
+        })
+      : validateWhatsappTemplatePayload(req.body || {});
     res.json(result);
   } catch (err: any) {
     console.error("Validate Template Error:", err);
@@ -714,6 +804,7 @@ export async function validateTemplate(req: any, res: Response) {
 export async function createTemplate(req: any, res: Response) {
   const orgId = req.organization_id;
   const { name, category, language, components } = req.body;
+  const templateType = String(req.body.template_type || 'DEFAULT').toUpperCase();
   const file = req.file;
 
   try {
@@ -736,20 +827,32 @@ export async function createTemplate(req: any, res: Response) {
     const waba_id = account.whatsapp_business_account_id;
 
     let parsedComponents = [];
+    let typeConfig: Record<string, any> = {};
     try {
       parsedComponents = JSON.parse(components || '[]');
+      typeConfig = req.body.type_config ? JSON.parse(req.body.type_config) : {};
     } catch (e) {
-      return res.status(400).json({ error: 'Invalid components format' });
+      return res.status(400).json({ error: 'Invalid template components or type configuration.' });
     }
 
     // Enrich template variables with realistic sample values before Meta validation.
     parsedComponents = enrichTemplateExamplesWithRealisticSamples(parsedComponents);
 
     if (file) {
+      const headerFormat = parsedComponents.find((component: any) => component?.type === 'HEADER')?.format;
+      const mediaRules: Record<string, { max: number; types: RegExp }> = {
+        IMAGE: { max: 5 * 1024 * 1024, types: /^image\/(jpeg|png)$/ },
+        VIDEO: { max: 16 * 1024 * 1024, types: /^video\/mp4$/ },
+        DOCUMENT: { max: 100 * 1024 * 1024, types: /^(application\/pdf|application\/msword|application\/vnd\.|application\/octet-stream)/ },
+      };
+      const rule = mediaRules[headerFormat];
+      if (!rule || file.size > rule.max || !rule.types.test(file.mimetype)) {
+        return res.status(400).json({ error: 'Uploaded header file type or size is not supported by Meta.' });
+      }
       const appId = process.env.META_APP_ID;
       if (!appId) throw new Error('META_APP_ID is not configured. Cannot upload media for templates.');
 
-      const initUrl = new URL(`https://graph.facebook.com/v20.0/${appId}/uploads`);
+      const initUrl = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/${appId}/uploads`);
       initUrl.searchParams.set('file_length', String(file.size));
       initUrl.searchParams.set('file_type', file.mimetype);
       initUrl.searchParams.set('access_token', token);
@@ -760,7 +863,7 @@ export async function createTemplate(req: any, res: Response) {
 
       const uploadSessionId = initJson.id;
 
-      const uploadRes = await fetch(`https://graph.facebook.com/v20.0/${uploadSessionId}`, {
+      const uploadRes = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${uploadSessionId}`, {
         method: 'POST',
         headers: {
           Authorization: `OAuth ${token}`,
@@ -780,78 +883,60 @@ export async function createTemplate(req: any, res: Response) {
       }
     }
 
-    const payload = { name, category, language, components: parsedComponents };
-    const validation = validateWhatsappTemplatePayload(payload);
-    if (!validation.canSubmit) {
+    const built = buildMetaTemplatePayload({
+      name,
+      category: String(category || '').toUpperCase(),
+      language,
+      templateType,
+      components: parsedComponents,
+      typeConfig: {
+        ...typeConfig,
+        calling_enabled: process.env.META_WHATSAPP_CALLING_ENABLED === 'true',
+      },
+    });
+    if (!built.canSubmit) {
       return res.status(400).json({
         error: 'Template has approval-risk issues. Fix the highlighted fields before submitting to Meta.',
-        validation,
+        validation: built,
       });
     }
+    if (templateType === 'CATALOG' || templateType === 'FLOW') {
+      const assetUrl = templateType === 'CATALOG'
+        ? `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/product_catalogs?fields=id&limit=100`
+        : `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/flows?fields=id,status&limit=100`;
+      const assetResponse = await fetch(assetUrl, { headers: { Authorization: `Bearer ${token}` } });
+      const assetJson: any = await assetResponse.json().catch(() => ({}));
+      const requestedId = String(templateType === 'CATALOG' ? typeConfig.catalog_id : typeConfig.flow_id);
+      const asset = assetJson.data?.find((item: any) => String(item.id) === requestedId);
+      const valid = assetResponse.ok && asset && (templateType !== 'FLOW' || String(asset.status).toUpperCase() === 'PUBLISHED');
+      if (!valid) {
+        return res.status(400).json({
+          error: templateType === 'CATALOG'
+            ? 'The selected catalog is not connected to this WhatsApp account.'
+            : 'The selected Meta Flow is not published for this WhatsApp account.',
+        });
+      }
+    }
+    const validation = templateType === 'AUTHENTICATION'
+      ? { normalized: built.payload, issues: built.issues, riskScore: 0 }
+      : validateWhatsappTemplatePayload(built.payload);
 
     const existingRes = await fetch(
-      `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?name=${encodeURIComponent(validation.normalized.name)}&fields=id,name,language,status&limit=50`,
+      `https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates?name=${encodeURIComponent(built.payload.name)}&fields=id,name,language,status&limit=50`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const existingJson = await existingRes.json().catch(() => ({}));
-    if (existingRes.ok && Array.isArray(existingJson.data) && existingJson.data.some((tpl: any) => tpl.name === validation.normalized.name && tpl.language === validation.normalized.language)) {
+    if (existingRes.ok && Array.isArray(existingJson.data) && existingJson.data.some((tpl: any) => tpl.name === built.payload.name && tpl.language === built.payload.language)) {
       return res.status(409).json({
-        error: `Template "${validation.normalized.name}" already exists for ${validation.normalized.language}. Use a new template name before submitting.`,
+        error: `Template "${built.payload.name}" already exists for ${built.payload.language}. Use a new template name before submitting.`,
         code: 'DUPLICATE_TEMPLATE_NAME',
-        suggested_name: `${validation.normalized.name}_${Date.now().toString().slice(-6)}`,
+        suggested_name: `${built.payload.name}_${Date.now().toString().slice(-6)}`,
       });
     }
 
-    let metaComponents = parsedComponents;
-    if (category === 'AUTHENTICATION') {
-      const hasSecurityWording = parsedComponents.some((c: any) =>
-        c.type === 'BODY' && typeof c.text === 'string' &&
-        /\b(security|share|anyone)\b/i.test(c.text)
-      );
+    const metaPayload = built.payload;
 
-      const authComponents: any[] = [
-        {
-          type: 'BODY',
-          add_security_recommendation: hasSecurityWording
-        }
-      ];
-
-      const buttonsComp = parsedComponents.find((c: any) => c.type === 'BUTTONS');
-      const copyCodeBtn = buttonsComp?.buttons?.find((b: any) =>
-        String(b.type).toUpperCase() === 'COPY_CODE' ||
-        String(b.text).toLowerCase().includes('copy')
-      );
-
-      if (copyCodeBtn) {
-        authComponents.push({
-          type: 'BUTTONS',
-          buttons: [
-            {
-              type: 'OTP',
-              otp_type: 'COPY_CODE',
-              text: copyCodeBtn.text || 'Copy Code'
-            }
-          ]
-        });
-      } else {
-        authComponents.push({
-          type: 'BUTTONS',
-          buttons: [
-            {
-              type: 'OTP',
-              otp_type: 'COPY_CODE',
-              text: 'Copy Code'
-            }
-          ]
-        });
-      }
-
-      metaComponents = authComponents;
-    }
-
-    const metaPayload = { name, category, language, components: metaComponents };
-
-    const response = await fetch(`https://graph.facebook.com/v20.0/${waba_id}/message_templates`, {
+    const response = await fetch(`https://graph.facebook.com/${GRAPH_API_VERSION}/${waba_id}/message_templates`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,

@@ -32,13 +32,12 @@ function appendFormToken(urlStr: string, token: string): string {
   try {
     const parsed = new URL(cleanUrl);
     parsed.searchParams.set('token', token);
-    let result = parsed.toString();
-    if (!hasProtocol) {
-      result = result.replace(/^https?:\/\//i, '');
-    }
-    return result;
+    return parsed.toString();
   } catch {
     const separator = urlStr.includes('?') ? '&' : '?';
+    if (!hasProtocol) {
+      return `https://${urlStr}${separator}token=${encodeURIComponent(token)}`;
+    }
     return `${urlStr}${separator}token=${encodeURIComponent(token)}`;
   }
 }

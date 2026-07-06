@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Search, Filter, MoreHorizontal, FileText, CheckCircle, Clock, XCircle, Image as ImageIcon, Video, Trash2, Link as LinkIcon, Phone, AlertCircle, RefreshCw, UploadCloud, Type, MessageSquareText, MousePointerClick, ChevronDown, Loader2, Check, CheckCheck, MessageSquare, Image, ExternalLink, ArrowRight, ShieldCheck, HelpCircle, Tag, Building2, Target, Sparkles, LockKeyhole, CalendarDays } from 'lucide-react'
 import Modal from '../components/Modal'
@@ -80,6 +81,7 @@ const TOPIC_LABELS = {
 };
 
 export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
+    const navigate = useNavigate();
     const { session, apiCall } = useAuth();
     const { alertDialog, confirmDialog } = useDialog();
     const [viewMode, setViewMode] = useState(defaultView);
@@ -110,10 +112,12 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
             const json = await res.json().catch(() => ({}))
             if (!res.ok) throw new Error(json.error || 'Could not load the Meta template library.')
             return (json.data || []).map(item => {
-                const components = []
-                if (item.header) components.push({ type: 'HEADER', format: 'TEXT', text: item.header, example: item.header_params?.length ? { header_text: item.header_params } : undefined })
-                if (item.body) components.push({ type: 'BODY', text: item.body, example: item.body_params?.length ? { body_text: [item.body_params] } : undefined })
-                if (item.buttons?.length) components.push({ type: 'BUTTONS', buttons: item.buttons })
+                let components = Array.isArray(item.components) ? [...item.components] : []
+                if (components.length === 0) {
+                    if (item.header) components.push({ type: 'HEADER', format: 'TEXT', text: item.header, example: item.header_params?.length ? { header_text: item.header_params } : undefined })
+                    if (item.body) components.push({ type: 'BODY', text: item.body, example: item.body_params?.length ? { body_text: [item.body_params] } : undefined })
+                    if (item.buttons?.length) components.push({ type: 'BUTTONS', buttons: item.buttons })
+                }
                 return {
                     ...item,
                     id: `meta-${item.id || `${item.name}-${item.language}`}`,
@@ -581,7 +585,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                 </div>
                 <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end">
                     <button
-                        onClick={() => setIsCreateOpen(true)}
+                        onClick={() => navigate('/templates/new')}
                         data-tour="templates-create"
                         className="inline-flex h-9 w-full flex-1 items-center justify-center gap-2 rounded-md bg-[#0b74c9] px-4 text-[12px] font-semibold text-white shadow-sm transition hover:bg-[#0867b4] md:w-auto md:flex-initial"
                     >
@@ -838,7 +842,7 @@ export default function Templates({ defaultView = 'MY_TEMPLATES' }) {
                                 {activeStatus === 'DRAFT' && "Locally saved drafts and templates rejected by Meta will appear here."}
                             </p>
                             <button
-                                onClick={() => setIsCreateOpen(true)}
+                                onClick={() => navigate('/templates/new')}
                                 className="mt-6 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] transition-all shadow-[0_1px_2px_rgba(0,0,0,0.05)]"
                             >
                                 <Plus className="h-3.5 w-3.5" />
