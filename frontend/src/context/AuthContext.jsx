@@ -78,7 +78,7 @@ export function AuthProvider({ children }) {
 
     const fetchMemberProfile = async (token, userId) => {
         // Avoid re-fetching on TOKEN_REFRESHED (tab focus) — only fetch when user actually changes
-        const profileKey = `${userId}:${loginType || 'owner'}`
+        const profileKey = `${userId}:${loginType || 'owner'}:${token}`
         if (fetchedForProfileKey.current === profileKey && userRole !== null) return
         fetchedForProfileKey.current = profileKey
         setUserRole(null)
@@ -86,7 +86,7 @@ export function AuthProvider({ children }) {
         setIsProfileLoading(true)
         try {
             const res = await fetch(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/team/my-profile`, {
-                headers: { 
+                headers: {
                     Authorization: `Bearer ${token}`,
                     'X-Auth-Portal': loginType
                 }
@@ -176,7 +176,7 @@ export function AuthProvider({ children }) {
             setMemberProfile(null)
             setIsProfileLoading(false)
         }
-    }, [session?.user?.id, loginType])
+    }, [session?.user?.id, session?.access_token, loginType])
 
     const updateMyOnlineStatus = async (isOnline) => {
         const token = session?.access_token
@@ -215,7 +215,7 @@ export function AuthProvider({ children }) {
                     },
                     body: JSON.stringify({ is_online: false }),
                     keepalive: true
-                }).catch(() => {});
+                }).catch(() => { });
             };
 
             window.addEventListener('beforeunload', handleUnload);
