@@ -1179,17 +1179,21 @@ export default function Broadcast() {
                         <div className="flex-1">
                         {currentStep === 1 && (
                             <div className="grid gap-0 lg:grid-cols-[minmax(260px,0.8fr)_minmax(420px,1.2fr)] w-full">
-                                <div className="bg-gray-50/80 p-6 md:p-8 lg:p-10 text-gray-955 rounded-t-2xl lg:rounded-t-none lg:rounded-l-2xl border-b border-gray-200 lg:border-b-0 lg:border-r flex flex-col justify-center min-h-[280px]">
-                                    <div className="flex h-full flex-col justify-center">
-                                        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white border border-gray-200 text-indigo-600 shadow-sm">
+                                <div className="relative overflow-hidden bg-gradient-to-br from-[#eef6ff] via-[#e0e7ff] to-[#f3f4f6] p-6 md:p-8 lg:p-10 text-slate-800 rounded-t-2xl lg:rounded-t-none lg:rounded-l-2xl border-b border-gray-200 lg:border-b-0 lg:border-r flex flex-col justify-center min-h-[280px]">
+                                    {/* Muted decorative blurs */}
+                                    <div className="absolute top-0 right-0 -mr-20 -mt-20 w-60 h-60 rounded-full bg-blue-400/10 blur-3xl pointer-events-none"></div>
+                                    <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-60 h-60 rounded-full bg-indigo-400/10 blur-3xl pointer-events-none"></div>
+
+                                    <div className="relative z-10 flex h-full flex-col justify-center">
+                                        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/70 backdrop-blur-md border border-white/80 text-indigo-650 shadow-sm">
                                             <LayoutGrid className="h-5 w-5" />
                                         </div>
-                                        <h3 className="mt-5 text-lg md:text-xl font-bold text-gray-900 tracking-tight">Campaign Setup</h3>
-                                        <p className="mt-2.5 text-xs md:text-sm text-gray-500 leading-relaxed">
+                                        <h3 className="mt-5 text-lg md:text-xl font-bold text-slate-800 tracking-tight">Campaign Setup</h3>
+                                        <p className="mt-2.5 text-xs md:text-sm text-slate-600 leading-relaxed font-medium">
                                             Name your campaign, select a verified WhatsApp business account, and schedule your broadcast delivery.
                                         </p>
-                                        <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 text-xs text-gray-650 leading-relaxed font-semibold shadow-sm flex gap-2.5 items-start">
-                                            <ShieldCheck className="h-4 w-4 shrink-0 text-indigo-500 mt-0.5" />
+                                        <div className="mt-6 rounded-xl border border-white/60 bg-white/40 backdrop-blur-md p-4 text-xs text-slate-700 leading-relaxed font-semibold shadow-sm flex gap-2.5 items-start">
+                                            <ShieldCheck className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
                                             <span>
                                                 Official Meta API connection is required. Templates must be pre-approved in the Meta WhatsApp Manager dashboard.
                                             </span>
