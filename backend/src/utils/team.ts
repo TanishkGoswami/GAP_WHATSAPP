@@ -72,13 +72,12 @@ export async function sendTeamInviteEmail(params: {
                     
                     <!-- Header Wordmark -->
                     <div class="content-padding" style="padding: 32px 48px 24px 48px; text-align: center; border-bottom: 1px solid #e2e8f0;">
-                        <div style="display: inline-block; vertical-align: middle; text-align: left;">
-                            <img src="${logoUrl}" alt="GAP FlowPilot Logo" width="36" height="36" style="width: 36px; height: 36px; display: inline-block; vertical-align: middle; border: 0; margin-right: 12px;" />
-                            <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 28px; line-height: 36px; color: #0f172a; font-style: italic; display: inline-block; vertical-align: middle; font-weight: bold;">
-                                GAP FlowPilot
-                            </span>
-                        </div>
-                        <div style="font-size: 10px; tracking-widest; letter-spacing: 0.25em; font-weight: 700; color: #047857; margin-top: 8px; text-transform: uppercase;">
+                        <img src="${logoUrl}" alt="GAP FlowPilot Logo" width="52" height="52" style="width: 52px; height: 52px; margin-bottom: 12px; display: inline-block; border: 0;" />
+                        <br />
+                        <span style="font-family: 'Instrument Serif', Georgia, serif; font-size: 28px; line-height: 0.95; tracking-tight; color: #0f172a; font-style: italic; display: inline-block;">
+                            GAP FlowPilot
+                        </span>
+                        <div style="font-size: 11px; tracking-widest; letter-spacing: 0.22em; font-weight: 700; color: #047857; margin-top: 4px; text-transform: uppercase;">
                             INVITATION
                         </div>
                     </div>
