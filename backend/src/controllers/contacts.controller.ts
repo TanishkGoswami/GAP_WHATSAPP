@@ -60,8 +60,25 @@ export async function getContacts(req: any, res: Response) {
         let { data, error } = await query;
         if (error) throw error;
 
+        // Fetch broadcast message counts grouped by contact_id
+        const { data: broadcastMessages, error: broadcastErr } = await supabase
+            .from('w_messages')
+            .select('contact_id')
+            .eq('organization_id', organization_id)
+            .eq('automation_source', 'broadcast');
+
+        const broadcastCounts: Record<string, number> = {};
+        if (!broadcastErr && broadcastMessages) {
+            for (const msg of broadcastMessages) {
+                if (msg.contact_id) {
+                    broadcastCounts[msg.contact_id] = (broadcastCounts[msg.contact_id] || 0) + 1;
+                }
+            }
+        }
+
         const rows = (data || []).map((c: any) => {
             const next = { ...c };
+            next.broadcast_count = broadcastCounts[c.id] || 0;
             const phone = String(next.phone || '').trim();
             if (!phone) {
                 const derived = derivePhoneForStorage(next.wa_id);

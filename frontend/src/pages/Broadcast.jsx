@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet, Pause, Play, Phone, MessageSquare, ShieldCheck, TrendingUp } from 'lucide-react'
+import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet, Pause, Play, Phone, MessageSquare, ShieldCheck, TrendingUp, Search, X } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
@@ -220,13 +220,49 @@ export default function Broadcast() {
     const [headerMediaUrl, setHeaderMediaUrl] = useState('')
     const [isHeaderUploading, setIsHeaderUploading] = useState(false)
 
-    const filteredContacts = campaign.audience_type === 'CSV_UPLOAD'
+    // Popup custom selection states
+    const [isContactsPopupOpen, setIsContactsPopupOpen] = useState(false)
+    const [selectedContactKeys, setSelectedContactKeys] = useState(null)
+    const [tempSelectedKeys, setTempSelectedKeys] = useState(new Set())
+    const [popupSearch, setPopupSearch] = useState('')
+    const [popupFilter, setPopupFilter] = useState('all') // 'all' | 'sent' | 'unsent'
+
+    useEffect(() => {
+        setSelectedContactKeys(null);
+    }, [campaign.audience_type, campaign.audience_tag, csvData]);
+
+    const getContactKey = (c) => c.id || c.phone || c.wa_id;
+
+    const baseAudienceContacts = campaign.audience_type === 'CSV_UPLOAD'
         ? (csvData || [])
         : campaign.audience_type === 'tag' && campaign.audience_tag
             ? contacts.filter(c => Array.isArray(c.tags) && c.tags.includes(campaign.audience_tag))
             : campaign.audience_type === 'saved'
                 ? contacts.filter(c => c.saved_at != null)
                 : contacts;
+
+    const filteredContacts = selectedContactKeys
+        ? baseAudienceContacts.filter(c => selectedContactKeys.has(getContactKey(c)))
+        : baseAudienceContacts;
+
+    const visibleFilteredContacts = baseAudienceContacts.filter(c => {
+        // Search filter
+        const query = popupSearch.trim().toLowerCase();
+        const matchesSearch = !query || 
+            String(c.custom_name || c.name || '').toLowerCase().includes(query) ||
+            String(c.phone || c.wa_id || '').includes(query);
+        
+        // Tab/sent filter
+        let matchesTab = true;
+        if (popupFilter === 'sent') {
+            matchesTab = Number(c.broadcast_count || 0) > 0;
+        } else if (popupFilter === 'unsent') {
+            matchesTab = !c.broadcast_count || Number(c.broadcast_count) === 0;
+        }
+        
+        return matchesSearch && matchesTab;
+    });
+
     const availableCustomFields = [...new Set(
         filteredContacts.flatMap(contact => Object.keys(contact?.custom_fields || {}))
     )].sort((a, b) => a.localeCompare(b))
@@ -238,7 +274,21 @@ export default function Broadcast() {
 
         apiCall(`${API_URL}/api/whatsapp/accounts`)
             .then(res => res.json())
-            .then(data => { setWaAccounts(Array.isArray(data) ? data : []); setIsLoading(p => ({ ...p, accounts: false })) })
+            .then(data => {
+                const accounts = Array.isArray(data) ? data : [];
+                setWaAccounts(accounts);
+                setIsLoading(p => ({ ...p, accounts: false }));
+                
+                const validAccounts = accounts.filter(acc => acc.whatsapp_business_account_id);
+                if (validAccounts.length > 0) {
+                    setCampaign(prev => {
+                        if (!prev.wa_account_id) {
+                            return { ...prev, wa_account_id: validAccounts[0].id };
+                        }
+                        return prev;
+                    });
+                }
+            })
             .catch(() => setIsLoading(p => ({ ...p, accounts: false })));
 
         apiCall(`${API_URL}/api/broadcasts/tags`)
@@ -340,9 +390,9 @@ export default function Broadcast() {
                 const res = await apiCall(`${API_URL}/api/broadcasts/estimate`, {
                     method: 'POST',
                     body: JSON.stringify({
-                        audience_tag: campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag,
-                        audience_type: campaign.audience_type === 'CSV_UPLOAD' ? null : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag'),
-                        csv_data: campaign.audience_type === 'CSV_UPLOAD' ? csvData : null,
+                        audience_tag: selectedContactKeys ? null : (campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag),
+                        audience_type: selectedContactKeys ? 'CSV_UPLOAD' : (campaign.audience_type === 'CSV_UPLOAD' ? null : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag')),
+                        csv_data: selectedContactKeys ? filteredContacts : (campaign.audience_type === 'CSV_UPLOAD' ? csvData : null),
                         template_category: selectedTemplateCategory,
                     })
                 });
@@ -361,7 +411,7 @@ export default function Broadcast() {
 
         fetchEstimate();
         return () => { cancelled = true; };
-    }, [currentStep, token, campaign.audience_type, campaign.audience_tag, campaign.template_name, selectedTemplateCategory, csvData]);
+    }, [currentStep, token, campaign.audience_type, campaign.audience_tag, campaign.template_name, selectedTemplateCategory, csvData, selectedContactKeys]);
 
     const cancelCampaign = async (id) => {
         const confirmed = await confirmDialog('Are you sure you want to stop this campaign? It will be permanently cancelled.', {
@@ -660,9 +710,9 @@ export default function Broadcast() {
         const payload = {
             ...campaign,
             scheduled_at: formattedScheduledAt,
-            audience_tag: campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag,
-            audience_type: campaign.audience_type === 'CSV_UPLOAD' ? 'CSV_UPLOAD' : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag'),
-            csv_data: campaign.audience_type === 'CSV_UPLOAD' ? csvData : null,
+            audience_tag: selectedContactKeys ? null : (campaign.audience_type === 'CSV_UPLOAD' || campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? null : campaign.audience_tag),
+            audience_type: selectedContactKeys ? 'CSV_UPLOAD' : (campaign.audience_type === 'CSV_UPLOAD' ? 'CSV_UPLOAD' : (campaign.audience_type === 'all' || campaign.audience_type === 'saved' ? campaign.audience_type : 'tag')),
+            csv_data: selectedContactKeys ? filteredContacts : (campaign.audience_type === 'CSV_UPLOAD' ? csvData : null),
             idempotency_key: launchIdempotencyKey.current,
             variable_mapping: finalMapping,
             required_header_type: needsHeaderMedia ? selectedHeaderFormat.toLowerCase() : undefined,
@@ -694,6 +744,7 @@ export default function Broadcast() {
         setCurrentStep(1);
         setCsvData(null);
         setCsvFileName('');
+        setSelectedContactKeys(null);
         setCampaign({
             ...campaign,
             name: '',
@@ -1127,16 +1178,25 @@ export default function Broadcast() {
                     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm flex flex-col overflow-hidden">
                         <div className="flex-1">
                         {currentStep === 1 && (
-                            <div className="mx-auto grid max-w-4xl gap-0 lg:grid-cols-[minmax(260px,0.8fr)_minmax(420px,1.2fr)]">
-                                <div className="border-b border-gray-100 bg-gray-50 p-4 md:p-6 lg:border-b-0 lg:border-r lg:p-8">
-                                    <div className="flex h-full flex-col justify-center">
-                                        <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-[#eef7ff] text-[#0064b7]">
+                            <div className="grid gap-0 lg:grid-cols-[minmax(260px,0.8fr)_minmax(420px,1.2fr)] w-full">
+                                <div className="relative overflow-hidden bg-gradient-to-br from-[#eef6ff] via-[#e0e7ff] to-[#f3f4f6] p-6 md:p-8 lg:p-10 text-slate-800 rounded-t-2xl lg:rounded-t-none lg:rounded-l-2xl border-b border-gray-200 lg:border-b-0 lg:border-r flex flex-col justify-center min-h-[280px]">
+                                    {/* Muted decorative blurs */}
+                                    <div className="absolute top-0 right-0 -mr-20 -mt-20 w-60 h-60 rounded-full bg-blue-400/10 blur-3xl pointer-events-none"></div>
+                                    <div className="absolute bottom-0 left-0 -ml-20 -mb-20 w-60 h-60 rounded-full bg-indigo-400/10 blur-3xl pointer-events-none"></div>
+
+                                    <div className="relative z-10 flex h-full flex-col justify-center">
+                                        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-white/70 backdrop-blur-md border border-white/80 text-indigo-650 shadow-sm">
                                             <LayoutGrid className="h-5 w-5" />
                                         </div>
-                                        <h2 className="mt-4 md:mt-5 text-lg md:text-xl font-semibold text-gray-950">Campaign setup</h2>
-                                        <p className="mt-2 md:mt-3 text-xs md:text-sm leading-relaxed text-gray-600">Name your campaign, choose an official WhatsApp account, and decide when it should send.</p>
-                                        <div className="mt-4 md:mt-6 rounded-lg border border-blue-100 bg-blue-50 p-3 md:p-4 text-xs md:text-sm leading-relaxed text-blue-900">
-                                            Broadcasts require an official Meta API account with approved template access.
+                                        <h3 className="mt-5 text-lg md:text-xl font-bold text-slate-800 tracking-tight">Campaign Setup</h3>
+                                        <p className="mt-2.5 text-xs md:text-sm text-slate-600 leading-relaxed font-medium">
+                                            Name your campaign, select a verified WhatsApp business account, and schedule your broadcast delivery.
+                                        </p>
+                                        <div className="mt-6 rounded-xl border border-white/60 bg-white/40 backdrop-blur-md p-4 text-xs text-slate-700 leading-relaxed font-semibold shadow-sm flex gap-2.5 items-start">
+                                            <ShieldCheck className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
+                                            <span>
+                                                Official Meta API connection is required. Templates must be pre-approved in the Meta WhatsApp Manager dashboard.
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -1278,7 +1338,7 @@ export default function Broadcast() {
                                         <h2 className="text-xl font-semibold text-gray-950">Select Audience</h2>
                                         <p className="mt-1 text-sm text-gray-500">Choose exactly who should receive this broadcast.</p>
                                     </div>
-                                    <div className="rounded-full border border-gray-200 bg-gray-50 px-3 py-1 text-sm font-semibold text-gray-700">
+                                    <div className={`rounded-full border px-3 py-1 text-sm font-semibold transition-all ${selectedContactKeys ? 'border-emerald-200 bg-emerald-50 text-emerald-700 shadow-sm' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
                                         {filteredContacts.length} recipients selected
                                     </div>
                                 </div>
@@ -1406,10 +1466,44 @@ export default function Broadcast() {
                                     )}
                                 </div>
 
-                                <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50">
-                                    <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-                                        <h3 className="text-sm font-semibold text-gray-800">Preview Audience</h3>
-                                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 ring-1 ring-gray-200">{filteredContacts.length} contacts</span>
+                                <div className="mt-6 rounded-xl border border-gray-200 bg-gray-50 shadow-sm overflow-visible">
+                                    <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-3 bg-white rounded-t-xl">
+                                        <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                                            <Users className="w-4 h-4 text-gray-400" />
+                                            Preview Audience
+                                        </h3>
+                                        <div className="flex items-center gap-2">
+                                            {selectedContactKeys && (
+                                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-100/60 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                                                    Customized
+                                                </span>
+                                            )}
+                                            {baseAudienceContacts.length > 0 && (
+                                                <div className="relative group flex items-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const keysSet = new Set(filteredContacts.map(getContactKey));
+                                                            setTempSelectedKeys(keysSet);
+                                                            setPopupSearch('');
+                                                            setPopupFilter('all');
+                                                            setIsContactsPopupOpen(true);
+                                                        }}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 hover:text-white bg-indigo-50 hover:bg-indigo-600 border border-indigo-100/80 hover:border-indigo-600 rounded-lg shadow-sm transition-all duration-200"
+                                                    >
+                                                        <Users className="w-3.5 h-3.5" />
+                                                        Customize List
+                                                    </button>
+                                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex flex-col items-center pointer-events-none z-30">
+                                                        <div className="bg-gray-900 text-white text-[10px] font-medium px-2.5 py-1.5 rounded-lg shadow-lg whitespace-nowrap border border-gray-800">
+                                                            Select or deselect specific contacts for this broadcast
+                                                        </div>
+                                                        <div className="w-1.5 h-1.5 bg-gray-900 rotate-45 -mt-1 border-r border-b border-gray-800"></div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 ring-1 ring-gray-200">{filteredContacts.length} contacts</span>
+                                        </div>
                                     </div>
                                     <div className="space-y-2 p-4">
                                         {filteredContacts.slice(0, 5).map((c, i) => (
@@ -1428,6 +1522,162 @@ export default function Broadcast() {
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Custom contacts selection popup modal */}
+                                {isContactsPopupOpen && (
+                                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-950/40 backdrop-blur-sm animate-fade-in">
+                                        <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-gray-100 flex flex-col max-h-[80vh] overflow-hidden">
+                                            
+                                            {/* Header */}
+                                            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                                                <div>
+                                                    <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                                                        <Users className="h-5 w-5 text-indigo-600" />
+                                                        Select Target Contacts
+                                                    </h3>
+                                                    <p className="text-xs text-gray-500 mt-1">Select individual contacts or filter list by campaign history.</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsContactsPopupOpen(false)}
+                                                    className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1.5 rounded-lg transition-colors"
+                                                >
+                                                    <X className="h-5 w-5" />
+                                                </button>
+                                            </div>
+
+                                            {/* Search and Filters */}
+                                            <div className="px-6 py-3 bg-gray-50 border-b border-gray-200 flex flex-col gap-3 sm:flex-row sm:items-center">
+                                                <div className="relative flex-1">
+                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Search contacts..."
+                                                        value={popupSearch}
+                                                        onChange={(e) => setPopupSearch(e.target.value)}
+                                                        className="h-10 w-full pl-9 pr-4 text-xs rounded-lg border border-gray-300 bg-white focus:outline-none focus:border-indigo-500 transition-all"
+                                                    />
+                                                </div>
+
+                                                <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200/40">
+                                                    {[
+                                                        { id: 'all', label: 'ALL' },
+                                                        { id: 'sent', label: 'Already Sent' },
+                                                        { id: 'unsent', label: 'Not Sent' }
+                                                    ].map(tab => (
+                                                        <button
+                                                            key={tab.id}
+                                                            type="button"
+                                                            onClick={() => setPopupFilter(tab.id)}
+                                                            className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${popupFilter === tab.id ? 'bg-white shadow-sm text-indigo-700' : 'text-gray-500 hover:text-gray-700'}`}
+                                                        >
+                                                            {tab.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Contacts List */}
+                                            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-2">
+                                                <div className="flex items-center justify-between pb-2 border-b border-gray-100 text-xs text-gray-500 font-semibold">
+                                                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={visibleFilteredContacts.length > 0 && visibleFilteredContacts.every(c => tempSelectedKeys.has(getContactKey(c)))}
+                                                            onChange={(e) => {
+                                                                const nextKeys = new Set(tempSelectedKeys);
+                                                                if (e.target.checked) {
+                                                                    visibleFilteredContacts.forEach(c => nextKeys.add(getContactKey(c)));
+                                                                } else {
+                                                                    visibleFilteredContacts.forEach(c => nextKeys.delete(getContactKey(c)));
+                                                                }
+                                                                setTempSelectedKeys(nextKeys);
+                                                            }}
+                                                            className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                        />
+                                                        Select All Visible ({visibleFilteredContacts.length})
+                                                    </label>
+                                                    <span>
+                                                        {tempSelectedKeys.size} selected of {baseAudienceContacts.length}
+                                                    </span>
+                                                </div>
+
+                                                {visibleFilteredContacts.length === 0 ? (
+                                                    <div className="py-12 text-center text-xs text-gray-400">No contacts match search or filters.</div>
+                                                ) : (
+                                                    visibleFilteredContacts.map(c => {
+                                                        const key = getContactKey(c);
+                                                        const isSelected = tempSelectedKeys.has(key);
+                                                        return (
+                                                            <label
+                                                                key={key}
+                                                                className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${isSelected ? 'border-indigo-150 bg-indigo-50/10' : 'border-gray-150 bg-white hover:bg-gray-50/40'}`}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isSelected}
+                                                                    onChange={() => {
+                                                                        const nextKeys = new Set(tempSelectedKeys);
+                                                                        if (isSelected) {
+                                                                            nextKeys.delete(key);
+                                                                        } else {
+                                                                            nextKeys.add(key);
+                                                                        }
+                                                                        setTempSelectedKeys(nextKeys);
+                                                                    }}
+                                                                    className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 shrink-0"
+                                                                />
+                                                                <div className="min-w-0 flex-1 flex items-center justify-between gap-4">
+                                                                    <div className="min-w-0">
+                                                                        <span className="block text-sm font-semibold text-gray-900 truncate">
+                                                                            {c.custom_name || c.name || 'Unknown'}
+                                                                        </span>
+                                                                        <span className="block text-xs text-gray-500 font-mono mt-0.5">
+                                                                            {c.phone || c.wa_id}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 shrink-0">
+                                                                        {c.broadcast_count > 0 ? (
+                                                                            <span className="inline-flex items-center rounded bg-indigo-50 border border-indigo-100/50 px-2 py-0.5 text-[9px] font-bold text-indigo-600">
+                                                                                Broadcasts: {c.broadcast_count}
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="inline-flex items-center rounded bg-gray-50 border border-gray-150 px-2 py-0.5 text-[9px] font-bold text-gray-505">
+                                                                                Not Sent
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </label>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+
+                                            {/* Footer */}
+                                            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-3">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsContactsPopupOpen(false)}
+                                                    className="h-9 rounded-lg border border-gray-300 bg-white px-4 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedContactKeys(tempSelectedKeys);
+                                                        setIsContactsPopupOpen(false);
+                                                    }}
+                                                    className="h-9 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-4 text-xs font-semibold shadow-sm transition-colors"
+                                                >
+                                                    Save Selection
+                                                </button>
+                                            </div>
+
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
