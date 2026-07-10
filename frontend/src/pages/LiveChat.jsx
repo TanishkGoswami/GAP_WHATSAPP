@@ -13,25 +13,30 @@ import AudioRecorderOrUploader from '../components/AudioRecorderOrUploader'
 import { useNotificationSound } from '../hooks/useNotificationSound'
 import TourButton from '../onboarding/TourButton'
 import { supabase } from '../supabaseClient'
-import { createAvatar } from '@dicebear/core'
-import { loreleiNeutral } from '@dicebear/collection'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 function DiceBearAvatar({ seed, className }) {
-    const avatarDataUri = useMemo(() => {
-        return createAvatar(loreleiNeutral, {
-            seed: seed || 'Unknown',
-            backgroundColor: ['b6e3f4', 'c0aede', 'd1d4f9', 'ffd5dc', 'ffdfbf'],
-        }).toDataUri();
-    }, [seed]);
+    const colorClass = getAvatarColor(seed);
+    const initial = seed ? seed.charAt(0).toUpperCase() : '?';
+
+    // Determine text sizing from classes
+    let textSize = 'text-base';
+    if (className) {
+        if (className.includes('h-8') || className.includes('h-9')) {
+            textSize = 'text-xs sm:text-sm';
+        } else if (className.includes('h-10') || className.includes('h-11')) {
+            textSize = 'text-[17px]';
+        } else if (className.includes('h-14')) {
+            textSize = 'text-xl';
+        } else if (className.includes('h-16')) {
+            textSize = 'text-2xl';
+        }
+    }
 
     return (
-        <img
-            src={avatarDataUri}
-            alt={seed || 'Avatar'}
-            className={className}
-            loading="lazy"
-        />
+        <div className={`flex items-center justify-center font-bold ${colorClass} ${className} shadow-sm`}>
+            <span className={textSize}>{initial}</span>
+        </div>
     );
 }
 
@@ -106,6 +111,25 @@ function WhatsAppSendIcon({ className = 'h-5 w-5' }) {
             <path d="M3.55 20.98 21.22 12 3.55 3.02v6.98L15.1 12 3.55 14v6.98Z" />
         </svg>
     );
+}
+
+function getAvatarColor(name) {
+    const colors = [
+        'bg-[#e0e7ff] text-[#4f46e5]', // Indigo
+        'bg-[#fee2e2] text-[#dc2626]', // Red
+        'bg-[#fef3c7] text-[#d97706]', // Amber/Orange
+        'bg-[#d1fae5] text-[#059669]', // Emerald
+        'bg-[#e0f2fe] text-[#0284c7]', // Sky Blue
+        'bg-[#f3e8ff] text-[#9333ea]', // Purple
+        'bg-[#fae8ff] text-[#c084fc]', // Fuchsia
+    ];
+    let hash = 0;
+    const str = name || '';
+    for (let i = 0; i < str.length; i++) {
+        hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % colors.length;
+    return colors[index];
 }
 
 function ForwardedIndicator() {
@@ -2772,6 +2796,8 @@ export default function LiveChat() {
             assigned: activeChats.filter(chat => !!chat.assigned_to).length,
             unassigned: activeChats.filter(chat => !chat.assigned_to).length,
             favorites: activeChats.filter(chat => hasChatLabel(chat, 'favorite')).length,
+            bot_enabled: activeChats.filter(chat => chat.botEnabled !== false).length,
+            bot_disabled: activeChats.filter(chat => chat.botEnabled === false).length,
             archived: chats.filter(chat => ['archived', 'closed'].includes(String(chat.status || '').toLowerCase())).length,
         }
     }, [chats])
@@ -2788,6 +2814,8 @@ export default function LiveChat() {
             if (chatFilter === 'assigned' && !chat.assigned_to) return false
             if (chatFilter === 'unassigned' && chat.assigned_to) return false
             if (chatFilter === 'favorites' && !hasChatLabel(chat, 'favorite')) return false
+            if (chatFilter === 'bot_enabled' && chat.botEnabled === false) return false
+            if (chatFilter === 'bot_disabled' && chat.botEnabled !== false) return false
             if (chatFilter === 'archived' && !['archived', 'closed'].includes(status)) return false
 
             if (!query) return true
@@ -3080,8 +3108,8 @@ export default function LiveChat() {
                             <div data-tour="chat-filters" className="flex-1 flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar pr-8">
                                 {[
                                     { id: 'all', label: 'All' },
-                                    { id: 'read', label: 'Read' },
-                                    { id: 'unread', label: 'Unread' },
+                                    { id: 'bot_enabled', label: 'Agent On' },
+                                    { id: 'bot_disabled', label: 'Agent Off' },
                                 ].map(filter => {
                                     const active = chatFilter === filter.id
                                     return (
@@ -3130,6 +3158,7 @@ export default function LiveChat() {
                                                 <p className="text-[11px] font-bold text-gray-400 px-4 mb-2.5 uppercase tracking-wider sm:hidden">Filter Chats</p>
                                                 {[
                                                     { id: 'favorites', label: 'Favourites' },
+                                                    { id: 'bot_disabled', label: 'AI Paused (Manual)' },
                                                     { id: 'archived', label: 'Archived' },
                                                     { id: 'assigned', label: 'Assigned' },
                                                     { id: 'unassigned', label: 'Unassigned' },
@@ -3203,14 +3232,20 @@ export default function LiveChat() {
                                             <img
                                                 src={chat.profilePhotoUrl}
                                                 alt={chat.name}
-                                                className="h-11 w-11 rounded-full object-cover shadow-sm ring-1 ring-gray-200"
+                                                className="h-11 w-11 rounded-full object-cover"
                                                 loading="lazy"
                                                 onError={() => clearBrokenProfilePhoto(chat.contactId, chat.profilePhotoUrl)}
                                             />
                                         ) : (
-                                            <DiceBearAvatar seed={chat.name} className="h-11 w-11 rounded-full object-cover shadow-sm ring-1 ring-gray-200" />
+                                            <div className={`w-11 h-11 rounded-full flex items-center justify-center text-[17px] font-bold ${getAvatarColor(chat.name)} shadow-sm`}>
+                                                {chat.name ? chat.name.charAt(0).toUpperCase() : '?'}
+                                            </div>
                                         )}
-                                        {/* Presence is not reliably available from WhatsApp APIs; hide fake online dot */}
+                                        {chat.botEnabled !== false ? (
+                                            <span className="absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-[#10b981] border-2 border-white" title="AI Agent active" />
+                                        ) : (
+                                            <span className="absolute bottom-0 right-0 block h-3 w-3 rounded-full bg-[#f59e0b] border-2 border-white animate-pulse" title="AI Agent paused" />
+                                        )}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex justify-between items-baseline gap-2 mb-0.5">
@@ -4039,6 +4074,26 @@ export default function LiveChat() {
 
                             {/* Input Area */}
                             <div data-tour="chat-composer" className={`px-2 py-1.5 sm:px-4 sm:py-2.5 lg:px-5 ${isInternalNote ? 'border-t border-amber-200 bg-amber-50' : 'bg-[#f0f2f5]'}`}>
+                                {!botEnabled && (
+                                    <div className="mx-auto mb-2 flex w-full max-w-[1180px] items-center justify-between gap-3 rounded-xl bg-amber-50 px-4 py-2 border border-amber-200 text-xs text-amber-800 animate-in fade-in duration-200">
+                                        <div className="flex items-center gap-2">
+                                            <span className="relative flex h-2 w-2 shrink-0">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                                            </span>
+                                            <span className="font-semibold text-amber-900">
+                                                🤖 AI Agent is paused for this conversation. You are talking directly with the customer.
+                                            </span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleBotForConversation(true, selectedBotId || workspaceAutoReplyBot?.id || null)}
+                                            className="rounded-lg bg-white px-2.5 py-1 text-[11px] font-bold text-amber-950 shadow-sm border border-amber-200 hover:bg-amber-100 transition-colors shrink-0"
+                                        >
+                                            Resume AI Bot
+                                        </button>
+                                    </div>
+                                )}
                                 {isCustomerWindowExpired && !isInternalNote && (
                                     <div className="mx-auto mb-2 flex w-full max-w-[1180px] flex-col gap-3 rounded-2xl bg-[#fffbfa] p-3 sm:p-4 shadow-sm border border-rose-100 sm:flex-row sm:items-center sm:justify-between">
                                         <div className="flex items-start gap-3">
