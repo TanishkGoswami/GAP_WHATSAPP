@@ -98,6 +98,39 @@ export async function getBotAgentReply(params: {
   const normalized = (text || "").toLowerCase().trim();
   if (!normalized) return null;
 
+  // Keywords to STOP/PAUSE the bot
+  const stopKeywords = [
+    "talk to human",
+    "human"
+  ];
+
+  const isStopKeyword = stopKeywords.some(
+    (k) => normalized === k || (k.length > 4 && normalized.includes(k))
+  );
+
+  if (isStopKeyword) {
+    try {
+      await supabase
+        .from("w_conversations")
+        .update({
+          bot_enabled: false,
+          handoff_status: "handoff_requested",
+          handoff_requested_at: new Date().toISOString(),
+          handoff_reason: `User requested stop with keyword: "${text}"`,
+        })
+        .eq("id", conversation_id);
+
+      console.log(`🤖 Bot paused for conversation ${conversation_id} via stop keyword.`);
+
+      return {
+        reply: "I have paused the AI assistant. A human agent will connect with you shortly.",
+        agent: { name: "System Handoff", description: "Keyword triggered human handover" },
+      };
+    } catch (err: any) {
+      console.error("Error pausing bot on stop keyword:", err);
+    }
+  }
+
   try {
     // First check if bot is enabled for this specific conversation
     const { data: conv, error: convErr } = await supabase
@@ -202,8 +235,8 @@ export async function getBotAgentReply(params: {
         .slice(0, KNOWLEDGE_MAX_CONTEXT_CHARS);
     }
 
-    let systemPrompt = targetAgent.system_prompt 
-      ? targetAgent.system_prompt 
+    let systemPrompt = targetAgent.system_prompt
+      ? targetAgent.system_prompt
       : `You are a highly capable AI assistant representing "${targetAgent.name}". Your goal is to assist the user effectively and naturally.`;
 
     systemPrompt += `\n\nIMPORTANT MEMORY RULES:
@@ -281,7 +314,8 @@ Keep your responses highly conversational, concise, and direct. Avoid repeating 
 You are a business consultant, NOT a general AI assistant.
 - If the user greets you or shares their name/profession/location, respond naturally and politely.
 - If the user asks about your business services (automation, WhatsApp, CRM), assist them.
-- If the user asks an off-topic question (like recipes, general knowledge, technical coding like HTML/CSS, etc.), politely decline by saying you only handle business automation queries. DO NOT use a robotic template for everything. Keep it natural.`
+- If the user asks an off-topic question (like recipes, general knowledge, technical coding like HTML/CSS, etc.), politely decline by saying you only handle business automation queries. DO NOT use a robotic template for everything. Keep it natural.
+- If you do not know the answer, or if the information is not present in the provided Knowledge Base context, you MUST prefix your response with exactly "[FALLBACK]". For example: "[FALLBACK] I couldn't find an answer to your question."`
     });
 
     console.log(`[AI Debug] Sending to OpenAI for Conv ${conversation_id}:`, JSON.stringify(messages, null, 2));

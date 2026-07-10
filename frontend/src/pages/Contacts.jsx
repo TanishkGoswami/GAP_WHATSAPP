@@ -304,6 +304,17 @@ export default function Contacts() {
 
     const getPhone = (contact) => formatPhoneForDisplay(contact?.phone || contact?.wa_id) || ''
 
+    const getProfilePhoto = (contact) => {
+        return (
+            contact?.profile_photo_url ||
+            contact?.profilePhotoUrl ||
+            contact?.photo_url ||
+            contact?.avatar_url ||
+            contact?.custom_fields?.profile_photo_url ||
+            ''
+        )
+    }
+
     const getAccountLabel = (contactOrAccount) => {
         if (!contactOrAccount) return 'Unassigned'
 
@@ -1001,7 +1012,15 @@ export default function Contacts() {
                                     <tr key={contact.id} onClick={() => openContact(contact)} className="cursor-pointer bg-white transition hover:bg-gray-50">
                                         <td className="px-5 py-4">
                                             <div className="flex items-center gap-3">
-                                                <DiceBearAvatar seed={getDisplayName(contact)} className="h-10 w-10 rounded-full object-cover shadow-sm shrink-0" />
+                                                {getProfilePhoto(contact) ? (
+                                                    <img
+                                                        src={getProfilePhoto(contact)}
+                                                        alt={getDisplayName(contact)}
+                                                        className="h-10 w-10 rounded-full object-cover shadow-sm shrink-0"
+                                                    />
+                                                ) : (
+                                                    <DiceBearAvatar seed={getDisplayName(contact)} className="h-10 w-10 rounded-full object-cover shadow-sm shrink-0" />
+                                                )}
                                                 <div className="min-w-0">
                                                     <div className="truncate font-semibold text-gray-950">{getDisplayName(contact)}</div>
                                                     <div className="mt-0.5 flex items-center gap-1 font-mono text-xs text-gray-500">
@@ -1073,9 +1092,15 @@ export default function Contacts() {
                             >
                                 <div className="flex items-center gap-2.5">
                                     {/* Avatar */}
-                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-emerald-600 text-[10px] font-bold text-white shadow-sm">
-                                        {String(getDisplayName(contact)).slice(0, 2).toUpperCase()}
-                                    </div>
+                                    {getProfilePhoto(contact) ? (
+                                        <img
+                                            src={getProfilePhoto(contact)}
+                                            alt={getDisplayName(contact)}
+                                            className="h-8 w-8 rounded-full object-cover shadow-sm shrink-0"
+                                        />
+                                    ) : (
+                                        <DiceBearAvatar seed={getDisplayName(contact)} className="h-8 w-8 rounded-full object-cover shadow-sm shrink-0" />
+                                    )}
 
                                     {/* Core Details */}
                                     <div className="min-w-0 flex-1">
@@ -1162,7 +1187,15 @@ export default function Contacts() {
                                     <div className="space-y-5">
                                         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
                                             <div className="flex items-center gap-4">
-                                                <DiceBearAvatar seed={getDisplayName(activeContact)} className="h-16 w-16 rounded-full object-cover shrink-0 shadow-sm" />
+                                                {getProfilePhoto(activeContact) ? (
+                                                    <img
+                                                        src={getProfilePhoto(activeContact)}
+                                                        alt={getDisplayName(activeContact)}
+                                                        className="h-16 w-16 rounded-full object-cover shrink-0 shadow-sm"
+                                                    />
+                                                ) : (
+                                                    <DiceBearAvatar seed={getDisplayName(activeContact)} className="h-16 w-16 rounded-full object-cover shrink-0 shadow-sm" />
+                                                )}
                                                 <div className="min-w-0">
                                                     <div className="text-lg font-bold text-gray-950">{getDisplayName(activeContact)}</div>
                                                     <div className="mt-1 font-mono text-sm text-gray-500">{getPhone(activeContact) || activeContact.wa_id || '-'}</div>

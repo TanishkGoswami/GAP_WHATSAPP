@@ -827,6 +827,69 @@ export async function handleWebhook(req: any, res: Response) {
 
       // E. Bot Auto-Reply
       try {
+        // Intercept human handoff request via button selection or keyword
+        const incomingText = text?.toLowerCase().trim();
+        const interactiveId = msg.interactive?.button_reply?.id || null;
+
+        const isHandoffRequest =
+          incomingText === "talk to human" ||
+          incomingText === "human" ||
+          interactiveId === "talk_to_agent";
+
+        if (isHandoffRequest) {
+          webhookLog("bot.handoff_intercepted", {
+            requestId,
+            conversation_id: conv.id,
+            interactiveId,
+            incomingText,
+          });
+
+          await supabase
+            .from("w_conversations")
+            .update({
+              bot_enabled: false,
+              handoff_status: "handoff_requested",
+              handoff_requested_at: new Date().toISOString(),
+              handoff_reason: `User requested stop with: ${interactiveId ? `button "${interactiveId}"` : `keyword "${text}"`}`,
+            })
+            .eq("id", conv.id);
+
+          const autoReplyText = "I have paused the AI assistant. A human agent will connect with you shortly.";
+          const sendResult = await sendTextMessage(from, autoReplyText, phone_number_id);
+          const botWaMessageId = sendResult?.messages?.[0]?.id || null;
+
+          const storedBotReply = await storeMessage({
+            organization_id,
+            contact_id: contact.id,
+            conversation_id: conv.id,
+            wa_message_id: botWaMessageId,
+            direction: "outbound",
+            type: "text",
+            content: { text: autoReplyText },
+            status: "sent",
+            is_bot_reply: true,
+            sender_type: "ai_agent",
+            automation_source: "ai_agent",
+          } as any);
+
+          io.emit("new_message", {
+            from: metadata?.display_phone_number || phone_number_id,
+            phone: from,
+            text: autoReplyText,
+            sender: "agent",
+            conversation_id: conv.id,
+            contact_id: contact.id,
+            message_id: storedBotReply?.id || null,
+            wa_message_id: botWaMessageId,
+            created_at: storedBotReply?.created_at || new Date().toISOString(),
+            connectedAccount: metadata?.display_phone_number,
+            type: "text",
+            is_bot_reply: true,
+          });
+
+          continue; // Skip standard flow and AI process
+        }
+
         let flowConsumedMessage = false;
 
         // Flow engine: text + button replies + interactive replies sab process karo
@@ -1139,50 +1202,119 @@ export async function handleWebhook(req: any, res: Response) {
                       });
                       
                       if (botResult?.reply) {
-                        console.log(`🤖 Bot "${botResult.agent?.name}" replying`);
-                        const sendResult = await sendTextMessage(
-                          from,
-                          botResult.reply,
-                          phone_number_id,
-                        );
-                        const botWaMessageId = sendResult?.messages?.[0]?.id || null;
-                        const storedBotReply = await storeMessage({
-                          organization_id,
-                          contact_id: contact.id,
-                          conversation_id: conv.id,
-                          wa_message_id: botWaMessageId,
-                          direction: "outbound",
-                          type: "text",
-                          content: {
+                        let botWaMessageId: string | null = null;
+                        let storedBotReply: any = null;
+
+                        const isFallback = botResult.reply.startsWith("[FALLBACK]");
+                        const cleanReply = botResult.reply.replace("[FALLBACK]", "").trim();
+
+                        if (isFallback) {
+                          console.log(`🤖 Bot "${botResult.agent?.name}" sending fallback interactive buttons`);
+                          const buttonBody = cleanReply || "I couldn't find an answer to your question. Please reply with \"human\" or click the button below to connect with a support agent.";
+                          const fallbackButtons = [{ id: "talk_to_agent", text: "Talk to Agent" }];
+
+                          const sendResult = await sendInteractiveButtons(
+                            from,
+                            buttonBody,
+                            fallbackButtons,
+                            "Choose an option",
+                            phone_number_id
+                          );
+                          botWaMessageId = sendResult?.messages?.[0]?.id || null;
+
+                          storedBotReply = await storeMessage({
+                            organization_id,
+                            contact_id: contact.id,
+                            conversation_id: conv.id,
+                            wa_message_id: botWaMessageId,
+                            direction: "outbound",
+                            type: "interactive",
+                            content: {
+                              text: buttonBody,
+                              interactive: {
+                                type: "button",
+                                body: buttonBody,
+                                buttons: fallbackButtons,
+                              },
+                              is_bot_reply: true,
+                              bot_agent_id: botResult.agent?.id,
+                              bot_agent_name: botResult.agent?.name,
+                            },
+                            status: "sent",
+                            is_bot_reply: true,
+                            bot_agent_id: botResult.agent?.id || null,
+                            sender_type: "ai_agent",
+                            automation_source: "ai_agent",
+                          } as any);
+
+                          io.emit("new_message", {
+                            from: metadata?.display_phone_number || phone_number_id,
+                            phone: from,
+                            text: buttonBody,
+                            sender: "agent",
+                            conversation_id: conv.id,
+                            contact_id: contact.id,
+                            message_id: storedBotReply?.id || null,
+                            wa_message_id: botWaMessageId,
+                            created_at: storedBotReply?.created_at || new Date().toISOString(),
+                            connectedAccount: metadata?.display_phone_number,
+                            type: "interactive",
+                            content: {
+                              text: buttonBody,
+                              interactive: {
+                                type: "button",
+                                body: buttonBody,
+                                buttons: fallbackButtons,
+                              }
+                            },
+                            is_bot_reply: true,
+                          });
+                        } else {
+                          console.log(`🤖 Bot "${botResult.agent?.name}" replying`);
+                          const sendResult = await sendTextMessage(
+                            from,
+                            botResult.reply,
+                            phone_number_id,
+                          );
+                          botWaMessageId = sendResult?.messages?.[0]?.id || null;
+                          storedBotReply = await storeMessage({
+                            organization_id,
+                            contact_id: contact.id,
+                            conversation_id: conv.id,
+                            wa_message_id: botWaMessageId,
+                            direction: "outbound",
+                            type: "text",
+                            content: {
+                              text: botResult.reply,
+                              bot_agent_id: botResult.agent?.id,
+                              bot_agent_name: botResult.agent?.name,
+                            },
+                            status: "sent",
+                            is_bot_reply: true,
+                            bot_agent_id: botResult.agent?.id || null,
+                            sender_type: "ai_agent",
+                            automation_source: "ai_agent",
+                          } as any);
+                          io.emit("new_message", {
+                            from: metadata?.display_phone_number || phone_number_id,
+                            phone: from,
                             text: botResult.reply,
-                            bot_agent_id: botResult.agent?.id,
-                            bot_agent_name: botResult.agent?.name,
-                          },
-                          status: "sent",
-                          is_bot_reply: true,
-                          bot_agent_id: botResult.agent?.id || null,
-                          sender_type: "ai_agent",
-                          automation_source: "ai_agent",
-                        } as any);
-                        io.emit("new_message", {
-                          from: metadata?.display_phone_number || phone_number_id,
-                          phone: from,
-                          text: botResult.reply,
-                          sender: "agent",
-                          conversation_id: conv.id,
-                          contact_id: contact.id,
-                          message_id: storedBotReply?.id || null,
-                          wa_message_id: botWaMessageId,
-                          created_at:
-                            storedBotReply?.created_at || new Date().toISOString(),
-                          connectedAccount: metadata?.display_phone_number,
-                          type: "text",
-                          is_bot_reply: true,
-                          bot_agent_name: botResult.agent?.name,
-                        });
+                            sender: "agent",
+                            conversation_id: conv.id,
+                            contact_id: contact.id,
+                            message_id: storedBotReply?.id || null,
+                            wa_message_id: botWaMessageId,
+                            created_at:
+                              storedBotReply?.created_at || new Date().toISOString(),
+                            connectedAccount: metadata?.display_phone_number,
+                            type: "text",
+                            is_bot_reply: true,
+                          });
+                        }
+                        
                         webhookLog("bot_agent.reply.sent", {
                           requestId,
-                          botWaMessageId,
+                          botWaMessageId: botWaMessageId,
                           storedMessageId: storedBotReply?.id || null,
                           agentId: botResult.agent?.id || null,
                         });
