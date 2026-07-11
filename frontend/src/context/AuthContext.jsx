@@ -305,7 +305,10 @@ export function AuthProvider({ children }) {
 
                     if (!tokenOverride && isExpiring) {
                         const { data, error } = await supabase.auth.refreshSession()
-                        if (error) throw error
+                        if (error) {
+                            supabase.auth.signOut().catch(() => {});
+                            throw error;
+                        }
                         currentSession = data.session
                         if (data.session) {
                             setSession(data.session)
@@ -333,7 +336,10 @@ export function AuthProvider({ children }) {
                     // If 401, try to refresh token once
                     if (response.status === 401 && retryCount === 0) {
                         const { data, error } = await supabase.auth.refreshSession();
-                        if (error) throw error;
+                        if (error) {
+                            supabase.auth.signOut().catch(() => {});
+                            throw error;
+                        }
                         if (data.session) {
                             setSession(data.session);
                             setUser(data.session.user);
