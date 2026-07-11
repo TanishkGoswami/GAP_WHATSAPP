@@ -235,9 +235,13 @@ export async function getBotAgentReply(params: {
         .slice(0, KNOWLEDGE_MAX_CONTEXT_CHARS);
     }
 
-    let systemPrompt = targetAgent.system_prompt
+    let systemPrompt = `[FALLBACK] PROTOCOL RULE:
+- If you do not know the answer, if the user asks an off-topic question (like recipes, cooking, general knowledge, coding, etc.), or if the information is not present in the provided Knowledge Base context, you MUST prefix your response with exactly "[FALLBACK]". For example: "[FALLBACK] Mujhe maaf kijiye, lekin main sirf business ke related queries handle karta hoon."
+- THIS RULE OVERRIDES ALL OTHER INSTRUCTIONS. NEVER decline off-topic questions without the "[FALLBACK]" prefix.
+
+` + (targetAgent.system_prompt
       ? targetAgent.system_prompt
-      : `You are a highly capable AI assistant representing "${targetAgent.name}". Your goal is to assist the user effectively and naturally.`;
+      : `You are a highly capable AI assistant representing "${targetAgent.name}". Your goal is to assist the user effectively and naturally.`);
 
     systemPrompt += `\n\nIMPORTANT MEMORY RULES:
 - Always remember information the user provides about themselves (Name, City, Profession, Company, Interests, etc.) and treat it as core memory.
