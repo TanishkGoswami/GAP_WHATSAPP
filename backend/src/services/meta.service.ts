@@ -339,14 +339,23 @@ export async function updateMetaBusinessProfile(account: any, body: any, profile
     };
 
     for (const key of ['about', 'address', 'description', 'email', 'vertical']) {
-        if (Object.prototype.hasOwnProperty.call(body, key)) payload[key] = String(body[key] || '');
+        if (Object.prototype.hasOwnProperty.call(body, key)) {
+            const val = String(body[key] || '');
+            if (!val.trim() && ['about', 'address', 'vertical'].includes(key)) continue;
+            payload[key] = val;
+        }
     }
 
     if (Object.prototype.hasOwnProperty.call(body, 'websites')) {
         const raw = body.websites;
-        payload.websites = Array.isArray(raw)
+        const sites = Array.isArray(raw)
             ? raw.filter(Boolean)
             : String(raw || '').split('\n').map((item) => item.trim()).filter(Boolean);
+        if (sites.length > 0) {
+            payload.websites = sites;
+        } else if (body.websites === "") {
+            payload.websites = [];
+        }
     }
 
     if (profilePictureHandle) payload.profile_picture_handle = profilePictureHandle;

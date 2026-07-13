@@ -2,6 +2,7 @@
 
 The production pipeline supports campaigns of up to 10,000 unique recipients.
 
+
 ## Rollout
 
 1. Apply `supabase/migrations/20260629160000_large_scale_broadcast_queue.sql`.

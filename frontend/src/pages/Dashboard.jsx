@@ -1,6 +1,7 @@
 import { createElement, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell, LineChart, Line } from 'recharts'
 import {
     Activity,
     AlertTriangle,
@@ -577,24 +578,21 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
     ]
 
     return (
-        <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-            <div className="border-b border-gray-200 bg-gray-50 px-5 py-5 lg:px-6">
+        <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-200 bg-white px-5 py-5 lg:px-6">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[#0064b7]">
                             <BarChart3 className="h-4 w-4" />
                             Usage analytics
                         </div>
-                        <h2 className="mt-1 text-2xl font-semibold leading-tight text-black">Message performance</h2>
-                        {/* <p className="mt-1 max-w-2xl text-sm leading-5 text-gray-600">
-                            Live WhatsApp delivery, read activity, failure risk, and billing movement in one clean view.
-                        </p> */}
+                        <h2 className="mt-1 text-2xl font-semibold leading-tight text-gray-900">Message performance</h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex h-9 items-center rounded-full border border-gray-200 bg-white px-3 text-sm font-medium text-gray-800">
+                        <span className="inline-flex h-9 items-center rounded-full border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700">
                             Workspace
                         </span>
-                        <span className="inline-flex h-9 items-center rounded-full border border-gray-200 bg-white px-3 text-sm font-medium text-gray-500">
+                        <span className="inline-flex h-9 items-center rounded-full border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-700">
                             All WhatsApp numbers
                         </span>
                         <span className="inline-flex h-9 items-center rounded-full border border-gray-900 bg-gray-900 px-3 text-sm font-semibold text-white">
@@ -605,192 +603,198 @@ function UsagePerformanceDashboard({ model, range, rangeLabel, loading, overview
                 </div>
             </div>
 
-            <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_340px]">
-                <div className="space-y-4 border-b border-gray-200 bg-white p-5 xl:border-b-0 xl:border-r xl:p-6">
-                    <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-                        {summaryCards.map(card => (
-                            <div key={card.label} className="group overflow-hidden rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-gray-300">
-                                <div>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{card.label}</p>
-                                    <p className={`mt-2 text-2xl font-semibold leading-none ${card.color}`}>{card.value}</p>
-                                    <p className="mt-2 text-xs text-gray-500">{card.detail}</p>
-                                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
-                                        <div className={`h-full rounded-full bg-gradient-to-r ${card.accent}`} style={{ width: pct(card.progress) }} />
+            <div className="bg-gray-50/30 p-4 sm:p-5 lg:p-6">
+                <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-3 xl:grid-cols-4">
+                    {/* Main Column */}
+                    <div className="space-y-4 sm:space-y-5 lg:col-span-2 xl:col-span-3">
+                        <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+                            {summaryCards.map(card => (
+                                <div key={card.label} className="group overflow-hidden rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-all hover:border-gray-300 hover:shadow-md">
+                                    <div>
+                                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{card.label}</p>
+                                        <p className={`mt-2 text-2xl font-semibold leading-none ${card.color}`}>{card.value}</p>
+                                        <p className="mt-2 text-xs text-gray-500">{card.detail}</p>
+                                        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-gray-100">
+                                            <div className={`h-full rounded-full bg-gradient-to-r ${card.accent}`} style={{ width: pct(card.progress) }} />
+                                        </div>
                                     </div>
                                 </div>
+                            ))}
+                        </div>
+
+                        <div className="rounded-xl border border-gray-200 bg-white p-4 sm:p-5 shadow-sm">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <p className="text-base font-semibold text-gray-900">Message activity</p>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-medium text-gray-500">Group by</span>
+                                    <span className="inline-flex h-8 items-center rounded-lg bg-gray-100 px-3 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-200">
+                                        {isHourly ? '1h' : '1d'}
+                                    </span>
+                                </div>
                             </div>
-                        ))}
+
+                            {loading ? (
+                                <div className="mt-4 h-[300px] animate-pulse rounded-lg bg-gray-50" />
+                            ) : (
+                                <UsageBarChart
+                                    bars={visibleBars}
+                                    max={max}
+                                    isHourly={isHourly}
+                                    peak={peak}
+                                    total={total}
+                                />
+                            )}
+                        </div>
+
+                        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2">
+                            {capabilityCards.map(card => (
+                                <UsageCapabilityCard key={card.title} {...card} />
+                            ))}
+                        </div>
                     </div>
 
-                    <div className="rounded-lg border border-gray-200 bg-white p-4">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                                <p className="text-base font-semibold text-black">Message activity</p>
-                                {/* <p className="mt-1 text-sm text-gray-500">{isHourly ? 'Hourly distribution for today.' : 'Daily trend for selected range.'}</p> */}
+                    {/* Right Column */}
+                    <aside className="space-y-4 sm:space-y-5">
+                        <div className="rounded-xl border border-blue-100 bg-gradient-to-br from-blue-50/50 to-white p-5 shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <p className="text-sm font-medium text-blue-900">Delivery quality</p>
+                                    <p className="mt-2 text-[44px] font-light leading-none text-blue-950">{model.quality}<span className="text-xl font-medium text-blue-400/60">/100</span></p>
+                                </div>
+                                <CheckCircle2 className="h-6 w-6 text-blue-500 drop-shadow-sm" />
                             </div>
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs font-medium text-gray-500">Group by</span>
-                                <span className="inline-flex h-8 items-center rounded-lg bg-gray-950 px-3 text-sm font-semibold text-white">
-                                    {isHourly ? '1h' : '1d'}
-                                </span>
+                            <div className="mt-5 sm:mt-6 grid grid-cols-2 gap-x-4 gap-y-4">
+                                <QualityStat label="Delivered" value={compact(model.delivered)} />
+                                <QualityStat label="Read" value={compact(model.read)} />
+                                <QualityStat label="Pending" value={compact(model.pending)} />
+                                <QualityStat label="Failed" value={compact(model.failed)} />
+                            </div>
+                            <div className="mt-5 border-t border-blue-100 pt-4">
+                                <p className="text-xs font-medium leading-5 text-blue-700/80">
+                                    {model.totalMessages
+                                        ? `${pct(model.deliveryRate)} delivery with ${pct(model.readRate)} read rate.`
+                                        : `No activity found for ${rangeLabel.toLowerCase()}.`}
+                                </p>
                             </div>
                         </div>
 
-                        {loading ? (
-                            <div className="mt-4 h-[300px] animate-pulse rounded-lg bg-gray-50" />
-                        ) : (
-                            <UsageBarChart
-                                bars={visibleBars}
-                                max={max}
-                                isHourly={isHourly}
-                                peak={peak}
-                                total={total}
-                            />
-                        )}
-                    </div>
+                        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                            <div className="flex items-center justify-between gap-3">
+                                <h3 className="text-sm font-semibold text-gray-900">Wallet spend</h3>
+                                <Gauge className="h-4 w-4 text-gray-400" />
+                            </div>
+                            <div className="mt-4 flex items-center justify-between text-sm">
+                                <span className="font-medium text-gray-600">This month</span>
+                                <span className="font-semibold text-gray-900">{formatINRFromPaise(monthSpendPaise)}</span>
+                            </div>
+                            <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-gray-100">
+                                <div className="h-full rounded-full bg-emerald-500 shadow-sm" style={{ width: pct(spendProgress) }} />
+                            </div>
+                            <p className="mt-2.5 text-xs font-medium text-gray-500">Wallet available: <span className="text-gray-700">{formatINRFromPaise(walletPaise)}</span></p>
+                        </div>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        {capabilityCards.map(card => (
-                            <UsageCapabilityCard key={card.title} {...card} />
-                        ))}
-                    </div>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                            <UsageRailStat label="Today spend" value={formatINRFromPaise(todaySpendPaise)} />
+                            <UsageRailStat label="AI replies" value={compact(model.metrics.aiAgent)} />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                            <RateCard label="Delivery rate" value={model.deliveryRate} count={fmt(model.delivered)} color="bg-blue-500" />
+                            <RateCard label="Read rate" value={model.readRate} count={fmt(model.read)} color="bg-emerald-500" />
+                            <RateCard label="Pending" value={model.totalMessages ? (model.pending / model.totalMessages) * 100 : 0} count={fmt(model.pending)} color="bg-amber-500" />
+                            <RateCard label="Failure risk" value={model.failedRate} count={`${model.failedRate.toFixed(1)}%`} color={model.failedRate > 5 ? "bg-red-500" : "bg-gray-400"} />
+                        </div>
+                    </aside>
                 </div>
-
-                <aside className="space-y-4 bg-gray-50/50 p-5 xl:p-6">
-                    <div className="rounded-lg bg-gray-950 p-5 text-white">
-                        <div className="flex items-start justify-between gap-3">
-                            <div>
-                                <p className="text-sm text-gray-400">Delivery quality</p>
-                                <p className="mt-2 text-[44px] font-light leading-none">{model.quality}<span className="text-xl text-gray-500">/100</span></p>
-                            </div>
-                            <CheckCircle2 className="h-5 w-5 text-emerald-400" />
-                        </div>
-                        <div className="mt-4 sm:mt-6 grid grid-cols-2 gap-x-4 gap-y-3 sm:gap-x-5 sm:gap-y-4">
-                            <QualityStat label="Delivered" value={compact(model.delivered)} />
-                            <QualityStat label="Read" value={compact(model.read)} />
-                            <QualityStat label="Pending" value={compact(model.pending)} />
-                            <QualityStat label="Failed" value={compact(model.failed)} />
-                        </div>
-                        <p className="mt-5 text-sm leading-5 text-gray-400">
-                            {model.totalMessages
-                                ? `${pct(model.deliveryRate)} delivery with ${pct(model.readRate)} read rate.`
-                                : `No message activity found for ${rangeLabel.toLowerCase()}.`}
-                        </p>
-                    </div>
-
-                    <div className="rounded-lg border border-gray-200 bg-white p-4">
-                        <div className="flex items-center justify-between gap-3">
-                            <h3 className="text-base font-semibold text-gray-900">Wallet spend</h3>
-                            <Gauge className="h-4 w-4 text-gray-400" />
-                        </div>
-                        <div className="mt-4 flex items-center justify-between text-sm">
-                            <span className="font-medium text-gray-600">This month</span>
-                            <span className="font-semibold text-gray-900">{formatINRFromPaise(monthSpendPaise)}</span>
-                        </div>
-                        <div className="mt-2 h-3 overflow-hidden rounded-full bg-gray-100">
-                            <div className="h-full rounded-full bg-emerald-500" style={{ width: pct(spendProgress) }} />
-                        </div>
-                        <p className="mt-2 text-xs text-gray-500">Wallet available: {formatINRFromPaise(walletPaise)}</p>
-                    </div>
-
-
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                        <UsageRailStat label="Today spend" value={formatINRFromPaise(todaySpendPaise)} />
-                        <UsageRailStat label="AI replies" value={compact(model.metrics.aiAgent)} />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-2">
-                        <RateCard label="Delivery rate" value={model.deliveryRate} count={fmt(model.delivered)} color="bg-blue-600" />
-                        <RateCard label="Read rate" value={model.readRate} count={fmt(model.read)} color="bg-emerald-500" />
-                        <RateCard label="Pending" value={model.totalMessages ? (model.pending / model.totalMessages) * 100 : 0} count={fmt(model.pending)} color="bg-amber-500" />
-                        <RateCard label="Failure risk" value={model.failedRate} count={`${model.failedRate.toFixed(1)}%`} color="bg-red-500" />
-                    </div>
-                </aside>
             </div>
         </section>
     )
 }
 
+function CustomBarTooltip({ active, payload, label }) {
+    if (active && payload && payload.length) {
+        return (
+            <div className="rounded-xl border border-white/10 bg-gray-900/95 px-3 py-2.5 text-center shadow-2xl backdrop-blur-md">
+                <p className="mb-0.5 text-[11px] font-bold tracking-wider text-gray-400 uppercase">{label}</p>
+                <div className="flex items-center justify-center gap-1.5 text-sm font-bold text-white">
+                    <span className="h-1.5 w-1.5 rounded-full bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)]" />
+                    {fmt(payload[0].value)}
+                </div>
+            </div>
+        )
+    }
+    return null
+}
+
 function UsageBarChart({ bars, max, isHourly, peak, total }) {
+    const data = bars.map(point => ({
+        name: isHourly ? point.hour : point.date?.slice(5),
+        total: n(point.total)
+    }))
+
     return (
         <div className="mt-2.5 sm:mt-4 rounded-2xl border border-gray-100 bg-white p-4 sm:p-5 shadow-[0_8px_30px_rgba(0,0,0,0.04)] ring-1 ring-gray-900/5">
             <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="mb-1 flex items-center gap-2">
                         <div className="flex h-6 w-6 items-center justify-center rounded-md bg-blue-50 text-blue-600">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
                         </div>
                         <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Total volume</p>
                     </div>
-                    <p className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">{fmt(total)}</p>
+                    <p className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">{fmt(total)}</p>
                 </div>
                 <div className="flex items-center gap-3 rounded-xl border border-gray-100 bg-gray-50/50 px-4 py-2.5 shadow-sm">
                     <div className="flex items-center gap-2">
                         <span className="relative flex h-2.5 w-2.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75"></span>
+                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500"></span>
                         </span>
-                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Peak</span>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-600">Peak</span>
                     </div>
                     <div className="h-4 w-px bg-gray-200" />
                     <span className="text-base font-bold text-blue-600">{peak ? fmt(peak.total) : 0}</span>
                 </div>
             </div>
             
-            <div className="relative h-[260px] overflow-visible rounded-xl bg-gradient-to-b from-gray-50/50 to-white px-2 sm:px-4 pt-4 border border-gray-100/50">
-                {/* Horizontal Grid Lines */}
-                <div className="absolute inset-x-4 top-4 border-t border-dashed border-gray-200" />
-                <div className="absolute inset-x-4 top-[38%] border-t border-dashed border-gray-200" />
-                <div className="absolute inset-x-4 top-[70%] border-t border-dashed border-gray-200" />
-                <div className="absolute inset-x-4 bottom-8 border-t border-gray-200" />
-                
-                {/* Bars Container */}
-                <div className="absolute inset-x-4 bottom-9 top-6 flex items-end justify-between gap-1 sm:gap-2">
-                    {bars.map((point, index) => {
-                        const value = n(point.total)
-                        const height = value === 0 ? '4px' : `${Math.max(5, (value / max) * 100)}%`
-                        const key = isHourly ? point.hour : point.date
-                        const label = isHourly ? point.hour : point.date?.slice(5)
-                        const showLabel = isHourly ? index % 4 === 0 : index === 0 || index === bars.length - 1
-                        
-                        return (
-                            <div key={`${key}-${index}`} className="group relative flex min-w-0 flex-1 flex-col items-center justify-end gap-2 h-full cursor-default">
-                                {/* Premium Tooltip */}
-                                <div className="pointer-events-none absolute bottom-[calc(100%+12px)] z-50 hidden min-w-[110px] transform rounded-xl border border-white/10 bg-gray-900/95 px-3 py-2.5 text-center shadow-2xl backdrop-blur-md transition-all duration-200 group-hover:block animate-in fade-in slide-in-from-bottom-2">
-                                    <p className="text-[11px] font-bold tracking-wider text-gray-400 uppercase mb-0.5">{label}</p>
-                                    <div className="flex items-center justify-center gap-1.5 font-bold text-white text-sm">
-                                        <span className="h-1.5 w-1.5 rounded-full bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.8)]" />
-                                        {fmt(value)}
-                                    </div>
-                                    <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 border-l-[6px] border-r-[6px] border-t-[6px] border-l-transparent border-r-transparent border-t-gray-900/95" />
-                                </div>
-                                
-                                {/* 3D Glow Bar */}
-                                <div
-                                    className={`relative w-full max-w-[28px] rounded-t-[6px] transition-all duration-300 group-hover:scale-x-110 group-hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] ${
-                                        value === 0 
-                                            ? 'bg-gray-100 group-hover:bg-gray-200' 
-                                            : 'bg-gradient-to-t from-blue-600 to-blue-400 group-hover:from-blue-500 group-hover:to-blue-300'
-                                    }`}
-                                    style={{ height }}
-                                >
-                                    {value > 0 && (
-                                        <div className="absolute inset-0 rounded-t-[6px] border-l border-r border-t border-white/30 bg-gradient-to-b from-white/30 to-transparent mix-blend-overlay opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                                    )}
-                                </div>
-                                
-                                <span className={`h-4 w-12 truncate text-center text-[10px] font-semibold transition-colors ${showLabel ? 'text-gray-400 group-hover:text-gray-900' : 'text-transparent'}`}>
-                                    {showLabel ? label : ''}
-                                </span>
-                            </div>
-                        )
-                    })}
-                </div>
+            <div className="h-[260px] w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                        <defs>
+                            <linearGradient id="colorBlue" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#2563eb" stopOpacity={0.9} />
+                                <stop offset="95%" stopColor="#60a5fa" stopOpacity={0.9} />
+                            </linearGradient>
+                            <linearGradient id="colorEmpty" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#f3f4f6" stopOpacity={1} />
+                                <stop offset="100%" stopColor="#f3f4f6" stopOpacity={1} />
+                            </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                        <XAxis 
+                            dataKey="name" 
+                            axisLine={false} 
+                            tickLine={false} 
+                            tick={{ fill: '#9ca3af', fontSize: 10, fontWeight: 600 }}
+                            dy={10}
+                            interval="preserveStartEnd"
+                            minTickGap={20}
+                        />
+                        <Tooltip content={<CustomBarTooltip />} cursor={{ fill: 'rgba(243, 244, 246, 0.4)' }} />
+                        <Bar dataKey="total" radius={[4, 4, 0, 0]} minPointSize={4}>
+                            {data.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.total > 0 ? "url(#colorBlue)" : "url(#colorEmpty)"} />
+                            ))}
+                        </Bar>
+                    </BarChart>
+                </ResponsiveContainer>
             </div>
             
-            <div className="mt-4 flex items-center justify-between text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-1">
+            <div className="mt-4 flex items-center justify-between px-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
                 <span>{isHourly ? '00:00' : bars[0]?.date?.slice(5) || 'Start'}</span>
-                <span className="hidden sm:inline bg-gray-50 px-3 py-1 rounded-full">{isHourly ? 'Hourly distribution' : 'Daily distribution'}</span>
+                <span className="hidden rounded-full bg-gray-50 px-3 py-1 sm:inline">{isHourly ? 'Hourly distribution' : 'Daily distribution'}</span>
                 <span>{isHourly ? '23:00' : bars[bars.length - 1]?.date?.slice(5) || 'End'}</span>
             </div>
         </div>
@@ -906,7 +910,23 @@ function UsageMiniBarsCard({ label, value, series }) {
     )
 }
 
+function CustomLineTooltip({ active, payload }) {
+    if (active && payload && payload.length) {
+        return (
+            <div className="rounded-lg border border-white/10 bg-gray-900/95 px-2 py-1.5 text-center shadow-xl backdrop-blur-md">
+                <div className="flex items-center justify-center gap-1.5 text-[11px] font-bold text-white">
+                    <span className="h-1.5 w-1.5 rounded-full shadow-sm" style={{ backgroundColor: payload[0].stroke || '#6d5ce7' }} />
+                    {fmt(payload[0].value)}
+                </div>
+            </div>
+        )
+    }
+    return null
+}
+
 function UsageCapabilityCard({ title, value, detail, series, color }) {
+    const data = series.map((val, i) => ({ name: i, value: n(val) }))
+
     return (
         <div className="group rounded-2xl border border-gray-200 bg-gradient-to-br from-white to-[#fbfcfd] p-4 shadow-[0_8px_22px_rgba(15,23,42,0.04)] transition-all duration-300 hover:-translate-y-0.5 hover:border-[#c9ddff] hover:shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
             <div className="flex items-start justify-between gap-3">
@@ -915,10 +935,13 @@ function UsageCapabilityCard({ title, value, detail, series, color }) {
                     <p className="mt-2 text-2xl font-semibold leading-none text-gray-950">{value}</p>
                     <p className="mt-1 text-xs text-gray-400">{detail}</p>
                 </div>
-                <div className="h-12 w-24 rounded-xl bg-white/70 p-1">
-                    <svg className="h-full w-full" viewBox="0 0 120 48" preserveAspectRatio="none" aria-hidden="true">
-                        <path d={createLinePath(series, 120, 48)} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
+                <div className="h-12 w-24 rounded-xl bg-white/70">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={data}>
+                            <Tooltip content={<CustomLineTooltip />} cursor={false} />
+                            <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2.5} dot={false} activeDot={{ r: 4, strokeWidth: 0, fill: color }} />
+                        </LineChart>
+                    </ResponsiveContainer>
                 </div>
             </div>
         </div>
@@ -1032,19 +1055,19 @@ function QualityCard({ model, rangeLabel }) {
 
 function QualityStat({ label, value }) {
     return (
-        <div>
-            <p className="text-xs font-medium uppercase text-white/45">{label}</p>
-            <p className="mt-1 text-xl font-medium">{value}</p>
+        <div className="flex flex-col border-l-2 border-blue-200/50 pl-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-blue-600/80">{label}</p>
+            <p className="mt-0.5 text-xl font-semibold text-blue-950">{value}</p>
         </div>
     )
 }
 
 function RateCard({ label, value, count, color }) {
     return (
-        <div className="rounded-lg border border-gray-200 bg-white p-3">
+        <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm transition-colors hover:border-gray-300">
             <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-gray-500">{label}</span>
-                <span className="text-sm font-semibold text-black">{count}</span>
+                <span className="truncate text-xs font-medium text-gray-500">{label}</span>
+                <span className="text-sm font-semibold text-gray-900">{count}</span>
             </div>
             <div className="mt-3 h-1.5 rounded-full bg-gray-100">
                 <div className={`h-1.5 rounded-full ${color}`} style={{ width: pct(value) }} />

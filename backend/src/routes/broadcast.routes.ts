@@ -12,6 +12,7 @@ import {
     pauseCampaign,
     resumeCampaign,
     getCampaignRecipients,
+    getBroadcastInsights,
 } from '../controllers/broadcast.controller.js';
 
 const router = Router();
@@ -29,5 +30,6 @@ router.post('/campaigns/:id/cancel', authMiddleware, cancelCampaign);
 router.post('/campaigns/:id/pause', authMiddleware, pauseCampaign);
 router.post('/campaigns/:id/resume', authMiddleware, resumeCampaign);
 router.get('/campaigns/:id/recipients', authMiddleware, getCampaignRecipients);
+router.get('/insights', authMiddleware, getBroadcastInsights);
 
 export default router;

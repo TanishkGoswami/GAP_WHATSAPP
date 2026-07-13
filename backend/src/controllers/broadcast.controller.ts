@@ -349,3 +349,171 @@ export async function getCampaignRecipients(req: any, res: Response) {
         res.status(500).json({ error: error.message });
     }
 }
+
+export async function getBroadcastInsights(req: any, res: Response) {
+    const orgId = req.organization_id;
+    try {
+        if (!orgId) return res.status(400).json({ error: 'organization_id is required' });
+
+        const now = new Date();
+        // Default to last 90 days to include previous months' transactions
+        const rangeStart = req.query.start
+            ? new Date(String(req.query.start)).toISOString()
+            : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 90)).toISOString();
+        const rangeEnd = req.query.end
+            ? new Date(String(req.query.end)).toISOString()
+            : now.toISOString();
+
+
+        const FREE_CATEGORIES = new Set(['service', 'free_customer_service', 'free_entry_point']);
+
+        // Fetch all message usage logs in the date range
+        const [usageLogsResult, campaignsResult] = await Promise.all([
+            supabase
+                .from('whatsapp_message_usage_logs')
+                .select('category, charged_amount_paise, billing_status, delivery_status, billable, created_at')
+                .eq('organization_id', orgId)
+                .gte('created_at', rangeStart)
+                .lte('created_at', rangeEnd),
+
+            supabase
+                .from('w_campaigns')
+                .select('id, name, status, total_contacts, sent_count, delivered_count, read_count, failed_count, billing_category, actual_cost_paise, estimated_cost_paise, billing_status, created_at, completed_at, template_name, audience_tag')
+                .eq('organization_id', orgId)
+                .order('created_at', { ascending: false })
+                .limit(10),
+        ]);
+
+        const logs = usageLogsResult.data || [];
+        const rawCampaigns = campaignsResult.data || [];
+
+        const recentCampaigns = rawCampaigns.map((c: any) => {
+            let sent = Number(c.sent_count || 0);
+            let delivered = Number(c.delivered_count || 0);
+            let read = Number(c.read_count || 0);
+            let failed = Number(c.failed_count || 0);
+
+            if (c.results && Array.isArray(c.results)) {
+                const calculatedSent = c.results.filter((r: any) => r.status !== 'failed').length;
+                const calculatedDelivered = c.results.filter((r: any) => 
+                    ['delivered', 'read'].includes(r.status) || 
+                    ['delivered', 'read'].includes(r.delivery_status)
+                ).length;
+                const calculatedRead = c.results.filter((r: any) => 
+                    r.status === 'read' || 
+                    r.delivery_status === 'read'
+                ).length;
+                const calculatedFailed = c.results.filter((r: any) => r.status === 'failed').length;
+
+                sent = Math.max(sent, calculatedSent);
+                delivered = Math.max(delivered, calculatedDelivered);
+                read = Math.max(read, calculatedRead);
+                failed = Math.max(failed, calculatedFailed);
+            }
+
+            return {
+                ...c,
+                sent_count: sent,
+                delivered_count: delivered,
+                read_count: read,
+                failed_count: failed
+            };
+        });
+
+
+        // --- Category definitions matching Meta ---
+        const CATEGORIES = [
+            { key: 'marketing',                  label: 'Marketing' },
+            { key: 'marketing_lite',              label: 'Marketing - lite' },
+            { key: 'utility',                     label: 'Utility' },
+            { key: 'authentication',              label: 'Authentication' },
+            { key: 'authentication_international',label: 'Authentication - international' },
+            { key: 'ai_provider',                label: 'AI Provider' },
+            { key: 'service',                     label: 'Service' },
+        ];
+
+        const FREE_CATEGORIES_DETAIL = [
+            { key: 'free_customer_service', label: 'Free customer service' },
+            { key: 'free_entry_point',      label: 'Free entry point' },
+        ];
+
+        // Aggregate per category
+        const deliveredByCategory: Record<string, number> = {};
+        const chargesByCategory: Record<string, number> = {};
+        let totalSent = 0;
+        let totalDelivered = 0;
+        let totalReceived = 0;
+
+        for (const log of logs) {
+            const cat = (log.category || 'marketing').toLowerCase().replace(/-/g, '_').replace(/ /g, '_');
+            // delivery_status: 'delivered', 'read', 'sent', 'failed'
+            // billing_status: 'charged', 'free', 'pending', 'failed'
+            const isDelivered = log.delivery_status === 'delivered'
+                || log.delivery_status === 'read';
+
+
+            // All outbound logs = sent; no direction column, all logs are outbound
+            totalSent++;
+            if (isDelivered) {
+                totalDelivered++;
+                deliveredByCategory[cat] = (deliveredByCategory[cat] || 0) + 1;
+                chargesByCategory[cat] = (chargesByCategory[cat] || 0) + Number(log.charged_amount_paise || 0);
+            }
+        }
+
+
+        // Build category rows
+        const buildCategoryRows = (catList: { key: string; label: string }[]) =>
+            catList.map(({ key, label }) => ({
+                key,
+                label,
+                delivered: deliveredByCategory[key] || 0,
+                charges_paise: chargesByCategory[key] || 0,
+            }));
+
+        const allCategoryRows = buildCategoryRows(CATEGORIES);
+        const freeCategoryRows = buildCategoryRows(FREE_CATEGORIES_DETAIL);
+
+        const totalDeliveredFromCats = allCategoryRows.reduce((s, r) => s + r.delivered, 0);
+        const totalFreeDelivered = allCategoryRows
+            .filter(r => FREE_CATEGORIES.has(r.key))
+            .reduce((s, r) => s + r.delivered, 0)
+            + freeCategoryRows.reduce((s, r) => s + r.delivered, 0);
+        const totalPaidDelivered = totalDeliveredFromCats - totalFreeDelivered;
+        const totalChargesPaise = allCategoryRows.reduce((s, r) => s + r.charges_paise, 0);
+
+        res.json({
+            date_range: { start: rangeStart, end: rangeEnd },
+            all_messages: {
+                total_sent: totalSent,
+                total_delivered: totalDelivered,
+                total_received: totalReceived,
+            },
+            messages_delivered: {
+                total: totalDeliveredFromCats,
+                categories: allCategoryRows,
+            },
+            free_messages_delivered: {
+                total: totalFreeDelivered,
+                categories: freeCategoryRows,
+            },
+            paid_messages_delivered: {
+                total: totalPaidDelivered,
+                categories: allCategoryRows.filter(r => !FREE_CATEGORIES.has(r.key)),
+            },
+            approximate_total_charges: {
+                total_paise: totalChargesPaise,
+                categories: allCategoryRows.map(r => ({
+                    ...r,
+                    // Only paid categories carry charges
+                    charges_paise: FREE_CATEGORIES.has(r.key) ? 0 : r.charges_paise,
+                })),
+            },
+            recent_campaigns: recentCampaigns,
+        });
+    } catch (err: any) {
+        console.error('[broadcast/insights] Error:', err);
+        res.status(500).json({ error: err.message });
+    }
+}
+

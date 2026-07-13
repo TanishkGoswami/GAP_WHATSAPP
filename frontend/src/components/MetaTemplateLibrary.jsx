@@ -96,13 +96,16 @@ function MessagePreview({ template }) {
     const header = template.components?.find((component) => component.type === 'HEADER')?.text || ''
     const body = template.components?.find((component) => component.type === 'BODY')?.text || ''
     const buttons = template.components?.find((component) => component.type === 'BUTTONS')?.buttons || []
-    const parts = body.split(/(\{\{\d+\}\})/g)
+    
+    // Fallback for Meta template library where components are not returned
+    const displayBody = body || `Template: ${template.name.replace(/_/g, ' ')}\n\n(Preview content not provided by Meta. Import to view full content.)`
+    const parts = displayBody.split(/(\{\{\d+\}\})/g)
 
     return (
         <div className="meta-library-chat">
             <div className="relative z-10 max-w-[94%] rounded-[10px_10px_10px_3px] bg-white px-3 py-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.12)]">
                 {header ? <p className="mb-1.5 text-[12px] font-bold leading-4 text-slate-800">{header}</p> : null}
-                <p className="line-clamp-4 text-[12px] font-medium leading-[1.65] text-slate-700">
+                <p className="line-clamp-4 text-[12px] font-medium leading-[1.65] text-slate-700 whitespace-pre-wrap">
                     {parts.map((part, index) => /^\{\{\d+\}\}$/.test(part)
                         ? <span key={`${part}-${index}`} className="rounded bg-[#eaf8f1] px-1 py-0.5 font-mono text-[10px] font-semibold text-[#087a55]">{part}</span>
                         : part)}
