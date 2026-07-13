@@ -1,12 +1,13 @@
 import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import Sidebar from './Sidebar'
 import Modal from './Modal'
-import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield, ExternalLink, Menu, Moon, SunMedium, X, CheckCircle2, AlertTriangle, Check, Sparkles, ArrowRight } from 'lucide-react'
+import { Bell, User, LogOut, AlertCircle, Save, Loader2, Mail, Shield, ExternalLink, Menu, Moon, SunMedium, X, CheckCircle2, AlertTriangle, Check, Sparkles, ArrowRight, Megaphone } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { OnboardingProvider } from '../onboarding/OnboardingProvider'
 import TourButton from '../onboarding/TourButton'
 import { formatINRFromPaise } from '../config/whatsappPricing'
+import { supabase } from '../supabaseClient'
 
 const NIGHT_LIGHT_KEY = 'gap_night_light_enabled'
 
@@ -41,6 +42,8 @@ export default function Layout() {
 
     const [walletBalance, setWalletBalance] = useState(null)
     const [isWalletLoading, setIsWalletLoading] = useState(true)
+    const [toasts, setToasts] = useState([])
+    const transactionBufferRef = useRef({})
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
     const [notifications, setNotifications] = useState([])
@@ -218,6 +221,356 @@ export default function Layout() {
             active = false;
         };
     }, [isProfileOpen, user, apiCall]);
+
+    // Supabase Realtime Wallet & Campaigns Subscription
+    useEffect(() => {
+        if (!user) {
+            console.log('[CAMPAIGN_NOTIFICATION_DEBUG] No logged-in user, skipping realtime setup');
+            return;
+        }
+
+        if (!memberProfile?.organization_id) {
+            console.error('[CAMPAIGN_NOTIFICATION_ERROR] ORGANIZATION_MISMATCH: memberProfile has no organization_id');
+            return;
+        }
+
+        console.log('[CAMPAIGN_NOTIFICATION_DEBUG] Initializing Realtime channels for organization:', memberProfile.organization_id);
+
+        const triggerCampaignNotification = (campaignId, stageInfo = 'realtime_event') => {
+            if (!campaignId) {
+                console.error('[CAMPAIGN_NOTIFICATION_ERROR] CAMPAIGN_ID_MISSING', { stageInfo });
+                return;
+            }
+
+            // BUFFER_ADDED
+            if (!transactionBufferRef.current[campaignId]) {
+                transactionBufferRef.current[campaignId] = {
+                    campaignId,
+                    timeoutId: null
+                };
+                console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] BUFFER_ADDED: campaign_id = ${campaignId}`);
+            }
+
+            const buf = transactionBufferRef.current[campaignId];
+            if (buf.timeoutId) {
+                clearTimeout(buf.timeoutId);
+            }
+
+            buf.timeoutId = setTimeout(async () => {
+                console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] DEBOUNCE_FIRED: campaign_id = ${campaignId}`);
+                let campaignName = 'Campaign';
+                let totalMessages = 0;
+                let sent_count = 0;
+                let failed_count = 0;
+                let delivered_count = 0;
+                let read_count = 0;
+                let status = 'processing';
+
+                try {
+                    // Fetch latest name and results/counts from the existing broadcasts campaigns API (source of truth)
+                    const res = await apiCall(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/broadcasts/campaigns`);
+                    if (!res.ok) {
+                        console.error('[CAMPAIGN_NOTIFICATION_ERROR] CAMPAIGN_FETCH_FAILED', {
+                            campaign_id: campaignId,
+                            message: `API Status ${res.status}`
+                        });
+                        return;
+                    }
+
+                    const data = await res.json().catch(() => ({}));
+                    const campaign = data?.campaigns?.find(c => c.id === campaignId);
+
+                    if (campaign) {
+                        // Org check on the fetched campaign row
+                        if (campaign.organization_id !== memberProfile.organization_id) {
+                            console.error('[CAMPAIGN_NOTIFICATION_ERROR] ORGANIZATION_MISMATCH: campaign org does not match user org', {
+                                campaign_org: campaign.organization_id,
+                                user_org: memberProfile.organization_id
+                            });
+                            delete transactionBufferRef.current[campaignId];
+                            return;
+                        }
+
+                        console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] CAMPAIGN_FETCH_SUCCESS: campaign_id = ${campaignId}`);
+
+                        campaignName = campaign.name || 'Campaign';
+                        status = campaign.status || 'processing';
+                        if (campaign.schema_version >= 2) {
+                            totalMessages = campaign.total_contacts || 0;
+                            sent_count = campaign.accepted_count ?? campaign.sent_count ?? 0;
+                            failed_count = campaign.failed_count ?? 0;
+                            delivered_count = campaign.delivered_count ?? 0;
+                            read_count = campaign.read_count ?? 0;
+                        } else {
+                            // schema_version = 1 legacy campaign
+                            const results = Array.isArray(campaign.results) ? campaign.results : [];
+                            totalMessages = results.length || campaign.total_contacts || 0;
+                            sent_count = results.filter(r => ['accepted', 'sent', 'delivered', 'read'].includes(r?.status)).length;
+                            delivered_count = results.filter(r => ['delivered', 'read'].includes(r?.status)).length;
+                            read_count = results.filter(r => r?.status === 'read').length;
+                            failed_count = results.filter(r => r?.status === 'failed').length;
+                        }
+                    } else {
+                        console.warn('[CAMPAIGN_NOTIFICATION_DEBUG] No campaign found in API response for campaign_id:', campaignId);
+                    }
+                } catch (err) {
+                    console.error('[CAMPAIGN_NOTIFICATION_ERROR] CAMPAIGN_FETCH_FAILED', {
+                        campaign_id: campaignId,
+                        message: err?.message || String(err)
+                    });
+                    return;
+                }
+
+                // Query database ledger transactions for exact finances
+                let total_charged = 0;
+                let total_refunded = 0;
+                try {
+                    const { data: txs, error: txsErr } = await supabase
+                        .from('whatsapp_wallet_transactions')
+                        .select('type, amount_paise')
+                        .eq('organization_id', memberProfile.organization_id)
+                        .eq('status', 'completed')
+                        .filter('metadata->>campaign_id', 'eq', campaignId);
+
+                    if (txsErr) {
+                        console.error('[CAMPAIGN_NOTIFICATION_ERROR] LEDGER_FETCH_FAILED', {
+                            campaign_id: campaignId,
+                            message: txsErr.message,
+                            details: txsErr.details,
+                            code: txsErr.code
+                        });
+                        return;
+                    }
+
+                    if (txs) {
+                        console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] LEDGER_FETCH_SUCCESS: campaign_id = ${campaignId}`);
+                        txs.forEach(tx => {
+                            const val = Math.abs(tx.amount_paise || 0);
+                            if (['message_debit', 'campaign_reserve'].includes(tx.type)) {
+                                total_charged += val;
+                            } else if (['message_refund', 'refund', 'campaign_release'].includes(tx.type)) {
+                                total_refunded += val;
+                            }
+                        });
+                    }
+                } catch (err) {
+                    console.error('[CAMPAIGN_NOTIFICATION_ERROR] LEDGER_FETCH_FAILED', {
+                        campaign_id: campaignId,
+                        message: err?.message || String(err)
+                    });
+                    return;
+                }
+
+                const total_charged_formatted = formatINRFromPaise(total_charged);
+                const total_refunded_formatted = formatINRFromPaise(total_refunded);
+                const net_cost_formatted = formatINRFromPaise(total_charged - total_refunded);
+
+                const notifId = `campaign-${campaignId}`;
+
+                let toastTitle = 'Campaign Started';
+                let toastDesc = `${totalMessages} messages · ${total_charged_formatted} charged`;
+
+                if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+                    toastTitle = 'Campaign Completed';
+                    toastDesc = `Delivered ${delivered_count}/${totalMessages} · Failed ${failed_count}\nNet Cost ${net_cost_formatted}`;
+                } else if (total_refunded > 0) {
+                    toastTitle = 'Campaign Refund Updated';
+                    toastDesc = `${failed_count} failed · ${total_refunded_formatted} refunded`;
+                }
+
+                let newNotif;
+                try {
+                    newNotif = {
+                        id: notifId,
+                        title: toastTitle,
+                        message: toastDesc,
+                        type: 'campaign',
+                        time: new Date().toISOString(),
+                        read: false,
+                        link: `/broadcast?campaignId=${campaignId}`,
+                        metadata: {
+                            campaignName,
+                            status,
+                            total_messages: totalMessages,
+                            sent_count,
+                            delivered_count,
+                            read_count,
+                            failed_count,
+                            total_charged: total_charged_formatted,
+                            total_refunded: total_refunded_formatted,
+                            net_cost: net_cost_formatted
+                        }
+                    };
+                    console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] PAYLOAD_CREATED: campaign_id = ${campaignId}`, newNotif);
+                } catch (err) {
+                    console.error('[CAMPAIGN_NOTIFICATION_ERROR] PAYLOAD_BUILD_FAILED', {
+                        campaign_id: campaignId,
+                        message: err?.message || String(err)
+                    });
+                    delete transactionBufferRef.current[campaignId];
+                    return;
+                }
+
+                // Render Bell notifications state
+                try {
+                    setNotifications(prev => {
+                        const filtered = prev.filter(n => n.id !== notifId);
+                        return [newNotif, ...filtered];
+                    });
+                    console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] STATE_UPDATED: campaign_id = ${campaignId}`);
+                } catch (err) {
+                    console.error('[CAMPAIGN_NOTIFICATION_ERROR] BELL_RENDER_FAILED', {
+                        campaign_id: campaignId,
+                        message: err?.message || String(err)
+                    });
+                }
+
+                // Render Toast notifications state
+                try {
+                    setToasts(prev => {
+                        const filtered = prev.filter(t => t.id !== notifId);
+                        const toastItem = {
+                            id: notifId,
+                            title: toastTitle,
+                            campaignName,
+                            description: toastDesc,
+                            type: status === 'completed' || status === 'failed' || status === 'cancelled' ? 'completed' : total_refunded > 0 ? 'refund' : 'debit'
+                        };
+                        // Setup auto-dismiss timeout for this toast
+                        setTimeout(() => {
+                            setToasts(curr => curr.filter(t => t.id !== notifId));
+                        }, 6000);
+                        return [...filtered, toastItem];
+                    });
+                    console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] TOAST_RENDERED: campaign_id = ${campaignId}`);
+                } catch (err) {
+                    console.error('[CAMPAIGN_NOTIFICATION_ERROR] TOAST_RENDER_FAILED', {
+                        campaign_id: campaignId,
+                        message: err?.message || String(err)
+                    });
+                }
+
+                // Delete buffer
+                delete transactionBufferRef.current[campaignId];
+            }, 3000);
+        };
+
+        const handleTxEvent = (newTx) => {
+            // Update wallet balance in header
+            setWalletBalance(prev => {
+                if (prev === null) return prev;
+                return prev + Number(newTx.amount_paise || 0);
+            });
+
+            // Parse JSONB metadata safely in case it is serialized as string in postgres_changes payload
+            let metadata = newTx.metadata;
+            console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] REALTIME_EVENT_RECEIVED: raw metadata = ${JSON.stringify(metadata)}, typeof metadata = ${typeof metadata}`);
+
+            if (typeof metadata === 'string') {
+                try {
+                    metadata = JSON.parse(metadata);
+                    console.log('[CAMPAIGN_NOTIFICATION_DEBUG] Metadata successfully parsed from string to object');
+                } catch (err) {
+                    console.error('[CAMPAIGN_NOTIFICATION_ERROR] METADATA_PARSE_FAILED', {
+                        transaction_id: newTx.id,
+                        raw_metadata: newTx.metadata,
+                        err: String(err)
+                    });
+                }
+            }
+
+            const campaignId = metadata?.campaign_id || null;
+            if (campaignId) {
+                console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] CAMPAIGN_ID_RESOLVED: campaign_id = ${campaignId}`);
+                triggerCampaignNotification(campaignId, 'wallet_transaction_insert');
+            } else {
+                console.warn('[CAMPAIGN_NOTIFICATION_DEBUG] Wallet transaction inserted without a campaign_id in metadata');
+            }
+        };
+
+        // Bind DEV-ONLY manual trigger tool window function to isolate UI testing
+        if (process.env.NODE_ENV !== 'production' || import.meta.env.DEV) {
+            window.testNotificationPipeline = (campaignId, mockTxType = 'message_refund', mockAmountPaise = 89) => {
+                console.log('[CAMPAIGN_NOTIFICATION_DEBUG] DEV-ONLY trigger fired manually for UI isolation', { campaignId, mockTxType });
+                
+                const mockTx = {
+                    id: 'mock-tx-id-' + Date.now(),
+                    amount_paise: mockTxType.includes('refund') ? mockAmountPaise : -mockAmountPaise,
+                    type: mockTxType,
+                    metadata: {
+                        campaign_id: campaignId
+                    }
+                };
+                handleTxEvent(mockTx);
+            };
+            console.log('[CAMPAIGN_NOTIFICATION_DEBUG] DEV-ONLY test trigger bound. Run window.testNotificationPipeline("campaignId", "message_refund", 89) in console.');
+        }
+
+        const txChannel = supabase
+            .channel(`wallet_tx_realtime:${memberProfile.organization_id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'whatsapp_wallet_transactions',
+                    filter: `organization_id=eq.${memberProfile.organization_id}`
+                },
+                (payload) => {
+                    handleTxEvent(payload.new);
+                }
+            );
+
+        txChannel.subscribe((status, err) => {
+            console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] txChannel status changed: ${status}`);
+            if (status === 'CHANNEL_ERROR' || err) {
+                console.error('[CAMPAIGN_NOTIFICATION_ERROR] REALTIME_SUBSCRIPTION_FAILED', {
+                    table: 'whatsapp_wallet_transactions',
+                    details: err?.message || status
+                });
+            }
+        });
+
+        const campaignsChannel = supabase
+            .channel(`campaigns_realtime:${memberProfile.organization_id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'w_campaigns',
+                    filter: `organization_id=eq.${memberProfile.organization_id}`
+                },
+                (payload) => {
+                    console.log('[CAMPAIGN_NOTIFICATION_DEBUG] Received campaigns_realtime event:', payload);
+                    const campaignId = payload.new?.id || null;
+                    if (campaignId) {
+                        triggerCampaignNotification(campaignId, `campaign_table_${payload.eventType}`);
+                    } else {
+                        console.warn('[CAMPAIGN_NOTIFICATION_DEBUG] Campaigns table event payload missing payload.new.id');
+                    }
+                }
+            );
+
+        campaignsChannel.subscribe((status, err) => {
+            console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] campaignsChannel status changed: ${status}`);
+            if (status === 'CHANNEL_ERROR' || err) {
+                console.error('[CAMPAIGN_NOTIFICATION_ERROR] REALTIME_SUBSCRIPTION_FAILED', {
+                    table: 'w_campaigns',
+                    details: err?.message || status
+                });
+            }
+        });
+
+        return () => {
+            console.log('[CAMPAIGN_NOTIFICATION_DEBUG] Tearing down Realtime channels');
+            supabase.removeChannel(txChannel);
+            supabase.removeChannel(campaignsChannel);
+            if (window.testNotificationPipeline) {
+                delete window.testNotificationPipeline;
+            }
+        };
+    }, [memberProfile?.organization_id, user]);
 
     const formatPlanDate = (dateString) => {
         if (!dateString) return 'N/A'
@@ -440,7 +793,6 @@ export default function Layout() {
             setIsSavingProfile(false)
         }
     }
-
     return (
         <OnboardingProvider>
             <div className="fixed inset-0 flex min-w-0 bg-[#f5f7fa]">
@@ -649,20 +1001,28 @@ export default function Layout() {
                                                         {!item.read && (
                                                             <span className="absolute left-1.5 top-4.5 h-1.5 w-1.5 rounded-full bg-[#0070d1] animate-pulse" />
                                                         )}
-
                                                         {/* Status Icon Indicator */}
-                                                        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-xs shadow-[0_1px_2px_rgba(0,0,0,0.01)] ${isCritical
-                                                            ? 'bg-rose-50 border-rose-100 text-rose-600'
-                                                            : isError
-                                                                ? 'bg-red-50 border-red-100 text-red-600'
-                                                                : isSuccess
+                                                        <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border text-xs shadow-[0_1px_2px_rgba(0,0,0,0.01)] ${
+                                                            item.type === 'campaign'
+                                                                ? item.metadata?.status === 'completed'
                                                                     ? 'bg-emerald-50 border-emerald-100 text-emerald-600'
-                                                                    : isWarning
-                                                                        ? 'bg-amber-50 border-amber-100 text-amber-600'
-                                                                        : 'bg-neutral-50 border-neutral-200 text-neutral-600'
+                                                                    : item.metadata?.status === 'failed'
+                                                                        ? 'bg-rose-50 border-rose-100 text-rose-600'
+                                                                        : 'bg-indigo-50 border-indigo-100 text-indigo-600'
+                                                                : isCritical
+                                                                    ? 'bg-rose-50 border-rose-100 text-rose-600'
+                                                                    : isError
+                                                                        ? 'bg-red-50 border-red-100 text-red-600'
+                                                                        : isSuccess
+                                                                            ? 'bg-emerald-50 border-emerald-100 text-emerald-600'
+                                                                            : isWarning
+                                                                                ? 'bg-amber-50 border-amber-100 text-amber-600'
+                                                                                : 'bg-neutral-50 border-neutral-200 text-neutral-600'
                                                             }`}
                                                         >
-                                                            {isCritical ? (
+                                                            {item.type === 'campaign' ? (
+                                                                <Megaphone className="h-3.5 w-3.5" />
+                                                            ) : isCritical ? (
                                                                 <AlertTriangle className="h-3.5 w-3.5" />
                                                             ) : isError ? (
                                                                 <AlertCircle className="h-3.5 w-3.5" />
@@ -676,16 +1036,55 @@ export default function Layout() {
                                                         </div>
 
                                                         {/* Details */}
-                                                        <div className="min-w-0 flex-1 pr-4">
-                                                            <p className={`text-xs font-semibold tracking-tight leading-tight ${!item.read ? 'text-neutral-900' : 'text-neutral-600'}`}>
-                                                                {item.title}
-                                                            </p>
-                                                            <p className="mt-0.5 text-[11px] leading-normal text-neutral-500 font-medium">
-                                                                {item.message}
-                                                            </p>
-                                                            <span className="mt-1 block text-[8px] font-bold text-neutral-400 uppercase tracking-wider font-mono">
-                                                                {formatRelativeTime(item.time)}
-                                                            </span>
+                                                        <div className="min-w-0 flex-1 pr-4 font-sans text-xs">
+                                                            {item.type === 'campaign' ? (
+                                                                <div className="space-y-1.5">
+                                                                    <p className={`text-[13px] font-bold tracking-tight ${!item.read ? 'text-neutral-900' : 'text-neutral-650'}`}>
+                                                                        {item.title}
+                                                                    </p>
+                                                                    <div className="text-[11px] font-medium text-neutral-500 space-y-1 bg-neutral-50 p-2.5 rounded-lg border border-neutral-100/50">
+                                                                        <div className="flex justify-between items-center pb-1 border-b border-neutral-100/60">
+                                                                            <span className="font-bold text-neutral-805 truncate max-w-[180px]">{item.metadata?.campaignName}</span>
+                                                                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                                                                item.metadata?.status === 'completed'
+                                                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                                                                    : item.metadata?.status === 'failed'
+                                                                                        ? 'bg-rose-50 text-rose-700 border border-rose-100'
+                                                                                        : 'bg-indigo-50 text-indigo-700 border border-indigo-100'
+                                                                            }`}>
+                                                                                {item.metadata?.status}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 pt-1 font-mono text-[10px]">
+                                                                            <div>Total: <span className="font-bold text-neutral-800">{item.metadata?.total_messages}</span></div>
+                                                                            <div>Sent: <span className="font-bold text-neutral-800">{item.metadata?.sent_count}</span></div>
+                                                                            <div>Delivered: <span className="font-bold text-neutral-800">{item.metadata?.delivered_count}</span></div>
+                                                                            <div>Read: <span className="font-bold text-neutral-800">{item.metadata?.read_count}</span></div>
+                                                                            <div className="col-span-2 text-rose-600">Failed: <span className="font-bold">{item.metadata?.failed_count}</span></div>
+                                                                        </div>
+                                                                        <div className="pt-1.5 mt-1 border-t border-neutral-100/60 grid grid-cols-3 gap-1 font-mono text-[9px] text-neutral-500">
+                                                                            <div>Charged: <span className="font-bold text-neutral-700">₹{item.metadata?.total_charged}</span></div>
+                                                                            <div>Refunded: <span className="font-bold text-emerald-600">₹{item.metadata?.total_refunded}</span></div>
+                                                                            <div>Net: <span className="font-bold text-neutral-900">₹{item.metadata?.net_cost}</span></div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <span className="block text-[8px] font-bold text-neutral-450 uppercase tracking-wider font-mono">
+                                                                        {formatRelativeTime(item.time)}
+                                                                    </span>
+                                                                </div>
+                                                            ) : (
+                                                                <div>
+                                                                    <p className={`text-xs font-semibold tracking-tight leading-tight ${!item.read ? 'text-neutral-900' : 'text-neutral-600'}`}>
+                                                                        {item.title}
+                                                                    </p>
+                                                                    <p className="mt-0.5 text-[11px] leading-normal text-neutral-500 font-medium">
+                                                                        {item.message}
+                                                                    </p>
+                                                                    <span className="mt-1 block text-[8px] font-bold text-neutral-400 uppercase tracking-wider font-mono">
+                                                                        {formatRelativeTime(item.time)}
+                                                                    </span>
+                                                                </div>
+                                                            )}
                                                         </div>
 
                                                         {/* Dismiss button */}
@@ -1032,6 +1431,52 @@ export default function Layout() {
                             </div>
                         </div>
                     </Modal>
+
+                    {/* Toast notifications container */}
+                    <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+                        <style>{`
+                            @keyframes slideIn {
+                                from { transform: translateY(20px); opacity: 0; }
+                                to { transform: translateY(0); opacity: 1; }
+                            }
+                            .animate-slide-in {
+                                animation: slideIn 0.3s ease-out forwards;
+                            }
+                        `}</style>
+                        {toasts.map(toast => (
+                            <div
+                                key={toast.id}
+                                className="pointer-events-auto flex items-start gap-3 rounded-2xl border border-neutral-200 bg-white/95 backdrop-blur-md p-4 shadow-[0_10px_30px_rgba(0,0,0,0.08)] transition-all duration-300 animate-slide-in"
+                            >
+                                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-xs ${
+                                    toast.type === 'debit'
+                                        ? 'bg-neutral-50 border-neutral-100 text-neutral-600'
+                                        : 'bg-emerald-50 border-emerald-100 text-emerald-600'
+                                }`}>
+                                    {toast.type === 'debit' ? (
+                                        <img src="/images/money.png" className="h-4.5 w-4.5 object-contain" alt="Money" />
+                                    ) : (
+                                        <CheckCircle2 className="h-4 w-4" />
+                                    )}
+                                </div>
+                                <div className="flex-1 min-w-0 font-sans">
+                                    <p className="text-xs font-bold text-neutral-900 leading-tight">
+                                        {toast.title} <span className="font-extrabold text-neutral-950">{toast.amount}</span>
+                                    </p>
+                                    <p className="mt-1 text-[11px] font-medium text-neutral-500 leading-normal">
+                                        {toast.description}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                                    className="text-neutral-400 hover:text-neutral-700 p-0.5 shrink-0"
+                                >
+                                    <X className="h-3.5 w-3.5" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         </OnboardingProvider>
