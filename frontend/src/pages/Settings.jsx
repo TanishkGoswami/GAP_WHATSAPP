@@ -1,6 +1,6 @@
 import { createElement, useState, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield, Activity, Calendar, ChevronDown } from 'lucide-react'
+import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield, Activity, Calendar, ChevronDown, BarChart2, TrendingUp, Send as SendIcon, CheckCircle2, XCircle, Eye, Megaphone } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { useNotificationSound } from '../hooks/useNotificationSound'
@@ -37,6 +37,9 @@ export default function Settings() {
     const { alertDialog, confirmDialog } = useDialog()
     const [billingOverview, setBillingOverview] = useState(null)
     const [, setIsLoadingBilling] = useState(true)
+    const [broadcastInsights, setBroadcastInsights] = useState(null)
+    const [isLoadingBroadcastInsights, setIsLoadingBroadcastInsights] = useState(false)
+    const [broadcastInsightsError, setBroadcastInsightsError] = useState('')
     const {
         isEnabled: notificationSoundEnabled,
         setIsEnabled: setNotificationSoundEnabled,
@@ -563,6 +566,34 @@ export default function Settings() {
         }
     }, [activeTab, selectedAccountId])
 
+    const fetchBroadcastInsights = async () => {
+        if (!session?.access_token) return
+        setIsLoadingBroadcastInsights(true)
+        setBroadcastInsightsError('')
+        try {
+            const res = await fetch(`${BACKEND_BASE}/api/broadcasts/insights`, {
+
+                headers: {
+                    Authorization: `Bearer ${session.access_token}`,
+                    'X-Auth-Portal': loginType || 'owner'
+                }
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data?.error || 'Failed to load broadcast insights')
+            setBroadcastInsights(data)
+        } catch (e) {
+            setBroadcastInsightsError(e?.message || 'Failed to load broadcast insights.')
+        } finally {
+            setIsLoadingBroadcastInsights(false)
+        }
+    }
+
+    useEffect(() => {
+        if (activeTab === 'broadcast_insights') {
+            fetchBroadcastInsights()
+        }
+    }, [activeTab])
+
     const selectedNotificationSound = notificationSounds.find(sound => sound.id === selectedSoundId) || notificationSounds[0]
 
     return (
@@ -574,7 +605,7 @@ export default function Settings() {
                     <TourButton compact />
                 </div>
                 <nav className="flex gap-1.5 overflow-x-auto p-1 bg-gray-100/60 rounded-xl lg:bg-transparent lg:p-0 lg:block lg:space-y-1 lg:overflow-visible scrollbar-none">
-                    {['General', 'Notifications', 'Knowledge Base', 'Integrations', 'Developer API'].map((tab) => {
+                    {['General', 'Notifications', 'Knowledge Base', 'Integrations', 'Developer API', 'Broadcast Insights'].map((tab) => {
                         const id = tab.toLowerCase().replace(' ', '_')
                         return (
                             <button
@@ -590,6 +621,7 @@ export default function Settings() {
                                 {id === 'knowledge_base' && <Database className="mr-2 h-4 w-4 shrink-0 text-indigo-600/70 lg:mr-3 lg:h-5 lg:w-5 lg:text-gray-400" />}
                                 {id === 'integrations' && <ShoppingBag className="mr-2 h-4 w-4 shrink-0 text-indigo-600/70 lg:mr-3 lg:h-5 lg:w-5 lg:text-gray-400" />}
                                 {id === 'developer_api' && <Bot className="mr-2 h-4 w-4 shrink-0 text-indigo-600/70 lg:mr-3 lg:h-5 lg:w-5 lg:text-gray-400" />}
+                                {id === 'broadcast_insights' && <BarChart2 className="mr-2 h-4 w-4 shrink-0 text-indigo-600/70 lg:mr-3 lg:h-5 lg:w-5 lg:text-gray-400" />}
                                 {tab}
                             </button>
                         )
@@ -1000,7 +1032,7 @@ export default function Settings() {
                                                     <h4 className="text-sm font-bold text-gray-900">Business details</h4>
                                                     <p className="mt-1 text-xs text-gray-500">Customer-facing description and ways to contact the business.</p>
                                                 </div>
- 
+
                                                 <div className="grid grid-cols-1 gap-5 2xl:grid-cols-2">
                                                     <label className="block 2xl:col-span-2">
                                                         <span className="text-xs font-semibold text-gray-700">Business description</span>
@@ -1053,7 +1085,7 @@ export default function Settings() {
                                                     </label>
                                                 </div>
                                             </section>
- 
+
                                             <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 text-xs leading-relaxed text-indigo-900 flex gap-2.5">
                                                 <Info className="h-4 w-4 shrink-0 text-indigo-600 mt-0.5" />
                                                 <div>
@@ -1062,7 +1094,7 @@ export default function Settings() {
                                                 </div>
                                             </div>
                                         </div>
- 
+
                                         <div className="sticky bottom-0 flex items-center justify-between border-t border-gray-200 bg-white/95 px-4 sm:px-8 py-4 backdrop-blur-md z-20">
                                             <div className="text-xs text-gray-400 font-medium">
                                                 Changes apply to the selected WhatsApp account only.
@@ -1587,7 +1619,168 @@ export default function Settings() {
                     </div>
                 )}
 
-                {activeTab !== 'general' && activeTab !== 'notifications' && activeTab !== 'knowledge_base' && activeTab !== 'integrations' && activeTab !== 'developer_api' && activeTab !== 'team_members' && (
+                {activeTab === 'broadcast_insights' && (() => {
+                    const allMsg = broadcastInsights?.all_messages || {}
+                    const msgDelivered = broadcastInsights?.messages_delivered || {}
+                    const freeDelivered = broadcastInsights?.free_messages_delivered || {}
+                    const paidDelivered = broadcastInsights?.paid_messages_delivered || {}
+                    const charges = broadcastInsights?.approximate_total_charges || {}
+                    const recent = broadcastInsights?.recent_campaigns || []
+
+                    const fmtRupees = (paise) => `₹${((Number(paise) || 0) / 100).toFixed(2)}`
+                    const fmtNum = (n) => Number(n || 0).toLocaleString()
+                    const isLoading = isLoadingBroadcastInsights && !broadcastInsights
+
+                    const CAT_COLORS = {
+                        marketing: '#1877f2',
+                        marketing_lite: '#f0a500',
+                        utility: '#e03c31',
+                        authentication: '#e03c31',
+                        authentication_international: '#e03c31',
+                        ai_provider: '#e03c31',
+                        service: '#1877f2',
+                        free_customer_service: '#1877f2',
+                        free_entry_point: '#e03c31',
+                    }
+
+                    const statusColor = (st) => ({
+                        completed: 'bg-emerald-100 text-emerald-700',
+                        processing: 'bg-blue-100 text-blue-700',
+                        queued: 'bg-amber-100 text-amber-700',
+                        failed: 'bg-red-100 text-red-700',
+                        cancelled: 'bg-gray-100 text-gray-600',
+                        scheduled: 'bg-purple-100 text-purple-700',
+                        paused: 'bg-orange-100 text-orange-700',
+                    }[st] || 'bg-gray-100 text-gray-500')
+
+                    const DashIcon = ({ colorKey }) => (
+                        <span className="shrink-0 inline-flex gap-0.5 items-center">
+                            {[0, 1, 2].map(i => (
+                                <span key={i} className="inline-block h-[2px] w-[6px] rounded-full"
+                                    style={{ backgroundColor: CAT_COLORS[colorKey] || '#999', opacity: i === 1 ? 0.5 : 1 }}
+                                />
+                            ))}
+                        </span>
+                    )
+
+                    const CategoryRow = ({ label, value, colorKey }) => (
+                        <div className="flex items-center justify-between py-1.5">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <DashIcon colorKey={colorKey} />
+                                <span className="text-sm text-gray-600 truncate">{label}</span>
+                            </div>
+                            <span className="text-sm font-medium text-gray-900 ml-3 shrink-0 tabular-nums">{value}</span>
+                        </div>
+                    )
+
+                    const InsightPanel = ({ title, total, totalLabel, rows }) => (
+                        <div className="rounded border border-gray-200 bg-white overflow-hidden">
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                                <div className="flex items-center gap-2">
+                                    <span className="inline-block h-0.5 w-4 rounded-full bg-gray-700" />
+                                    <span className="text-sm font-semibold text-gray-800">{title}</span>
+                                </div>
+                                {(total !== undefined || totalLabel) && (
+                                    <span className="text-sm font-bold text-gray-900 tabular-nums">{totalLabel !== undefined ? totalLabel : fmtNum(total)}</span>
+                                )}
+                            </div>
+                            <div className="px-4 py-1">
+                                {isLoading ? (
+                                    <div className="space-y-2 py-2">
+                                        {[1, 2, 3].map(i => <div key={i} className="h-7 bg-gray-100 rounded animate-pulse" />)}
+                                    </div>
+                                ) : rows.length === 0 ? (
+                                    <p className="text-sm text-gray-400 py-5 text-center">No data for this period.</p>
+                                ) : (
+                                    <div className="divide-y divide-gray-50">
+                                        {rows.map(row => (
+                                            <CategoryRow key={row.key || row.label} label={row.label} value={row.value} colorKey={row.key} />
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )
+
+                    return (
+                        <div className="bg-white min-h-full">
+                            {/* Header */}
+                            <div className="flex flex-col gap-3 border-b border-gray-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <h2 className="text-base font-semibold text-gray-900">Insights</h2>
+                                    <p className="text-xs text-gray-500 mt-0.5">WhatsApp Business message analytics</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={fetchBroadcastInsights}
+                                    disabled={isLoadingBroadcastInsights}
+                                    className="inline-flex items-center gap-1.5 rounded border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors self-start sm:self-auto"
+                                >
+                                    <RefreshCw className={`h-3.5 w-3.5 ${isLoadingBroadcastInsights ? 'animate-spin' : ''}`} />
+                                    Refresh
+                                </button>
+                            </div>
+
+
+
+                            {broadcastInsightsError && (
+                                <div className="mx-5 mt-4 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                                    {broadcastInsightsError}
+                                </div>
+                            )}
+
+                            <div className="p-5 space-y-4">
+
+                                {/* Top 3-panel grid */}
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                                    <InsightPanel
+                                        title="All Messages"
+                                        rows={[
+                                            { key: 'marketing', label: 'Messages sent', value: fmtNum(allMsg.total_sent) },
+                                            { key: 'service', label: 'Messages delivered', value: fmtNum(allMsg.total_delivered) },
+                                            { key: 'utility', label: 'Messages received', value: fmtNum(allMsg.total_received) },
+                                        ]}
+                                    />
+                                    <InsightPanel
+                                        title="Messages Delivered"
+                                        total={msgDelivered.total}
+                                        rows={(msgDelivered.categories || []).map(c => ({
+                                            key: c.key, label: c.label, value: fmtNum(c.delivered)
+                                        }))}
+                                    />
+                                    <InsightPanel
+                                        title="Free Messages Delivered"
+                                        total={freeDelivered.total}
+                                        rows={(freeDelivered.categories || []).map(c => ({
+                                            key: c.key, label: c.label, value: fmtNum(c.delivered)
+                                        }))}
+                                    />
+                                </div>
+
+                                {/* Bottom 2-panel grid */}
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                                    <InsightPanel
+                                        title="Paid Messages Delivered"
+                                        total={paidDelivered.total}
+                                        rows={(paidDelivered.categories || []).map(c => ({
+                                            key: c.key, label: c.label, value: fmtNum(c.delivered)
+                                        }))}
+                                    />
+                                    <InsightPanel
+                                        title="Approximate Total Charges"
+                                        totalLabel={fmtRupees(charges.total_paise)}
+                                        rows={(charges.categories || []).map(c => ({
+                                            key: c.key, label: c.label, value: fmtRupees(c.charges_paise)
+                                        }))}
+                                    />
+                                </div>
+
+                            </div>
+                        </div>
+                    )
+                })()}
+
+                {activeTab !== 'general' && activeTab !== 'notifications' && activeTab !== 'knowledge_base' && activeTab !== 'integrations' && activeTab !== 'developer_api' && activeTab !== 'team_members' && activeTab !== 'broadcast_insights' && (
                     <div className="flex items-center justify-center h-full text-gray-400">
                         Content for {activeTab.replace('_', ' ')} coming soon...
                     </div>

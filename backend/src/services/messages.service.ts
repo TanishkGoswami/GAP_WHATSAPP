@@ -134,12 +134,40 @@ export async function recordWhatsappMessageUsage(params: {
                         billing_category: category,
                         billing_amount_paise: chargedAmount,
                         billing_status: billingStatus,
-                        wallet_transaction_id: walletTransactionId,
                     })
                     .eq('id', params.message_id);
             }
+
+            // Insert into whatsapp_message_usage_logs for analytics and billing breakdown
+            await supabase.from('whatsapp_message_usage_logs').insert({
+                organization_id: params.organization_id,
+                wa_account_id: params.wa_account_id || null,
+                campaign_id: params.campaign_id || null,
+                conversation_id: params.conversation_id || null,
+                contact_id: params.contact_id || null,
+                message_id: params.message_id || null,
+                wa_message_id: params.wa_message_id || null,
+                direction: 'outbound',
+                source: params.source || 'system',
+                category,
+                template_name: params.template_name || null,
+                recipient_country: DEFAULT_BILLING_MARKET,
+                rate_paise: chargedAmount,
+                meta_cost_paise: Number(rate.pass_through_rate_paise || chargedAmount),
+                markup_paise: Number(rate.markup_paise || 0),
+                charged_amount_paise: chargedAmount,
+                billable: chargedAmount > 0,
+                billing_status: billingStatus,
+                delivery_status: 'sent',
+                wallet_transaction_id: walletTransactionId,
+                metadata: {
+                    market: DEFAULT_BILLING_MARKET,
+                    currency: DEFAULT_BILLING_CURRENCY,
+                },
+            });
         }
     } catch (err: any) {
+
         console.error('recordWhatsappMessageUsage error:', err);
     }
 }
@@ -283,3 +311,31 @@ export async function storeMessage(params: {
     if (error) console.error("Store Message Error:", error);
     return data;
 }
+
+export async function refundWhatsappMessage(messageIdOrWaMessageId: string) {
+    try {
+        console.log(`[Refund] Webhook reported failure. Refund function triggered for: ${messageIdOrWaMessageId}`);
+
+        const { data, error } = await supabase.rpc('refund_whatsapp_message', {
+            p_wa_message_id: messageIdOrWaMessageId
+        });
+
+        if (error) {
+            console.error(`[Refund] Refund execution failed for ${messageIdOrWaMessageId}. Error:`, error);
+            return { success: false, error: error.message };
+        }
+
+        const res = data as { success: boolean; reason?: string; refunded_amount?: number; new_balance?: number };
+        if (res && res.success) {
+            console.log(`[Refund] Refund SUCCESS: Credited ${res.refunded_amount} paise. New Balance: ${res.new_balance} paise. Message: ${messageIdOrWaMessageId}`);
+        } else {
+            console.log(`[Refund] Refund SKIPPED. Reason: ${res?.reason || 'unknown'}. Message: ${messageIdOrWaMessageId}`);
+        }
+
+        return res;
+    } catch (err: any) {
+        console.error(`[Refund] Refund execution failed for ${messageIdOrWaMessageId}. System Error:`, err);
+        return { success: false, error: err.message };
+    }
+}
+

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Send, Users, FileText, Calendar, Check, ArrowRight, LayoutGrid, Loader2, Clock, Trash2, ChevronDown, ChevronUp, Upload, Link as LinkIcon, Info, Wallet, Pause, Play, Phone, MessageSquare, ShieldCheck, TrendingUp, Search, X } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuth } from '../context/AuthContext'
@@ -116,6 +117,7 @@ export default function Broadcast() {
     const { session, apiCall } = useAuth()
     const { alertDialog, confirmDialog } = useDialog()
     const token = session?.access_token
+    const location = useLocation()
 
     const getPreviewText = () => {
         if (!selectedTemplate) return '';
@@ -378,6 +380,23 @@ export default function Broadcast() {
             if (interval) clearInterval(interval);
         }
     }, [activeTab, token]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const campaignId = params.get('campaignId') || location.state?.expandCampaignId;
+        if (campaignId && campaignsList.length > 0) {
+            const found = campaignsList.find(c => c.id === campaignId);
+            if (found) {
+                setActiveTab('history');
+                setExpandedCampaignId(campaignId);
+                if (found.schema_version >= 2) {
+                    fetchRecipientReport(campaignId, 1);
+                }
+                // Clear state or URL search parameters so it doesn't expand on every reload
+                window.history.replaceState(null, '', location.pathname);
+            }
+        }
+    }, [location.search, location.state, campaignsList]);
 
     useEffect(() => {
         if (currentStep !== 4 || !token || !campaign.template_name) return;
