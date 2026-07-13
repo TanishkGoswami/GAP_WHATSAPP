@@ -4,7 +4,7 @@ import { supabase } from '../config/supabase.js';
 import { io } from '../socket.js';
 import { performAutoAssignment } from '../services/assignment.service.js';
 
-import { storeMessage, upsertConversation } from '../services/messages.service.js';
+import { storeMessage, upsertConversation, refundWhatsappMessage } from '../services/messages.service.js';
 import { sendTextMessage, applyReactionUpdate, downloadMetaMedia, sendInteractiveButtons, sendFlowMediaMessageMeta } from '../services/messages.sender.js';
 import { processFlowEngine } from '../services/flows.service.js';
 import { upsertContact } from '../services/contacts.service.js';
@@ -1430,7 +1430,31 @@ export async function handleWebhook(req: any, res: Response) {
           wa_message_id,
           status: newStatus,
         });
+
+        if (newStatus === "failed") {
+          refundWhatsappMessage(wa_message_id).catch((refundErr) => {
+            webhookError("status.refund.failed", refundErr, {
+              requestId,
+              wa_message_id,
+            });
+          });
+        }
       }
+
+      // Sync status update to whatsapp_message_usage_logs for analytics accuracy
+      const { error: logUpdateError } = await supabase
+        .from("whatsapp_message_usage_logs")
+        .update({ delivery_status: newStatus })
+        .eq("wa_message_id", wa_message_id);
+
+      if (logUpdateError) {
+        webhookError("status.log_update.failed", logUpdateError, {
+          requestId,
+          wa_message_id,
+          status: newStatus,
+        });
+      }
+
 
       const campaignId = nextMetadata.campaign_id || null;
       if (campaignId && existingMessage?.automation_source === "broadcast") {
@@ -1493,9 +1517,20 @@ export async function handleWebhook(req: any, res: Response) {
           if (matched) {
             const sentCount = nextResults.filter((result: any) => result.status !== "failed").length;
             const failedCount = nextResults.filter((result: any) => result.status === "failed").length;
+            const deliveredCount = nextResults.filter((result: any) =>
+              ["delivered", "read"].includes(result.status) ||
+              ["delivered", "read"].includes(result.delivery_status)
+            ).length;
+            const readCount = nextResults.filter((result: any) =>
+              result.status === "read" ||
+              result.delivery_status === "read"
+            ).length;
+
             const campaignUpdatePayload: any = {
               results: nextResults,
               sent_count: sentCount,
+              delivered_count: deliveredCount,
+              read_count: readCount,
               failed_count: failedCount,
             };
             if (failedCount === nextResults.length) {
@@ -1505,6 +1540,7 @@ export async function handleWebhook(req: any, res: Response) {
               .from("w_campaigns")
               .update(campaignUpdatePayload)
               .eq("id", campaign.id);
+
 
             if (campaignUpdateError) {
               webhookError("status.campaign_update.failed", campaignUpdateError, {
