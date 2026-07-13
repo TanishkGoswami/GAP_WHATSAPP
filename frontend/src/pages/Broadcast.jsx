@@ -1070,7 +1070,11 @@ export default function Broadcast() {
                                                                         </span>
                                                                     ) : res.status === 'failed' ? (
                                                                         <span className="max-w-xl whitespace-normal break-words text-right font-semibold text-rose-600 flex items-center gap-1.5" title={res.error}>
-                                                                            <Info className="w-4 h-4 shrink-0" /> Failed: {res.error}
+                                                                            <Info className="w-4 h-4 shrink-0" /> Failed: {
+                                                                                res.error?.includes('131049') 
+                                                                                    ? "Meta limit reached: User cannot receive more marketing messages today." 
+                                                                                    : res.error?.split(' | ')[0] || res.error
+                                                                            }
                                                                         </span>
                                                                     ) : (
                                                                         <span className="text-amber-600 font-semibold">{res.status}</span>
