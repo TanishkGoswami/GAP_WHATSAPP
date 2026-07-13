@@ -1460,7 +1460,7 @@ function CreateTemplateModal({ isOpen, onClose, onSuccess, apiCall, initialData 
                     <div className="wa-template-canvas border-l border-slate-200 p-4">
                         <div className="rounded-lg bg-white p-3 shadow-sm">
                             {header?.text && <p className="text-xs font-bold text-slate-900">{header.text}</p>}
-                            <p className="mt-2 whitespace-pre-line text-[11px] leading-5 text-slate-700">{renderTemplateText(body?.text || '')}</p>
+                            <p className="mt-2 whitespace-pre-line text-[11px] leading-5 text-slate-700">{renderTemplateText(body?.text || `Template: ${initialData.name?.replace(/_/g, ' ')}\n\n(Preview content not provided by Meta. Import to view full content.)`)}</p>
                             {buttons.map((button, index) => <div key={index} className="mt-2 border-t border-slate-100 pt-2 text-center text-[10px] font-semibold text-blue-600">{button.text}</div>)}
                         </div>
                     </div>

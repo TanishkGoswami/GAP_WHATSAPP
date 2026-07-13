@@ -229,6 +229,18 @@ export async function processCampaign(campaign: any) {
             contactsToProcess = contacts || [];
         }
 
+        // Deduplicate contacts by normalized phone number to prevent multiple sends
+        const seenPhones = new Set<string>();
+        const uniqueContacts = [];
+        for (const contact of contactsToProcess) {
+            const rawPhone = contact.phone || contact.wa_id;
+            const normalized = derivePhoneForStorage(rawPhone);
+            if (!normalized || seenPhones.has(normalized)) continue;
+            seenPhones.add(normalized);
+            uniqueContacts.push(contact);
+        }
+        contactsToProcess = uniqueContacts;
+
         if (contactsToProcess.length === 0) {
             await supabase.from('w_campaigns').update({ status: 'completed', total_contacts: 0 }).eq('id', campaign.id);
             return;

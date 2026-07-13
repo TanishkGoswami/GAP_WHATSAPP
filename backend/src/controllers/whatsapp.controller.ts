@@ -1,4 +1,5 @@
-import { Response } from "express";
+import { Request, Response } from "express";
+import fs from "fs";
 import { supabase } from "../config/supabase.js";
 import { encryptToken, decryptToken } from "../utils/crypto.js";
 import { cleanText, cleanNullableText, isValidEmail } from "../utils/format.js";
@@ -1161,7 +1162,7 @@ export async function getTemplateLibrary(req: any, res: Response) {
     }
 
     if (!queryParams.has("fields")) {
-      queryParams.set("fields", "name,category,components,language,status");
+      queryParams.set("fields", "name,category,language,status,components,format,text,body,content,template,message_send_ttl_seconds");
     }
 
     const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/message_template_library?${queryParams.toString()}`;
@@ -1170,6 +1171,7 @@ export async function getTemplateLibrary(req: any, res: Response) {
       headers: { Authorization: `Bearer ${token}` },
     });
     const json = await response.json();
+    try { fs.writeFileSync("debug_library_output.json", JSON.stringify(json, null, 2)); } catch(e) {}
 
     if (json.data && json.data.length > 0) {
       console.log("META API DEBUG: First template components:", JSON.stringify(json.data[0].components, null, 2));
