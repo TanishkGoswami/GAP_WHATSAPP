@@ -1430,22 +1430,14 @@ export async function handleWebhook(req: any, res: Response) {
           wa_message_id,
           status: newStatus,
         });
-
-        if (newStatus === "failed") {
-          refundWhatsappMessage(wa_message_id).catch((refundErr) => {
-            webhookError("status.refund.failed", refundErr, {
-              requestId,
-              wa_message_id,
-            });
-          });
-        }
       }
 
       // Sync status update to whatsapp_message_usage_logs for analytics accuracy
-      const { error: logUpdateError } = await supabase
+      const { data: usageLogRows, error: logUpdateError } = await supabase
         .from("whatsapp_message_usage_logs")
         .update({ delivery_status: newStatus })
-        .eq("wa_message_id", wa_message_id);
+        .eq("wa_message_id", wa_message_id)
+        .select("id");
 
       if (logUpdateError) {
         webhookError("status.log_update.failed", logUpdateError, {
@@ -1453,8 +1445,42 @@ export async function handleWebhook(req: any, res: Response) {
           wa_message_id,
           status: newStatus,
         });
+      } else if (!Array.isArray(usageLogRows) || usageLogRows.length === 0) {
+        webhookError("status.log_update.no_rows", new Error("Usage log update matched zero rows"), {
+          requestId,
+          wa_message_id,
+          status: newStatus,
+        });
       }
 
+      let wasRefundedByMessageDebit = false;
+      if (newStatus === "failed") {
+        try {
+          const refundResult: any = await refundWhatsappMessage(wa_message_id);
+          if (refundResult?.success) {
+            wasRefundedByMessageDebit = true;
+          } else if (
+            refundResult?.reason === "already_refunded_recipient" ||
+            refundResult?.reason === "already_refunded_status" ||
+            refundResult?.reason === "already_refunded_idempotency"
+          ) {
+            wasRefundedByMessageDebit = true;
+          }
+          webhookLog("status.refund.result", {
+            requestId,
+            wa_message_id,
+            success: !!refundResult?.success,
+            reason: refundResult?.reason || refundResult?.error || null,
+            refunded_amount: refundResult?.refunded_amount ?? null,
+            new_balance: refundResult?.new_balance ?? null,
+          });
+        } catch (refundErr: any) {
+          webhookError("status.refund.failed", refundErr, {
+            requestId,
+            wa_message_id,
+          });
+        }
+      }
 
       const campaignId = nextMetadata.campaign_id || null;
       if (campaignId && existingMessage?.automation_source === "broadcast") {
@@ -1470,7 +1496,7 @@ export async function handleWebhook(req: any, res: Response) {
             campaignId,
             wa_message_id,
           });
-        } else if (campaign?.id && campaign.schema_version >= 2) {
+        } else if (campaign?.id && campaign.schema_version >= 2 && !wasRefundedByMessageDebit) {
           const { error: recipientStatusError } = await supabase.rpc(
             "update_broadcast_recipient_delivery",
             {
@@ -1494,12 +1520,18 @@ export async function handleWebhook(req: any, res: Response) {
               status: newStatus,
             });
           }
+        } else if (campaign?.id && campaign.schema_version >= 2 && wasRefundedByMessageDebit) {
+          webhookLog("status.campaign_recipient_update.skipped_exact_debit", {
+            requestId,
+            campaignId,
+            wa_message_id,
+            status: newStatus,
+          });
         } else if (campaign?.id && Array.isArray(campaign.results)) {
           let matched = false;
           const nextResults = campaign.results.map((result: any) => {
             const sameMessage = result?.wa_message_id && result.wa_message_id === wa_message_id;
             const samePhone =
-              !result?.wa_message_id &&
               nextMetadata.recipient &&
               String(result?.phone || "") === String(nextMetadata.recipient);
             if (!sameMessage && !samePhone) return result;
@@ -1566,8 +1598,11 @@ export async function handleWebhook(req: any, res: Response) {
               recipient: nextMetadata.recipient || null,
             });
           }
+
         }
       }
+
+      // Refund is already handled asynchronously at the start of status loop execution if applicable
 
       io.emit("message_status_update", {
         wa_message_id,

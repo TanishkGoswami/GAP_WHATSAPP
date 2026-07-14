@@ -44,6 +44,7 @@ export default function Layout() {
     const [isWalletLoading, setIsWalletLoading] = useState(true)
     const [toasts, setToasts] = useState([])
     const transactionBufferRef = useRef({})
+    const notificationSignatureRef = useRef({})
 
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false)
     const [notifications, setNotifications] = useState([])
@@ -265,53 +266,50 @@ export default function Layout() {
                 let delivered_count = 0;
                 let read_count = 0;
                 let status = 'processing';
+                let campaignRow = null;
 
                 try {
-                    // Fetch latest name and results/counts from the existing broadcasts campaigns API (source of truth)
-                    const res = await apiCall(`${import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001'}/api/broadcasts/campaigns`);
-                    if (!res.ok) {
+                    const { data: campaign, error: campaignErr } = await supabase
+                        .from('w_campaigns')
+                        .select('id, organization_id, name, status, schema_version, total_contacts, accepted_count, sent_count, delivered_count, read_count, failed_count, results, updated_at, completed_at')
+                        .eq('id', campaignId)
+                        .eq('organization_id', memberProfile.organization_id)
+                        .maybeSingle();
+
+                    if (campaignErr) {
                         console.error('[CAMPAIGN_NOTIFICATION_ERROR] CAMPAIGN_FETCH_FAILED', {
                             campaign_id: campaignId,
-                            message: `API Status ${res.status}`
+                            message: campaignErr.message,
+                            details: campaignErr.details,
+                            code: campaignErr.code
                         });
                         return;
                     }
 
-                    const data = await res.json().catch(() => ({}));
-                    const campaign = data?.campaigns?.find(c => c.id === campaignId);
+                    if (!campaign) {
+                        console.warn('[CAMPAIGN_NOTIFICATION_DEBUG] No campaign row found for campaign_id:', campaignId);
+                        delete transactionBufferRef.current[campaignId];
+                        return;
+                    }
 
-                    if (campaign) {
-                        // Org check on the fetched campaign row
-                        if (campaign.organization_id !== memberProfile.organization_id) {
-                            console.error('[CAMPAIGN_NOTIFICATION_ERROR] ORGANIZATION_MISMATCH: campaign org does not match user org', {
-                                campaign_org: campaign.organization_id,
-                                user_org: memberProfile.organization_id
-                            });
-                            delete transactionBufferRef.current[campaignId];
-                            return;
-                        }
+                    campaignRow = campaign;
+                    console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] CAMPAIGN_FETCH_SUCCESS: campaign_id = ${campaignId}`);
 
-                        console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] CAMPAIGN_FETCH_SUCCESS: campaign_id = ${campaignId}`);
-
-                        campaignName = campaign.name || 'Campaign';
-                        status = campaign.status || 'processing';
-                        if (campaign.schema_version >= 2) {
-                            totalMessages = campaign.total_contacts || 0;
-                            sent_count = campaign.accepted_count ?? campaign.sent_count ?? 0;
-                            failed_count = campaign.failed_count ?? 0;
-                            delivered_count = campaign.delivered_count ?? 0;
-                            read_count = campaign.read_count ?? 0;
-                        } else {
-                            // schema_version = 1 legacy campaign
-                            const results = Array.isArray(campaign.results) ? campaign.results : [];
-                            totalMessages = results.length || campaign.total_contacts || 0;
-                            sent_count = results.filter(r => ['accepted', 'sent', 'delivered', 'read'].includes(r?.status)).length;
-                            delivered_count = results.filter(r => ['delivered', 'read'].includes(r?.status)).length;
-                            read_count = results.filter(r => r?.status === 'read').length;
-                            failed_count = results.filter(r => r?.status === 'failed').length;
-                        }
+                    campaignName = campaign.name || 'Campaign';
+                    status = campaign.status || 'processing';
+                    if (Number(campaign.schema_version || 1) >= 2) {
+                        totalMessages = Number(campaign.total_contacts || 0);
+                        sent_count = Number(campaign.accepted_count ?? campaign.sent_count ?? 0);
+                        failed_count = Number(campaign.failed_count ?? 0);
+                        delivered_count = Number(campaign.delivered_count ?? 0);
+                        read_count = Number(campaign.read_count ?? 0);
                     } else {
-                        console.warn('[CAMPAIGN_NOTIFICATION_DEBUG] No campaign found in API response for campaign_id:', campaignId);
+                        const results = Array.isArray(campaign.results) ? campaign.results : [];
+                        totalMessages = results.length || Number(campaign.total_contacts || 0);
+                        sent_count = results.filter(r => ['accepted', 'sent', 'delivered', 'read'].includes(r?.status)).length;
+                        delivered_count = results.filter(r => ['delivered', 'read'].includes(r?.status)).length;
+                        read_count = results.filter(r => r?.status === 'read').length;
+                        failed_count = results.filter(r => r?.status === 'failed').length;
                     }
                 } catch (err) {
                     console.error('[CAMPAIGN_NOTIFICATION_ERROR] CAMPAIGN_FETCH_FAILED', {
@@ -327,7 +325,7 @@ export default function Layout() {
                 try {
                     const { data: txs, error: txsErr } = await supabase
                         .from('whatsapp_wallet_transactions')
-                        .select('type, amount_paise')
+                        .select('type, amount_paise, metadata, created_at')
                         .eq('organization_id', memberProfile.organization_id)
                         .eq('status', 'completed')
                         .filter('metadata->>campaign_id', 'eq', campaignId);
@@ -364,6 +362,22 @@ export default function Layout() {
                 const total_charged_formatted = formatINRFromPaise(total_charged);
                 const total_refunded_formatted = formatINRFromPaise(total_refunded);
                 const net_cost_formatted = formatINRFromPaise(total_charged - total_refunded);
+                const signature = JSON.stringify({
+                    campaignId,
+                    status,
+                    totalMessages,
+                    sent_count,
+                    failed_count,
+                    delivered_count,
+                    read_count,
+                    total_charged,
+                    total_refunded,
+                    updated_at: campaignRow?.updated_at || null,
+                    completed_at: campaignRow?.completed_at || null,
+                    ledgerCount: Array.isArray(txs) ? txs.length : 0,
+                });
+                const signatureChanged = notificationSignatureRef.current[campaignId] !== signature;
+                notificationSignatureRef.current[campaignId] = signature;
 
                 const notifId = `campaign-${campaignId}`;
 
@@ -427,21 +441,23 @@ export default function Layout() {
 
                 // Render Toast notifications state
                 try {
-                    setToasts(prev => {
-                        const filtered = prev.filter(t => t.id !== notifId);
-                        const toastItem = {
-                            id: notifId,
-                            title: toastTitle,
-                            campaignName,
-                            description: toastDesc,
-                            type: status === 'completed' || status === 'failed' || status === 'cancelled' ? 'completed' : total_refunded > 0 ? 'refund' : 'debit'
-                        };
-                        // Setup auto-dismiss timeout for this toast
-                        setTimeout(() => {
-                            setToasts(curr => curr.filter(t => t.id !== notifId));
-                        }, 6000);
-                        return [...filtered, toastItem];
-                    });
+                    if (signatureChanged) {
+                        setToasts(prev => {
+                            const filtered = prev.filter(t => t.id !== notifId);
+                            const toastItem = {
+                                id: notifId,
+                                title: toastTitle,
+                                campaignName,
+                                description: toastDesc,
+                                type: status === 'completed' || status === 'failed' || status === 'cancelled' ? 'completed' : total_refunded > 0 ? 'refund' : 'debit'
+                            };
+                            // Setup auto-dismiss timeout for this toast
+                            setTimeout(() => {
+                                setToasts(curr => curr.filter(t => t.id !== notifId));
+                            }, 6000);
+                            return [...filtered, toastItem];
+                        });
+                    }
                     console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] TOAST_RENDERED: campaign_id = ${campaignId}`);
                 } catch (err) {
                     console.error('[CAMPAIGN_NOTIFICATION_ERROR] TOAST_RENDER_FAILED', {
@@ -487,24 +503,6 @@ export default function Layout() {
                 console.warn('[CAMPAIGN_NOTIFICATION_DEBUG] Wallet transaction inserted without a campaign_id in metadata');
             }
         };
-
-        // Bind DEV-ONLY manual trigger tool window function to isolate UI testing
-        if (process.env.NODE_ENV !== 'production' || import.meta.env.DEV) {
-            window.testNotificationPipeline = (campaignId, mockTxType = 'message_refund', mockAmountPaise = 89) => {
-                console.log('[CAMPAIGN_NOTIFICATION_DEBUG] DEV-ONLY trigger fired manually for UI isolation', { campaignId, mockTxType });
-                
-                const mockTx = {
-                    id: 'mock-tx-id-' + Date.now(),
-                    amount_paise: mockTxType.includes('refund') ? mockAmountPaise : -mockAmountPaise,
-                    type: mockTxType,
-                    metadata: {
-                        campaign_id: campaignId
-                    }
-                };
-                handleTxEvent(mockTx);
-            };
-            console.log('[CAMPAIGN_NOTIFICATION_DEBUG] DEV-ONLY test trigger bound. Run window.testNotificationPipeline("campaignId", "message_refund", 89) in console.');
-        }
 
         const txChannel = supabase
             .channel(`wallet_tx_realtime:${memberProfile.organization_id}`)
@@ -552,6 +550,37 @@ export default function Layout() {
                 }
             );
 
+        const usageLogsChannel = supabase
+            .channel(`usage_logs_realtime:${memberProfile.organization_id}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'whatsapp_message_usage_logs',
+                    filter: `organization_id=eq.${memberProfile.organization_id}`
+                },
+                (payload) => {
+                    const campaignId = payload.new?.campaign_id || payload.old?.campaign_id || null;
+                    const deliveryStatus = payload.new?.delivery_status || payload.old?.delivery_status || null;
+                    const billingStatus = payload.new?.billing_status || payload.old?.billing_status || null;
+                    console.log('[CAMPAIGN_NOTIFICATION_DEBUG] Received usage_logs_realtime event:', payload);
+                    if (campaignId && (deliveryStatus || billingStatus)) {
+                        triggerCampaignNotification(campaignId, `usage_log_${payload.eventType}`);
+                    }
+                }
+            );
+
+        usageLogsChannel.subscribe((status, err) => {
+            console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] usageLogsChannel status changed: ${status}`);
+            if (status === 'CHANNEL_ERROR' || err) {
+                console.error('[CAMPAIGN_NOTIFICATION_ERROR] REALTIME_SUBSCRIPTION_FAILED', {
+                    table: 'whatsapp_message_usage_logs',
+                    details: err?.message || status
+                });
+            }
+        });
+
         campaignsChannel.subscribe((status, err) => {
             console.log(`[CAMPAIGN_NOTIFICATION_DEBUG] campaignsChannel status changed: ${status}`);
             if (status === 'CHANNEL_ERROR' || err) {
@@ -566,6 +595,7 @@ export default function Layout() {
             console.log('[CAMPAIGN_NOTIFICATION_DEBUG] Tearing down Realtime channels');
             supabase.removeChannel(txChannel);
             supabase.removeChannel(campaignsChannel);
+            supabase.removeChannel(usageLogsChannel);
             if (window.testNotificationPipeline) {
                 delete window.testNotificationPipeline;
             }

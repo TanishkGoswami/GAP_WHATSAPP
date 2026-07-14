@@ -169,10 +169,25 @@ export default function BotAgents() {
 
     const currentPlanName = user?.plan || 'No active plan'
     const normalizedPlanName = currentPlanName.toLowerCase()
-    const currentPlanConfig = FALLBACK_PLANS.find(p => 
-        normalizedPlanName.includes(p.id.toLowerCase()) || 
-        normalizedPlanName.includes(p.name.toLowerCase())
-    )
+    const currentPlanConfig = useMemo(() => {
+        let lookupKey = normalizedPlanName
+        if (
+            normalizedPlanName.includes('gap max') || 
+            normalizedPlanName.includes('gap core') || 
+            normalizedPlanName.includes('gap pro')
+        ) {
+            lookupKey = 'pro'
+        } else if (
+            normalizedPlanName.includes('free trial') || 
+            normalizedPlanName.includes('trial')
+        ) {
+            lookupKey = 'starter'
+        }
+        return FALLBACK_PLANS.find(p => 
+            lookupKey.includes(p.id.toLowerCase()) || 
+            lookupKey.includes(p.name.toLowerCase())
+        )
+    }, [normalizedPlanName])
     const aiAgentLimit = currentPlanConfig?.limits?.ai_agents ?? 0
     const isLimitReached = aiAgentLimit !== -1 && agents.length >= aiAgentLimit
 
