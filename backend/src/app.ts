@@ -67,7 +67,6 @@ app.use(
     }),
     broadcastRoutes,
 );
-
 app.use(
     express.json({
         verify: (req: any, _res, buf) => {
@@ -75,6 +74,15 @@ app.use(
         },
     })
 );
+
+app.get("/api/health", (_req, res) => {
+    res.status(200).json({
+        success: true,
+        status: "ok",
+        service: "GAP_WHATSAPP",
+        timestamp: new Date().toISOString(),
+    });
+});
 
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
