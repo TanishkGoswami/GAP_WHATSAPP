@@ -849,9 +849,13 @@ function SectionContent({ content, searchQuery }) {
         );
 
       case 'subsection':
+        const subId = slugify(block.title);
         return (
-          <div key={idx} className="pp-subsection">
-            <h4 className="pp-subsection-title">{highlightText(block.title, searchQuery)}</h4>
+          <div key={idx} id={subId} className="pp-subsection">
+            <div className="pp-subsection-header">
+              <h4 className="pp-subsection-title">{highlightText(block.title, searchQuery)}</h4>
+              <CopyLinkButton sectionId={subId} />
+            </div>
             <ul className="pp-bullet-list">
               {block.items.map((item, i) => (
                 <li key={i} className="pp-bullet-item">
@@ -929,6 +933,27 @@ export default function PrivacyPolicy() {
 
   const contentRef = useRef(null);
   const sectionRefs = useRef({});
+
+  // Set page meta tags for SEO/Meta crawler
+  useEffect(() => {
+    document.title = "GetAiPilot Privacy Policy";
+    
+    const setMetaTag = (property, content) => {
+      let element = document.querySelector(`meta[property="${property}"]`);
+      if (!element) {
+        element = document.createElement('meta');
+        element.setAttribute('property', property);
+        document.head.appendChild(element);
+      }
+      element.setAttribute('content', content);
+    };
+
+    setMetaTag('og:title', 'GetAiPilot Privacy Policy');
+    setMetaTag('og:description', 'Privacy Policy for GetAiPilot (GAP FlowPilot) WhatsApp Automation Workspace.');
+    setMetaTag('og:image', 'https://wb.getaipilot.in/logo.png');
+    setMetaTag('og:url', 'https://wb.getaipilot.in/privacy-policy');
+    setMetaTag('og:type', 'website');
+  }, []);
 
 
 
@@ -1130,10 +1155,7 @@ export default function PrivacyPolicy() {
                   <Clock className="pp-icon-xs" />
                   Last Updated: {LAST_UPDATED}
                 </span>
-                <span className="pp-meta-divider">•</span>
-                <span className="pp-meta-item">
-                  Effective: {EFFECTIVE_DATE}
-                </span>
+
               </div>
             </div>
           </div>
@@ -1386,13 +1408,13 @@ const PRIVACY_POLICY_STYLES = `
 .pp-toc-num { font-size: 11px; color: #aaa; font-weight: 600; min-width: 18px; }
 .pp-toc-label { flex: 1; }
 .pp-toc-active {
-  background: #eef2ff !important;
-  color: #4338ca !important;
-  border-left-color: #6366f1 !important;
-  font-weight: 600;
+  background: #e0e7ff !important;
+  color: #3730a3 !important;
+  border-left: 5px solid #4f46e5 !important;
+  font-weight: 700;
 }
-.pp-toc-active .pp-toc-icon { color: #6366f1; }
-.pp-toc-active .pp-toc-num { color: #6366f1; }
+.pp-toc-active .pp-toc-icon { color: #4f46e5; }
+.pp-toc-active .pp-toc-num { color: #4f46e5; }
 
 /* ── Content ─────────────────────────────────────────────────── */
 .pp-content {
@@ -1548,14 +1570,32 @@ const PRIVACY_POLICY_STYLES = `
 .pp-def-text { color: #555; }
 
 /* ── Subsections ─────────────────────────────────────────────── */
-.pp-subsection { margin: 16px 0; }
+.pp-subsection {
+  margin: 20px 0;
+  scroll-margin-top: 80px;
+}
 .pp-subsection:first-child { margin-top: 0; }
+.pp-subsection-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
 .pp-subsection-title {
   font-size: 14px;
   font-weight: 700;
   color: #333;
-  margin: 0 0 10px;
+  margin: 0;
   letter-spacing: -0.1px;
+}
+.pp-subsection-header .pp-copy-link {
+  opacity: 0;
+  width: 24px;
+  height: 24px;
+  transition: opacity 0.2s, background 0.15s;
+}
+.pp-subsection-header:hover .pp-copy-link {
+  opacity: 1;
 }
 .pp-bullet-list {
   list-style: none;
