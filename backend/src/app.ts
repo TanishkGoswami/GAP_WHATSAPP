@@ -37,6 +37,7 @@ export const corsOrigins = [
     ...(publicBaseUrl ? [publicBaseUrl] : []),
     "https://w.getaipilot.in",
     "https://wb.getaipilot.in",
+    "https://mail.getaipilot.in",
     ...extraCorsOrigins
 ];
 
@@ -67,7 +68,6 @@ app.use(
     }),
     broadcastRoutes,
 );
-
 app.use(
     express.json({
         verify: (req: any, _res, buf) => {
@@ -75,6 +75,26 @@ app.use(
         },
     })
 );
+
+app.get("/", (_req, res) => {
+    res.status(200).json({
+        success: true,
+        message: "GAP WhatsApp Backend is running",
+        service: "GAP_WHATSAPP",
+        version: "1.0.0",
+        timestamp: new Date().toISOString(),
+    });
+});
+
+app.get("/api/health", (_req, res) => {
+    res.status(200).json({
+        success: true,
+        status: "ok",
+        service: "GAP_WHATSAPP",
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+    });
+});
 
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 

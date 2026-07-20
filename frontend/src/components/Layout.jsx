@@ -230,7 +230,17 @@ export default function Layout() {
             return;
         }
 
-        if (!memberProfile?.organization_id) {
+        if (loading || isProfileLoading) {
+            console.log('[CAMPAIGN_NOTIFICATION_DEBUG] Profile is loading, delaying realtime setup');
+            return;
+        }
+
+        if (!memberProfile) {
+            console.log('[CAMPAIGN_NOTIFICATION_DEBUG] memberProfile is not populated yet, skipping realtime setup');
+            return;
+        }
+
+        if (!memberProfile.organization_id) {
             console.error('[CAMPAIGN_NOTIFICATION_ERROR] ORGANIZATION_MISMATCH: memberProfile has no organization_id');
             return;
         }
@@ -271,7 +281,7 @@ export default function Layout() {
                 try {
                     const { data: campaign, error: campaignErr } = await supabase
                         .from('w_campaigns')
-                        .select('id, organization_id, name, status, schema_version, total_contacts, accepted_count, sent_count, delivered_count, read_count, failed_count, results, updated_at, completed_at')
+                        .select('id, organization_id, name, status, schema_version, total_contacts, accepted_count, sent_count, delivered_count, read_count, failed_count, results, created_at, completed_at')
                         .eq('id', campaignId)
                         .eq('organization_id', memberProfile.organization_id)
                         .maybeSingle();
@@ -372,7 +382,7 @@ export default function Layout() {
                     read_count,
                     total_charged,
                     total_refunded,
-                    updated_at: campaignRow?.updated_at || null,
+                    updated_at: campaignRow?.created_at || null,
                     completed_at: campaignRow?.completed_at || null,
                     ledgerCount: Array.isArray(txs) ? txs.length : 0,
                 });
