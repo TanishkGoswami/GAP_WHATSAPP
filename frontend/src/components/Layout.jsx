@@ -264,7 +264,7 @@ export default function Layout() {
                 try {
                     const { data: campaign, error: campaignErr } = await supabase
                         .from('w_campaigns')
-                        .select('id, organization_id, name, status, schema_version, total_contacts, accepted_count, sent_count, delivered_count, read_count, failed_count, results, updated_at, completed_at')
+                        .select('id, organization_id, name, status, schema_version, total_contacts, accepted_count, sent_count, delivered_count, read_count, failed_count, results, created_at, completed_at')
                         .eq('id', campaignId)
                         .eq('organization_id', memberProfile.organization_id)
                         .maybeSingle();
