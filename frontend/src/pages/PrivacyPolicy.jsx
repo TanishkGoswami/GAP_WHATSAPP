@@ -1130,10 +1130,7 @@ export default function PrivacyPolicy() {
                   <Clock className="pp-icon-xs" />
                   Last Updated: {LAST_UPDATED}
                 </span>
-                <span className="pp-meta-divider">•</span>
-                <span className="pp-meta-item">
-                  Effective: {EFFECTIVE_DATE}
-                </span>
+
               </div>
             </div>
           </div>
