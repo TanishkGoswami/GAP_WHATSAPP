@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Edit2, Trash2, Play, Copy, Pause, TrendingUp, Zap, Activity, X, LayoutTemplate, Star, Search, Sparkles, Clock, Layers, CheckCircle2, Smartphone, ShieldCheck, QrCode, Info, ChevronRight, MessageSquare, LifeBuoy, Send, MoreHorizontal, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
 import FlowEditor from '../components/flow-builder/FlowEditor';
@@ -543,7 +543,7 @@ export default function FlowBuilder() {
 
                     return (
                         <div key={flow.id} className="flex flex-col bg-white rounded-2xl border border-gray-200 hover:shadow-lg transition-shadow p-3.5 sm:p-5">
-                            <div className="flex-1">
+                            <div className="flex-1 flex flex-col justify-between gap-4">
                                 <div className="flex items-start justify-between gap-2.5 sm:gap-4">
                                     <div className="flex items-start flex-1 min-w-0">
                                         <div className={`h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 border ${theme.bgColor}`}>
@@ -600,43 +600,35 @@ export default function FlowBuilder() {
                                     </div>
                                 </div>
 
-                                <div className="bg-gray-50/50 rounded-xl p-2.5 sm:p-3 border border-gray-100 grid grid-cols-3 gap-2 text-center text-xs mt-3 sm:mt-5">
-                                    <div>
-                                        <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Nodes</span>
-                                        <span className="block text-xs sm:text-sm font-bold text-gray-900 mt-0.5">{Array.isArray(flow.nodes) ? flow.nodes.length : 0}</span>
-                                    </div>
-                                    <div>
-                                        <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Messages Sent</span>
-                                        <span className="block text-xs sm:text-sm font-bold text-gray-900 mt-0.5">{(flow.messagesSent || 0).toLocaleString()}</span>
-                                    </div>
-                                    <div className="min-w-0">
-                                        <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Runs on</span>
-                                        <span className="block text-[8.5px] sm:text-[10px] font-bold text-blue-700 mt-1 truncate bg-blue-50/60 rounded px-1.5 py-0.5 border border-blue-100/30">
-                                            {flow.wa_account_scope === 'all' ? 'All numbers' : `${flow.wa_account_ids?.length || 0} selected`}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-end justify-between mt-3 sm:mt-5">
-                                    <div>
-                                        <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Triggers</span>
-                                        <div className="flex flex-wrap gap-1">
-                                            {flow.triggers && flow.triggers.length > 0 ? (
-                                                flow.triggers.map((trigger, i) => (
-                                                    <span key={i} className="px-1.5 py-0.2 bg-blue-50 text-blue-700 text-[10px] sm:text-xs font-semibold rounded border border-blue-100/50">
-                                                        {trigger}
-                                                    </span>
-                                                ))
-                                            ) : (
-                                                <span className="text-[10px] sm:text-xs text-gray-400 italic">No triggers</span>
-                                            )}
+                                <div>
+                                    <div className="bg-gray-50/50 rounded-xl p-2.5 sm:p-3 border border-gray-100 grid grid-cols-3 gap-2 text-center text-xs">
+                                        <div>
+                                            <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Nodes</span>
+                                            <span className="block text-xs sm:text-sm font-bold text-gray-900 mt-0.5">{Array.isArray(flow.nodes) ? flow.nodes.length : 0}</span>
+                                        </div>
+                                        <div>
+                                            <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Messages Sent</span>
+                                            <span className="block text-xs sm:text-sm font-bold text-gray-900 mt-0.5">{(flow.messagesSent || 0).toLocaleString()}</span>
+                                        </div>
+                                        <div className="min-w-0">
+                                            <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Runs on</span>
+                                            <span className="block text-[8.5px] sm:text-[10px] font-bold text-blue-700 mt-1 truncate bg-blue-50/60 rounded px-1.5 py-0.5 border border-blue-100/30">
+                                                {flow.wa_account_scope === 'all' ? 'All numbers' : `${flow.wa_account_ids?.length || 0} selected`}
+                                            </span>
                                         </div>
                                     </div>
-                                    <div className="text-right shrink-0">
-                                        <span className="text-[8.5px] sm:text-[10px] font-semibold text-gray-400 block uppercase tracking-wider">Last edited</span>
-                                        <span className="text-[10px] sm:text-xs font-semibold text-gray-600 block mt-0.5">
-                                            {formatRelativeTime(flow.updated_at || flow.created_at)}
-                                        </span>
+
+                                    <div className="flex items-start justify-between gap-4 mt-3.5 sm:mt-4">
+                                        <div className="flex-1 min-w-0">
+                                            <span className="block text-[8.5px] sm:text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1">Triggers</span>
+                                            <TriggersContainer triggers={flow.triggers} />
+                                        </div>
+                                        <div className="text-right shrink-0 self-start">
+                                            <span className="text-[8.5px] sm:text-[10px] font-semibold text-gray-400 block uppercase tracking-wider">Last edited</span>
+                                            <span className="text-[10px] sm:text-xs font-semibold text-gray-600 block mt-0.5">
+                                                {formatRelativeTime(flow.updated_at || flow.created_at)}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1445,3 +1437,76 @@ function getNodeSummary(node) {
     const config = node.data?.config || {};
     return config.message || config.headerText || config.question || config.reason || config.keywords || config.title || 'Configured block';
 }
+
+function TriggersContainer({ triggers }) {
+    const containerRef = useRef(null);
+    const [showTopFade, setShowTopFade] = useState(false);
+    const [showBottomFade, setShowBottomFade] = useState(false);
+
+    const checkScroll = () => {
+        const container = containerRef.current;
+        if (!container) return;
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        setShowTopFade(scrollTop > 2);
+        setShowBottomFade(scrollTop + clientHeight < scrollHeight - 2);
+    };
+
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+        
+        checkScroll();
+        
+        const handleScroll = () => checkScroll();
+        container.addEventListener('scroll', handleScroll);
+        
+        let resizeObserver;
+        if (typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(() => checkScroll());
+            resizeObserver.observe(container);
+        }
+
+        return () => {
+            container.removeEventListener('scroll', handleScroll);
+            if (resizeObserver) {
+                resizeObserver.disconnect();
+            }
+        };
+    }, [triggers]);
+
+    return (
+        <div className="relative">
+            {/* Top Fade Indicator */}
+            <div 
+                className={`absolute top-0 left-0 right-0 h-4 bg-gradient-to-b from-white to-transparent pointer-events-none z-10 transition-opacity duration-200 ${
+                    showTopFade ? 'opacity-100' : 'opacity-0'
+                }`} 
+            />
+            
+            <div 
+                ref={containerRef}
+                className="h-[72px] overflow-y-auto no-scrollbar scroll-smooth pr-1"
+            >
+                <div className="flex flex-wrap gap-1.5 pb-2">
+                    {triggers && triggers.length > 0 ? (
+                        triggers.map((trigger, i) => (
+                            <span key={i} className="px-1.5 py-0.5 bg-blue-50 text-blue-700 text-[10px] sm:text-xs font-semibold rounded border border-blue-100/50 hover:bg-blue-100/30 transition-colors">
+                                {trigger}
+                            </span>
+                        ))
+                    ) : (
+                        <span className="text-[10px] sm:text-xs text-gray-400 italic">No triggers</span>
+                    )}
+                </div>
+            </div>
+
+            {/* Bottom Fade Indicator */}
+            <div 
+                className={`absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-white to-transparent pointer-events-none z-10 transition-opacity duration-200 ${
+                    showBottomFade ? 'opacity-100' : 'opacity-0'
+                }`} 
+            />
+        </div>
+    );
+}
+

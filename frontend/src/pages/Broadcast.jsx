@@ -860,7 +860,7 @@ export default function Broadcast() {
     };
 
     return (
-        <div className="mx-auto max-w-7xl space-y-6 md:space-y-8 px-4 sm:px-6 lg:px-8 pb-16">
+        <div className="mx-auto w-full max-w-[1600px] space-y-6 md:space-y-8 px-4 sm:px-6 lg:px-8 pb-16">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 tracking-tight">Broadcasts</h1>
@@ -942,35 +942,106 @@ export default function Broadcast() {
                         </div>
                     ) : (
                         <>
-                        <div className="divide-y divide-gray-100 md:hidden">
+                        <div className="divide-y divide-gray-150 md:hidden bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm">
                             {visibleCampaigns.map(camp => (
-                                <article key={camp.id} className="space-y-3 p-4">
+                                <article key={camp.id} className="space-y-4 p-5">
                                     <div className="flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <h3 className="truncate text-sm font-semibold text-gray-950">{camp.name}</h3>
-                                            <p className="mt-1 truncate text-xs text-gray-500">{camp.template_name}</p>
+                                        <div className="min-w-0 flex-1">
+                                            <h3 className="truncate text-base font-bold text-gray-950">{camp.name}</h3>
+                                            <p className="mt-1 truncate text-xs text-gray-500 flex items-center gap-1.5">
+                                                <FileText className="w-3.5 h-3.5 text-gray-400" /> {camp.template_name}
+                                            </p>
                                         </div>
-                                        <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase ${camp.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : camp.status === 'failed' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{camp.status}</span>
+                                        <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wide inline-flex items-center gap-1 ${
+                                            camp.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' :
+                                            camp.status === 'failed' ? 'bg-rose-50 text-rose-700 border border-rose-200/60' :
+                                            camp.status === 'cancelled' ? 'bg-gray-50 text-gray-700 border border-gray-300' :
+                                            camp.status === 'processing' ? 'bg-blue-50 text-blue-700 border border-blue-200/60' :
+                                            'bg-amber-50 text-amber-700 border border-amber-200/60'
+                                        }`}>
+                                            {camp.status === 'processing' && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+                                            {camp.status}
+                                        </span>
                                     </div>
-                                    <div className="grid grid-cols-2 gap-3 rounded-lg bg-gray-50 p-3 text-xs">
-                                        <div><span className="block text-gray-500">Audience</span><span className="mt-1 block font-semibold text-gray-800">{camp.total_contacts || camp.prepared_count || 0} contacts</span></div>
-                                        <div><span className="block text-gray-500">Delivery</span><span className="mt-1 block font-semibold text-gray-800">{camp.accepted_count ?? camp.sent_count ?? 0} accepted</span></div>
+                                    <div className="grid grid-cols-2 gap-4 rounded-xl bg-gray-50/80 p-4 border border-gray-100 text-xs">
+                                        <div>
+                                            <span className="block text-gray-500 font-medium">Audience</span>
+                                            <span className="mt-1 block font-bold text-gray-800 flex items-center gap-1">
+                                                <Users className="w-3.5 h-3.5 text-gray-400" />
+                                                {camp.total_contacts || camp.prepared_count || 0} contacts
+                                            </span>
+                                            <span className="block text-[10px] text-gray-500 mt-1 font-medium truncate max-w-[130px]" title={camp.audience_tag}>
+                                                Tag: {camp.audience_tag || (String(camp.audience_type).toLowerCase().includes('csv') || camp.csv_data ? 'CSV Upload' : camp.audience_type === 'saved' ? 'Saved Contacts' : 'All Contacts')}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <span className="block text-gray-500 font-medium">Date / Scheduled</span>
+                                            <span className="mt-1 block font-semibold text-gray-750 text-[11px] leading-tight">
+                                                {camp.scheduled_at ? format(new Date(camp.scheduled_at), 'MMM dd, yyyy · hh:mm a') : format(new Date(camp.created_at), 'MMM dd, yyyy · hh:mm a')}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <button type="button" onClick={() => toggleCampaignDetails(camp)} className="w-full rounded-lg border border-gray-200 py-2 text-xs font-semibold text-[#0064b7]">
-                                        {expandedCampaignId === camp.id ? 'Hide delivery report' : 'View delivery report'}
-                                    </button>
+
+                                    {(camp.schema_version >= 2 || camp.status === 'completed') && (
+                                        <div className="flex flex-wrap items-center gap-2 text-xs pt-1">
+                                            <span className="text-gray-550 font-medium">Performance:</span>
+                                            <div className="flex items-center gap-1.5 text-emerald-700 font-bold bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100/60">
+                                                <Check className="w-3 h-3" /> {camp.schema_version >= 2 ? (camp.accepted_count ?? camp.sent_count ?? 0) : (camp.results?.filter(r => ['accepted', 'sent', 'delivered', 'read'].includes(r?.status)).length || 0)}
+                                            </div>
+                                            <div className="flex items-center gap-1.5 text-rose-700 font-bold bg-rose-50 px-2 py-1 rounded-md border border-rose-100/60">
+                                                <Info className="w-3 h-3" /> {camp.schema_version >= 2 ? (camp.failed_count ?? 0) : (camp.results?.filter(r => r?.status === 'failed').length || 0)}
+                                            </div>
+                                            {camp.schema_version >= 2 && <span className="text-gray-500 font-mono text-[10px] ml-auto">{camp.prepared_count || 0}/{camp.total_contacts || 0}</span>}
+                                        </div>
+                                    )}
+
+                                    <div className="flex flex-wrap gap-2 pt-1">
+                                        {camp.schema_version >= 2 && ['queued', 'processing'].includes(camp.status) && (
+                                            <button onClick={() => updateCampaignState(camp.id, 'pause')} className="flex-1 justify-center text-amber-705 text-xs font-bold flex items-center gap-1.5 bg-amber-50 active:scale-[0.98] py-2 rounded-lg border border-amber-200 transition-all">
+                                                <Pause className="w-3.5 h-3.5" /> Pause
+                                            </button>
+                                        )}
+                                        {camp.schema_version >= 2 && camp.status === 'paused' && (
+                                            <button onClick={() => updateCampaignState(camp.id, 'resume')} className="flex-1 justify-center text-emerald-705 text-xs font-bold flex items-center gap-1.5 bg-emerald-50 active:scale-[0.98] py-2 rounded-lg border border-emerald-200 transition-all">
+                                                <Play className="w-3.5 h-3.5" /> Resume
+                                            </button>
+                                        )}
+                                        {(['preparing', 'queued', 'processing', 'paused', 'scheduled'].includes(camp.status)) && (
+                                            <button
+                                                onClick={() => cancelCampaign(camp.id)}
+                                                className="flex-1 justify-center text-rose-600 hover:text-white text-xs font-bold flex items-center gap-1.5 bg-rose-50 active:scale-[0.98] hover:bg-rose-500 py-2 rounded-lg transition-all border border-rose-200 hover:border-rose-500"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" /> Cancel
+                                            </button>
+                                        )}
+                                        {((camp.schema_version >= 2 && (camp.total_contacts || camp.prepared_count)) || ((camp.status === 'completed' || camp.status === 'cancelled') && camp.results?.length > 0)) && (
+                                            <button
+                                                onClick={() => toggleCampaignDetails(camp)}
+                                                className="w-full justify-center text-[#0064b7] text-xs font-bold flex items-center gap-1.5 bg-sky-50/50 hover:bg-sky-50 active:scale-[0.98] py-2.5 rounded-lg transition-all border border-sky-100"
+                                            >
+                                                {expandedCampaignId === camp.id ? 'Hide Delivery Report' : 'View Delivery Report'}
+                                                {expandedCampaignId === camp.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                            </button>
+                                        )}
+                                    </div>
+
                                     {expandedCampaignId === camp.id && (
-                                        <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                                        <div className="space-y-2 rounded-xl border border-gray-200 bg-gray-50/60 p-3 mt-3 shadow-inner max-h-72 overflow-y-auto">
                                             {recipientReports[camp.id]?.loading ? (
                                                 <div className="flex items-center justify-center gap-2 py-4 text-xs text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading report</div>
                                             ) : recipientReports[camp.id]?.error ? (
-                                                <p className="text-xs text-red-600">{recipientReports[camp.id].error}</p>
-                                            ) : (recipientReports[camp.id]?.recipients || []).slice(0, 5).map(row => (
-                                                <div key={row.id || row.normalized_phone} className="flex items-center justify-between gap-3 rounded-md bg-white px-3 py-2 text-xs">
-                                                    <span className="truncate font-medium text-gray-800">{row.contact_name || row.normalized_phone}</span>
-                                                    <span className="shrink-0 capitalize text-gray-500">{row.status}</span>
+                                                <p className="text-xs text-red-650">{recipientReports[camp.id].error}</p>
+                                            ) : (recipientReports[camp.id]?.recipients || []).slice(0, 15).map(row => (
+                                                <div key={row.id || row.normalized_phone} className="flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs border border-gray-100 shadow-sm">
+                                                    <span className="truncate font-bold text-gray-800">{row.contact_name || row.normalized_phone}</span>
+                                                    <span className={`shrink-0 capitalize font-semibold ${['accepted', 'sent', 'delivered', 'read'].includes(row.status) ? 'text-emerald-600' : row.status === 'failed' ? 'text-rose-600' : 'text-amber-600'}`}>{row.status}</span>
                                                 </div>
                                             ))}
+                                            {camp.schema_version >= 2 && recipientReports[camp.id]?.pagination?.total > 15 && (
+                                                <div className="pt-2 text-center text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+                                                    Showing first 15 recipients (View on Desktop for full report)
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </article>
@@ -980,25 +1051,25 @@ export default function Broadcast() {
                             <table className="w-full text-left text-sm whitespace-nowrap">
                                 <thead className="bg-gray-50/80 text-gray-500 font-semibold uppercase text-xs tracking-wider border-b border-gray-200">
                                     <tr>
-                                        <th className="px-8 py-5">Campaign Name</th>
-                                        <th className="px-8 py-5">Status</th>
-                                        <th className="px-8 py-5">Audience</th>
-                                        <th className="px-8 py-5">Date / Scheduled</th>
-                                        <th className="px-8 py-5">Performance</th>
-                                        <th className="px-8 py-5 text-right">Actions</th>
+                                        <th className="px-5 py-4">Campaign Name</th>
+                                        <th className="px-5 py-4">Status</th>
+                                        <th className="px-5 py-4">Audience</th>
+                                        <th className="px-5 py-4">Date / Scheduled</th>
+                                        <th className="px-5 py-4">Performance</th>
+                                        <th className="px-5 py-4 text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                     {visibleCampaigns.map(camp => (
                                         <React.Fragment key={camp.id}>
                                             <tr className="hover:bg-gray-50/60 transition-colors">
-                                                <td className="px-8 py-5">
+                                                <td className="px-5 py-4">
                                                     <div className="font-bold text-gray-900">{camp.name}</div>
                                                     <div className="text-xs font-medium text-gray-500 mt-1 flex items-center gap-1.5">
-                                                        <FileText className="w-3.5 h-3.5" /> {camp.template_name}
+                                                        <FileText className="w-3.5 h-3.5 text-gray-400" /> {camp.template_name}
                                                     </div>
                                                 </td>
-                                                <td className="px-8 py-5">
+                                                <td className="px-5 py-4">
                                                     <span className={`px-3 py-1.5 text-xs font-bold rounded-lg uppercase tracking-wide flex items-center inline-flex gap-1.5 ${camp.status === 'completed' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60' :
                                                             camp.status === 'failed' ? 'bg-rose-50 text-rose-700 border border-rose-200/60' :
                                                                 camp.status === 'cancelled' ? 'bg-gray-50 text-gray-700 border border-gray-300' :
@@ -1009,16 +1080,16 @@ export default function Broadcast() {
                                                         {camp.status}
                                                     </span>
                                                 </td>
-                                                <td className="px-8 py-5 text-gray-600 font-medium">
+                                                <td className="px-5 py-4 text-gray-600 font-medium">
                                                     <div className="flex items-center gap-1.5">
                                                         <Users className="w-4 h-4 text-gray-400" />
                                                         {camp.audience_tag || (String(camp.audience_type).toLowerCase().includes('csv') || camp.csv_data ? 'CSV Upload' : camp.audience_type === 'saved' ? 'Saved Contacts' : 'All Contacts')}
                                                     </div>
                                                 </td>
-                                                <td className="px-8 py-5 text-gray-600 font-medium">
+                                                <td className="px-5 py-4 text-gray-600 font-medium">
                                                     {camp.scheduled_at ? format(new Date(camp.scheduled_at), 'MMM dd, yyyy · hh:mm a') : format(new Date(camp.created_at), 'MMM dd, yyyy · hh:mm a')}
                                                 </td>
-                                                <td className="px-8 py-5">
+                                                <td className="px-5 py-4">
                                                     {camp.schema_version >= 2 || camp.status === 'completed' ? (
                                                         <div className="flex flex-wrap gap-2 text-xs items-center">
                                                             <div className="flex items-center gap-1.5 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-100">
@@ -1031,7 +1102,7 @@ export default function Broadcast() {
                                                         </div>
                                                     ) : <span className="text-gray-400 font-medium">-</span>}
                                                 </td>
-                                                <td className="px-8 py-5 text-right">
+                                                <td className="px-5 py-4 text-right">
                                                     <div className="flex justify-end gap-3 items-center">
                                                         {camp.schema_version >= 2 && ['queued', 'processing'].includes(camp.status) && (
                                                             <button onClick={() => updateCampaignState(camp.id, 'pause')} className="text-amber-700 text-xs font-bold flex items-center gap-1 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200">

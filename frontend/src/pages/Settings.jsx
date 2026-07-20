@@ -1,6 +1,6 @@
 import { createElement, useState, useEffect, useRef } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield, Activity, Calendar, ChevronDown, BarChart2, TrendingUp, Send as SendIcon, CheckCircle2, XCircle, Eye, Megaphone } from 'lucide-react'
+import { Save, Upload, FileText, Trash2, Bot, Database, Globe, Users, ShoppingBag, Key, Webhook, Copy, Check, User, Mail, UserPlus, X, Trash, Image, RefreshCw, AlertCircle, Loader2, Building2, PhoneCall, Link as LinkIcon, Clock, Send, Bell, Volume2, VolumeX, Play, BellRing, CalendarClock, Headphones, Info, MonitorCheck, ShieldCheck, SlidersHorizontal, Sparkles, ArrowRight, Shield, Activity, Calendar, ChevronDown, BarChart2, TrendingUp, Send as SendIcon, CheckCircle2, XCircle, Eye, Megaphone, ExternalLink } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useDialog } from '../context/DialogContext'
 import { useNotificationSound } from '../hooks/useNotificationSound'
@@ -626,6 +626,15 @@ export default function Settings() {
                             </button>
                         )
                     })}
+                    <Link
+                        to="/privacy-policy"
+                        target="_blank"
+                        className="flex shrink-0 items-center rounded-lg px-3 py-2 text-sm font-medium transition-all duration-150 text-gray-600 hover:text-gray-900 hover:bg-white/50 lg:hover:bg-gray-50 lg:text-gray-700 lg:w-full lg:shrink"
+                    >
+                        <Shield className="mr-2 h-4 w-4 shrink-0 text-indigo-600/70 lg:mr-3 lg:h-5 lg:w-5 lg:text-gray-400" />
+                        Privacy Policy
+                        <ExternalLink className="ml-1.5 h-3 w-3 text-gray-400/80 lg:ml-auto lg:h-3.5 lg:w-3.5" />
+                    </Link>
                 </nav>
             </div>
 
