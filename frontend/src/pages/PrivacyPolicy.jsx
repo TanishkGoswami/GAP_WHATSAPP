@@ -930,6 +930,27 @@ export default function PrivacyPolicy() {
   const contentRef = useRef(null);
   const sectionRefs = useRef({});
 
+  // Set page meta tags for SEO/Meta crawler
+  useEffect(() => {
+    document.title = "GetAiPilot Privacy Policy";
+    
+    const setMetaTag = (property, content) => {
+      let element = document.querySelector(`meta[property="${property}"]`);
+      if (!element) {
+        element = document.createElement('meta');
+        element.setAttribute('property', property);
+        document.head.appendChild(element);
+      }
+      element.setAttribute('content', content);
+    };
+
+    setMetaTag('og:title', 'GetAiPilot Privacy Policy');
+    setMetaTag('og:description', 'Privacy Policy for GetAiPilot (GAP FlowPilot) WhatsApp Automation Workspace.');
+    setMetaTag('og:image', 'https://wb.getaipilot.in/logo.png');
+    setMetaTag('og:url', 'https://wb.getaipilot.in/privacy-policy');
+    setMetaTag('og:type', 'website');
+  }, []);
+
 
 
   // Intersection Observer for active section highlighting
