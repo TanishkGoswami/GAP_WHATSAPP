@@ -1071,14 +1071,27 @@ function WhatsAppFlowConfig({ config, updateConfig }) {
 }
 
 function AppointmentConfig({ config, updateConfig }) {
+    const getApiUrl = () => {
+        if (import.meta.env.VITE_BACKEND_URL) return import.meta.env.VITE_BACKEND_URL;
+        if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+            return 'http://localhost:3001';
+        }
+        return 'https://wb.getaipilot.in';
+    };
+    const API_URL = getApiUrl();
+    const auth = useAuth() || {};
     const [googleStatus, setGoogleStatus] = useState({ connected: false, connectedEmail: '' });
     const [loadingGoogle, setLoadingGoogle] = useState(false);
+
+    const getOrgId = () => {
+        return auth.memberProfile?.organization_id || auth.user?.organization_id || auth.user?.id || localStorage.getItem('organization_id') || localStorage.getItem('org_id') || '';
+    };
 
     useEffect(() => {
         const checkGoogleStatus = async () => {
             try {
-                const orgId = localStorage.getItem('organization_id') || localStorage.getItem('org_id') || '';
-                const res = await fetch(`/api/integrations/google/status?organization_id=${orgId}`);
+                const orgId = getOrgId();
+                const res = await fetch(`${API_URL}/api/integrations/google/status?organization_id=${orgId}`);
                 if (res.ok) {
                     const data = await res.json();
                     setGoogleStatus(data);
@@ -1101,14 +1114,17 @@ function AppointmentConfig({ config, updateConfig }) {
 
         window.addEventListener('message', handleMessage);
         return () => window.removeEventListener('message', handleMessage);
-    }, []);
+    }, [auth.memberProfile, auth.user]);
 
     const handleConnectGoogle = async () => {
         try {
             setLoadingGoogle(true);
-            const orgId = localStorage.getItem('organization_id') || localStorage.getItem('org_id') || '';
-            const res = await fetch(`/api/integrations/google/auth-url?organization_id=${orgId}`);
-            if (!res.ok) throw new Error('Failed to get auth URL');
+            const orgId = getOrgId();
+            const res = await fetch(`${API_URL}/api/integrations/google/auth-url?organization_id=${orgId}`);
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || 'Failed to get auth URL');
+            }
             const { url } = await res.json();
 
             const width = 500;
@@ -1123,7 +1139,7 @@ function AppointmentConfig({ config, updateConfig }) {
             );
         } catch (e) {
             console.error('Failed to launch Google auth popup:', e);
-            alert('Failed to launch Google Calendar connection. Ensure server environment variables are set.');
+            alert(e.message || 'Failed to launch Google Calendar connection. Ensure server environment variables are set.');
         } finally {
             setLoadingGoogle(false);
         }

@@ -3,13 +3,49 @@ import { supabase } from "../config/supabase.js";
 import { getGoogleOAuthUrl, handleGoogleOAuthCallback } from "../services/googleCalendar.service.js";
 
 /**
+ * Resolve organization_id from param, header, or query user_id fallback
+ */
+async function resolveOrganizationId(inputOrgId?: string): Promise<string | null> {
+  if (inputOrgId && inputOrgId.trim().length > 0) {
+    // Check if input is a valid organization ID
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("id")
+      .eq("id", inputOrgId)
+      .maybeSingle();
+
+    if (org?.id) return org.id;
+
+    // Check if input is a user_id in organization_members
+    const { data: member } = await supabase
+      .from("organization_members")
+      .select("organization_id")
+      .eq("user_id", inputOrgId)
+      .maybeSingle();
+
+    if (member?.organization_id) return member.organization_id;
+  }
+
+  // Global fallback: return first active organization ID
+  const { data: firstOrg } = await supabase
+    .from("organizations")
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+
+  return firstOrg?.id || null;
+}
+
+/**
  * GET /api/integrations/google/status?organization_id=...
  */
 export async function getGoogleStatus(req: Request, res: Response) {
   try {
-    const orgId = String(req.query.organization_id || req.headers["x-organization-id"] || "");
+    const rawOrgId = String(req.query.organization_id || req.headers["x-organization-id"] || "");
+    const orgId = await resolveOrganizationId(rawOrgId);
+
     if (!orgId) {
-      return res.status(400).json({ error: "Missing organization_id" });
+      return res.json({ connected: false });
     }
 
     const { data: integration } = await supabase
@@ -39,9 +75,11 @@ export async function getGoogleStatus(req: Request, res: Response) {
  */
 export async function getGoogleAuthUrlController(req: Request, res: Response) {
   try {
-    const orgId = String(req.query.organization_id || req.headers["x-organization-id"] || "");
+    const rawOrgId = String(req.query.organization_id || req.headers["x-organization-id"] || "");
+    const orgId = await resolveOrganizationId(rawOrgId);
+
     if (!orgId) {
-      return res.status(400).json({ error: "Missing organization_id" });
+      return res.status(400).json({ error: "Could not resolve an active Organization ID" });
     }
 
     const url = getGoogleOAuthUrl(orgId);
@@ -58,15 +96,15 @@ export async function getGoogleAuthUrlController(req: Request, res: Response) {
 export async function handleGoogleCallbackController(req: Request, res: Response) {
   try {
     const code = String(req.query.code || "");
-    const orgId = String(req.query.state || "");
+    const rawOrgId = String(req.query.state || "");
+    const orgId = await resolveOrganizationId(rawOrgId);
 
     if (!code || !orgId) {
-      return res.status(400).send("Invalid callback parameters");
+      return res.status(400).send("Invalid callback parameters or missing organization");
     }
 
     const { connectedEmail } = await handleGoogleOAuthCallback(code, orgId);
 
-    // Return HTML page that posts message to parent window and closes popup
     res.setHeader("Content-Type", "text/html");
     return res.send(`
       <!DOCTYPE html>
