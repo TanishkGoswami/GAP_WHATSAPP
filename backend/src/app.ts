@@ -18,6 +18,7 @@ import twilioRoutes from './routes/twilio.routes.js';
 import waRoutes from './routes/wa.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
 import webhookRoutes from './routes/webhook.routes.js';
+import googleAuthRoutes from './routes/googleAuth.routes.js';
 
 dotenv.config({ path: "./.env" });
 
@@ -112,6 +113,7 @@ app.use('/api/team', teamRoutes);
 app.use('/api/twilio', twilioRoutes);
 app.use('/api', waRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/integrations/google', googleAuthRoutes);
 app.use(webhookRoutes); // Root level /webhook
 
 export default app;

@@ -1071,6 +1071,64 @@ function WhatsAppFlowConfig({ config, updateConfig }) {
 }
 
 function AppointmentConfig({ config, updateConfig }) {
+    const [googleStatus, setGoogleStatus] = useState({ connected: false, connectedEmail: '' });
+    const [loadingGoogle, setLoadingGoogle] = useState(false);
+
+    useEffect(() => {
+        const checkGoogleStatus = async () => {
+            try {
+                const orgId = localStorage.getItem('organization_id') || localStorage.getItem('org_id') || '';
+                const res = await fetch(`/api/integrations/google/status?organization_id=${orgId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setGoogleStatus(data);
+                }
+            } catch (e) {
+                console.error('Failed to check Google status:', e);
+            }
+        };
+
+        checkGoogleStatus();
+
+        const handleMessage = (event) => {
+            if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
+                setGoogleStatus({
+                    connected: true,
+                    connectedEmail: event.data.connectedEmail || 'Google Account'
+                });
+            }
+        };
+
+        window.addEventListener('message', handleMessage);
+        return () => window.removeEventListener('message', handleMessage);
+    }, []);
+
+    const handleConnectGoogle = async () => {
+        try {
+            setLoadingGoogle(true);
+            const orgId = localStorage.getItem('organization_id') || localStorage.getItem('org_id') || '';
+            const res = await fetch(`/api/integrations/google/auth-url?organization_id=${orgId}`);
+            if (!res.ok) throw new Error('Failed to get auth URL');
+            const { url } = await res.json();
+
+            const width = 500;
+            const height = 650;
+            const left = window.screenX + (window.outerWidth - width) / 2;
+            const top = window.screenY + (window.outerHeight - height) / 2;
+
+            window.open(
+                url,
+                'GoogleAuthPopup',
+                `width=${width},height=${height},left=${left},top=${top},status=no,toolbar=no,menubar=no`
+            );
+        } catch (e) {
+            console.error('Failed to launch Google auth popup:', e);
+            alert('Failed to launch Google Calendar connection. Ensure server environment variables are set.');
+        } finally {
+            setLoadingGoogle(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             {/* Section 1: Invitation Message */}
@@ -1112,6 +1170,68 @@ function AppointmentConfig({ config, updateConfig }) {
                         className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                     />
                     <p className="mt-1 text-[10px] text-gray-500">Specify days and time range (e.g. Mon-Fri, 10 AM - 6 PM).</p>
+                </div>
+
+                {/* Google Calendar Sync Section */}
+                <div className="pt-3 border-t border-gray-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <span>🗓️ Google Calendar Sync</span>
+                        </label>
+                        <input
+                            type="checkbox"
+                            checked={!!config.googleSyncEnabled}
+                            onChange={(e) => updateConfig('googleSyncEnabled', e.target.checked)}
+                            className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                    </div>
+
+                    {config.googleSyncEnabled && (
+                        <div className="space-y-3 p-3 bg-white rounded-lg border border-purple-200 text-xs">
+                            {googleStatus.connected ? (
+                                <div className="flex items-center justify-between bg-emerald-50 text-emerald-800 p-2.5 rounded-md border border-emerald-200">
+                                    <div className="flex items-center gap-2 truncate">
+                                        <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                                        <span className="font-medium truncate">{googleStatus.connectedEmail}</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleConnectGoogle}
+                                        className="text-[10px] text-emerald-700 underline font-semibold shrink-0"
+                                    >
+                                        Change
+                                    </button>
+                                </div>
+                            ) : (
+                                <div>
+                                    <button
+                                        type="button"
+                                        onClick={handleConnectGoogle}
+                                        disabled={loadingGoogle}
+                                        className="w-full flex items-center justify-center gap-2 px-3 py-2 font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm transition-all cursor-pointer"
+                                    >
+                                        <span>🔗</span>
+                                        <span>{loadingGoogle ? 'Connecting...' : 'Connect Google Calendar'}</span>
+                                    </button>
+                                    <p className="mt-1 text-[10px] text-gray-500 text-center">Opens a secure Google OAuth popup window.</p>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-[11px] font-medium text-gray-700 mb-1">Buffer Padding</label>
+                                <select
+                                    value={config.googleBufferMinutes || '30'}
+                                    onChange={(e) => updateConfig('googleBufferMinutes', e.target.value)}
+                                    className="w-full px-2.5 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 bg-white"
+                                >
+                                    <option value="15">15 Minutes Buffer</option>
+                                    <option value="30">30 Minutes Buffer</option>
+                                    <option value="60">60 Minutes Buffer</option>
+                                </select>
+                                <p className="mt-1 text-[10px] text-gray-500">Filters out any slots within this buffer window of existing events.</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
