@@ -2,6 +2,7 @@ import { supabase } from '../config/supabase.js';
 import { isUuid } from '../utils/format.js';
 import { getBotAgentReply } from './ai.service.js';
 import { encryptFormToken } from '../utils/crypto.js';
+import { fetchGoogleBusySlots, createGoogleCalendarEvent } from './googleCalendar.service.js';
 import crypto from 'crypto';
 
 function extractFormSlug(urlStr: string): string {
@@ -412,7 +413,12 @@ function generateDateSections(slotsConfigStr: string = "") {
   return sections;
 }
 
-function generateTimeSections(dateStr: string, slotsConfigStr: string = "") {
+async function generateTimeSections(
+  dateStr: string,
+  slotsConfigStr: string = "",
+  organizationId?: string,
+  nodeConfig?: any
+) {
   const rows = [];
   const slotsConfig = String(slotsConfigStr).toLowerCase();
 
@@ -436,16 +442,46 @@ function generateTimeSections(dateStr: string, slotsConfigStr: string = "") {
     endHour = eH;
   }
 
+  // Fetch Google Busy Slots if enabled
+  let busySlots: { start: string; end: string }[] = [];
+  if (organizationId && nodeConfig?.googleSyncEnabled) {
+    const timeMin = `${dateStr}T00:00:00Z`;
+    const timeMax = `${dateStr}T23:59:59Z`;
+    busySlots = await fetchGoogleBusySlots(organizationId, timeMin, timeMax);
+  }
+
+  const bufferMinutes = parseInt(nodeConfig?.googleBufferMinutes || "30", 10) || 30;
+  const bufferMs = bufferMinutes * 60 * 1000;
+
   const selectedDate = new Date(dateStr + "T00:00:00");
   const today = new Date();
   const isToday = selectedDate.toDateString() === today.toDateString();
 
   for (let hr = startHour; hr < endHour; hr++) {
+    const slotStartTime = new Date(`${dateStr}T${String(hr).padStart(2, "0")}:00:00Z`).getTime();
+    const slotEndTime = slotStartTime + 60 * 60 * 1000;
+
     if (isToday) {
-      const slotTime = new Date(dateStr + "T" + String(hr).padStart(2, "0") + ":00:00");
+      const slotTimeLocal = new Date(dateStr + "T" + String(hr).padStart(2, "0") + ":00:00");
       const minAllowed = new Date(today.getTime() + 30 * 60 * 1000);
-      if (slotTime < minAllowed) {
+      if (slotTimeLocal < minAllowed) {
         continue;
+      }
+    }
+
+    // Google Busy & Buffer Filter
+    if (busySlots.length > 0) {
+      const bufferedStart = slotStartTime - bufferMs;
+      const bufferedEnd = slotEndTime + bufferMs;
+
+      const hasConflict = busySlots.some((b) => {
+        const bStart = new Date(b.start).getTime();
+        const bEnd = new Date(b.end).getTime();
+        return bufferedStart < bEnd && bufferedEnd > bStart;
+      });
+
+      if (hasConflict) {
+        continue; // Exclude slot due to Google Calendar conflict or buffer overlap
       }
     }
 
@@ -807,7 +843,7 @@ export async function processFlowEngine(
           .eq("id", session_id);
         flowState = nextState;
 
-        const timeSections = generateTimeSections(selectedDate, config.slots);
+        const timeSections = await generateTimeSections(selectedDate, config.slots, organization_id, config);
         if (timeSections.length === 0 || timeSections[0].rows.length === 0) {
           const resetState = {
             ...nextState,
@@ -850,7 +886,7 @@ export async function processFlowEngine(
 
       else if (appointmentStep === "select_time") {
         if (!listReplyId || !listReplyId.startsWith("time_")) {
-          const timeSections = generateTimeSections(flowState.appointment_date, config.slots);
+          const timeSections = await generateTimeSections(flowState.appointment_date, config.slots, organization_id, config);
           return {
             consumed: true,
             output: null,
@@ -879,6 +915,20 @@ export async function processFlowEngine(
           appointment_datetime: friendlyDateTime,
           appointment_step: null,
         };
+
+        // Create Google Calendar Event if enabled
+        if (config.googleSyncEnabled && organization_id) {
+          const startISO = `${flowState.appointment_date}T${selectedTimeRaw}:00Z`;
+          const endHourNum = (parseInt(hoursStr) + 1) % 24;
+          const endISO = `${flowState.appointment_date}T${String(endHourNum).padStart(2, "0")}:${minutesStr}:00Z`;
+
+          createGoogleCalendarEvent(organization_id, {
+            summary: `${config.type || "Appointment"} Booking`,
+            description: `WhatsApp Booking Flow`,
+            startDateTimeISO: startISO,
+            endDateTimeISO: endISO,
+          }).catch((err) => console.error("Google Calendar event creation background error:", err));
+        }
 
         await supabase
           .from("w_flow_sessions")
