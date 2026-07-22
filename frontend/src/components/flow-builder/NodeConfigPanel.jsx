@@ -1072,36 +1072,63 @@ function WhatsAppFlowConfig({ config, updateConfig }) {
 
 function AppointmentConfig({ config, updateConfig }) {
     return (
-        <div className="space-y-4">
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Appointment Type</label>
-                <input
-                    type="text"
-                    value={config.type || ''}
-                    onChange={(e) => updateConfig('type', e.target.value)}
-                    placeholder="Demo call"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
+        <div className="space-y-6">
+            {/* Section 1: Invitation Message */}
+            <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100 space-y-3">
+                <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wider">Section 1: Invitation Message</h3>
+                <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Message Text</label>
+                    <textarea
+                        value={config.message || ''}
+                        onChange={(e) => updateConfig('message', e.target.value)}
+                        placeholder="Please select a date for your appointment from the options below:"
+                        rows={3}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    />
+                    <p className="mt-1 text-[10px] text-gray-500">This text initiates the booking process and accompanies the list of available dates.</p>
+                </div>
             </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Available Slots</label>
-                <textarea
-                    value={config.slots || ''}
-                    onChange={(e) => updateConfig('slots', e.target.value)}
-                    placeholder="Mon-Fri, 10 AM - 6 PM"
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
+
+            {/* Section 2: Input Settings */}
+            <div className="p-4 bg-gray-50/70 rounded-xl border border-gray-200 space-y-4">
+                <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wider">Section 2: Booking Settings</h3>
+                <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Appointment Type</label>
+                    <input
+                        type="text"
+                        value={config.type || ''}
+                        onChange={(e) => updateConfig('type', e.target.value)}
+                        placeholder="Demo call"
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    />
+                </div>
+                <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Available Slots</label>
+                    <textarea
+                        value={config.slots || ''}
+                        onChange={(e) => updateConfig('slots', e.target.value)}
+                        placeholder="Mon-Fri, 10 AM - 6 PM"
+                        rows={2}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    />
+                    <p className="mt-1 text-[10px] text-gray-500">Specify days and time range (e.g. Mon-Fri, 10 AM - 6 PM).</p>
+                </div>
             </div>
-            <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Confirmation Message</label>
-                <textarea
-                    value={config.confirmationMessage || ''}
-                    onChange={(e) => updateConfig('confirmationMessage', e.target.value)}
-                    placeholder="Thanks {{name}}. Our team will confirm your appointment shortly."
-                    rows={3}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
+
+            {/* Section 3: Confirmation Message */}
+            <div className="p-4 bg-teal-50/50 rounded-xl border border-teal-100 space-y-3">
+                <h3 className="text-xs font-bold text-teal-800 uppercase tracking-wider">Section 3: Confirmation Message</h3>
+                <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1.5">Confirmation Text</label>
+                    <textarea
+                        value={config.confirmationMessage || ''}
+                        onChange={(e) => updateConfig('confirmationMessage', e.target.value)}
+                        placeholder="Thanks {{name}}. Your {{type}} is scheduled for {{appointment_datetime}}."
+                        rows={3}
+                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    />
+                    <p className="mt-1 text-[10px] text-gray-500">Sent after a valid date and time slot is selected. You can use variables like `{"{{appointment_datetime}}"}`.</p>
+                </div>
             </div>
         </div>
     );

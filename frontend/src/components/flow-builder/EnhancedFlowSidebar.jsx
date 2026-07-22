@@ -116,7 +116,8 @@ const nodeCategories = [
                 description: 'Open a native WhatsApp form.',
                 useCase: 'Use for richer forms like lead capture, appointment booking, or surveys.',
                 setup: ['Select WhatsApp Flow', 'Map submitted fields', 'Connect success path'],
-                badge: 'Advanced',
+                badge: 'Coming Soon',
+                comingSoon: true,
             },
         ],
     },
@@ -291,12 +292,12 @@ export default function EnhancedFlowSidebar({ onDragStart, mobileMode = false, o
                                                 <button
                                                     key={node.type}
                                                     type="button"
-                                                    onClick={() => onMobileTap?.(node.type, node)}
-                                                    className={`flex flex-col items-center gap-1.5 rounded-xl border p-2.5 w-full text-center transition-colors active:scale-95 ${
+                                                    onClick={() => node.comingSoon ? undefined : onMobileTap?.(node.type, node)}
+                                                    className={`flex flex-col items-center gap-1.5 rounded-xl border p-2.5 w-full text-center transition-colors ${
                                                         isActive
                                                             ? 'border-[#25D366] bg-[#25D366]/[0.06]'
                                                             : 'border-gray-200 bg-white hover:border-gray-300'
-                                                    }`}
+                                                    } ${node.comingSoon ? 'opacity-50 cursor-not-allowed' : 'active:scale-95'}`}
                                                 >
                                                     <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
                                                         isActive
@@ -315,21 +316,26 @@ export default function EnhancedFlowSidebar({ onDragStart, mobileMode = false, o
                                             );
                                         }
 
-                                        // Desktop: existing drag-and-drop card
                                         return (
                                             <div
                                                 key={node.type}
-                                                draggable
+                                                draggable={!node.comingSoon}
                                                 tabIndex={0}
                                                 onMouseEnter={() => setActiveNode(node)}
                                                 onFocus={() => setActiveNode(node)}
                                                 onClick={() => setActiveNode(node)}
-                                                onDragStart={(e) => onDragStart(e, node.type, node)}
-                                                className={`group cursor-grab rounded-md border bg-white p-2.5 transition-colors active:cursor-grabbing ${
+                                                onDragStart={(e) => {
+                                                    if (node.comingSoon) {
+                                                        e.preventDefault();
+                                                        return;
+                                                    }
+                                                    onDragStart(e, node.type, node);
+                                                }}
+                                                className={`group relative cursor-grab rounded-md border bg-white p-2.5 transition-colors active:cursor-grabbing ${
                                                     isActive
                                                         ? 'border-[#25D366] bg-[#25D366]/[0.04]'
                                                         : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-                                                }`}
+                                                } ${node.comingSoon ? 'opacity-65 cursor-not-allowed' : ''}`}
                                             >
                                                 <div className="flex items-start gap-2.5">
                                                     <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded border ${
@@ -343,7 +349,11 @@ export default function EnhancedFlowSidebar({ onDragStart, mobileMode = false, o
                                                         <span className="flex items-center gap-2">
                                                             <span className="truncate text-xs font-semibold text-gray-900">{node.label}</span>
                                                             {node.badge && (
-                                                                <span className="rounded-full border border-gray-200 bg-white px-1.5 py-0.5 text-[9px] font-semibold uppercase text-gray-500">
+                                                                <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase ${
+                                                                    node.comingSoon 
+                                                                        ? 'border-amber-200 bg-amber-50 text-amber-700' 
+                                                                        : 'border-gray-200 bg-white text-gray-500'
+                                                                }`}>
                                                                     {node.badge}
                                                                 </span>
                                                             )}
@@ -353,6 +363,21 @@ export default function EnhancedFlowSidebar({ onDragStart, mobileMode = false, o
                                                         </span>
                                                     </span>
                                                 </div>
+
+                                                {/* Professional custom hover tooltip for Coming Soon nodes */}
+                                                {node.comingSoon && (
+                                                    <div className="absolute left-[294px] top-1/2 -translate-y-1/2 hidden group-hover:block z-[999] w-64 p-3 bg-slate-900 text-white text-xs rounded-xl shadow-2xl border border-slate-800 pointer-events-none transition-all duration-200 select-none">
+                                                        <div className="font-bold text-amber-400 mb-1 flex items-center gap-1.5">
+                                                            <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                                                            Coming Soon!
+                                                        </div>
+                                                        <p className="text-slate-300 leading-relaxed font-normal">
+                                                            We are actively building native Meta WhatsApp Flows integration to support rich interactive forms inside your chat flows.
+                                                        </p>
+                                                        {/* Tooltip pointer arrow */}
+                                                        <div className="absolute right-full top-1/2 -translate-y-1/2 border-[6px] border-transparent border-r-slate-900" />
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}
