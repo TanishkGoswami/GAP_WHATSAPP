@@ -84,7 +84,7 @@ export async function getGoogleAuthUrlController(req: Request, res: Response) {
 
     const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
     const host = req.headers["x-forwarded-host"] || req.headers.host;
-    const dynamicRedirectUri = host ? `${protocol}://${host}/api/integrations/google/callback` : undefined;
+    const dynamicRedirectUri = process.env.GOOGLE_REDIRECT_URI || (host ? `${protocol}://${host}/api/integrations/google/callback` : undefined);
 
     const url = getGoogleOAuthUrl(orgId, dynamicRedirectUri);
     return res.json({ url });
@@ -109,7 +109,7 @@ export async function handleGoogleCallbackController(req: Request, res: Response
 
     const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
     const host = req.headers["x-forwarded-host"] || req.headers.host;
-    const dynamicRedirectUri = host ? `${protocol}://${host}/api/integrations/google/callback` : undefined;
+    const dynamicRedirectUri = process.env.GOOGLE_REDIRECT_URI || (host ? `${protocol}://${host}/api/integrations/google/callback` : undefined);
 
     const { connectedEmail } = await handleGoogleOAuthCallback(code, orgId, dynamicRedirectUri);
 
