@@ -82,7 +82,11 @@ export async function getGoogleAuthUrlController(req: Request, res: Response) {
       return res.status(400).json({ error: "Could not resolve an active Organization ID" });
     }
 
-    const url = getGoogleOAuthUrl(orgId);
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+    const host = req.headers["x-forwarded-host"] || req.headers.host;
+    const dynamicRedirectUri = host ? `${protocol}://${host}/api/integrations/google/callback` : undefined;
+
+    const url = getGoogleOAuthUrl(orgId, dynamicRedirectUri);
     return res.json({ url });
   } catch (error: any) {
     console.error("Error in getGoogleAuthUrlController:", error);
@@ -103,7 +107,11 @@ export async function handleGoogleCallbackController(req: Request, res: Response
       return res.status(400).send("Invalid callback parameters or missing organization");
     }
 
-    const { connectedEmail } = await handleGoogleOAuthCallback(code, orgId);
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+    const host = req.headers["x-forwarded-host"] || req.headers.host;
+    const dynamicRedirectUri = host ? `${protocol}://${host}/api/integrations/google/callback` : undefined;
+
+    const { connectedEmail } = await handleGoogleOAuthCallback(code, orgId, dynamicRedirectUri);
 
     res.setHeader("Content-Type", "text/html");
     return res.send(`
