@@ -209,6 +209,8 @@ export default function EnhancedFlowSidebar({ onDragStart, mobileMode = false, o
     const [searchQuery, setSearchQuery] = useState('');
     const [collapsedCategories, setCollapsedCategories] = useState(new Set());
     const [activeNode, setActiveNode] = useState(allNodes[0]);
+    const [hoveredComingSoonNode, setHoveredComingSoonNode] = useState(null);
+    const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
 
     const toggleCategory = (categoryTitle) => {
         setCollapsedCategories(prev => {
@@ -321,7 +323,20 @@ export default function EnhancedFlowSidebar({ onDragStart, mobileMode = false, o
                                                 key={node.type}
                                                 draggable={!node.comingSoon}
                                                 tabIndex={0}
-                                                onMouseEnter={() => setActiveNode(node)}
+                                                onMouseEnter={(e) => {
+                                                    setActiveNode(node);
+                                                    if (node.comingSoon) {
+                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                        setHoveredComingSoonNode(node);
+                                                        setTooltipPosition({
+                                                            top: rect.top + rect.height / 2,
+                                                            left: rect.right + 12
+                                                        });
+                                                    }
+                                                }}
+                                                onMouseLeave={() => {
+                                                    setHoveredComingSoonNode(null);
+                                                }}
                                                 onFocus={() => setActiveNode(node)}
                                                 onClick={() => setActiveNode(node)}
                                                 onDragStart={(e) => {
@@ -363,21 +378,6 @@ export default function EnhancedFlowSidebar({ onDragStart, mobileMode = false, o
                                                         </span>
                                                     </span>
                                                 </div>
-
-                                                {/* Professional custom hover tooltip for Coming Soon nodes */}
-                                                {node.comingSoon && (
-                                                    <div className="absolute left-[294px] top-1/2 -translate-y-1/2 hidden group-hover:block z-[999] w-64 p-3 bg-slate-900 text-white text-xs rounded-xl shadow-2xl border border-slate-800 pointer-events-none transition-all duration-200 select-none">
-                                                        <div className="font-bold text-amber-400 mb-1 flex items-center gap-1.5">
-                                                            <span className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
-                                                            Coming Soon!
-                                                        </div>
-                                                        <p className="text-slate-300 leading-relaxed font-normal">
-                                                            We are actively building native Meta WhatsApp Flows integration to support rich interactive forms inside your chat flows.
-                                                        </p>
-                                                        {/* Tooltip pointer arrow */}
-                                                        <div className="absolute right-full top-1/2 -translate-y-1/2 border-[6px] border-transparent border-r-slate-900" />
-                                                    </div>
-                                                )}
                                             </div>
                                         );
                                     })}
@@ -390,6 +390,29 @@ export default function EnhancedFlowSidebar({ onDragStart, mobileMode = false, o
 
             {/* NodeHelp — desktop only */}
             {!mobileMode && <NodeHelp node={activeNode} />}
+
+            {/* Viewport-fixed tooltip floating on top of all sidebar & canvas elements */}
+            {!mobileMode && hoveredComingSoonNode && (
+                <div 
+                    style={{ 
+                        position: 'fixed', 
+                        top: `${tooltipPosition.top}px`, 
+                        left: `${tooltipPosition.left}px`,
+                        transform: 'translateY(-50%)'
+                    }}
+                    className="z-[999999] w-72 p-4 bg-slate-950 text-white text-xs rounded-2xl shadow-2xl border border-slate-800 pointer-events-none transition-all duration-150 select-none animate-in fade-in zoom-in-95 duration-150"
+                >
+                    <div className="font-bold text-amber-400 mb-1.5 flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse shrink-0" />
+                        Coming Soon!
+                    </div>
+                    <p className="text-slate-300 leading-relaxed font-normal text-[11px]">
+                        We are actively building native Meta WhatsApp Flows integration to support rich interactive forms inside your chat automation.
+                    </p>
+                    {/* Tooltip pointer arrow pointing left */}
+                    <div className="absolute right-full top-1/2 -translate-y-1/2 border-[7px] border-transparent border-r-slate-950" />
+                </div>
+            )}
         </div>
     );
 }
