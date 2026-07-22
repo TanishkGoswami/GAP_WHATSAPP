@@ -5,7 +5,7 @@ import { io } from '../socket.js';
 import { performAutoAssignment } from '../services/assignment.service.js';
 
 import { storeMessage, upsertConversation, refundWhatsappMessage } from '../services/messages.service.js';
-import { sendTextMessage, applyReactionUpdate, downloadMetaMedia, sendInteractiveButtons, sendFlowMediaMessageMeta } from '../services/messages.sender.js';
+import { sendTextMessage, applyReactionUpdate, downloadMetaMedia, sendInteractiveButtons, sendFlowMediaMessageMeta, sendInteractiveList } from '../services/messages.sender.js';
 import { processFlowEngine } from '../services/flows.service.js';
 import { upsertContact } from '../services/contacts.service.js';
 import { getBotAgentReply } from '../services/ai.service.js';
@@ -987,7 +987,7 @@ export async function handleWebhook(req: any, res: Response) {
               const sendResult = await sendInteractiveButtons(
                 from,
                 body,
-                buttons,
+                buttons || [],
                 footer,
                 phone_number_id,
               );
@@ -1039,6 +1039,64 @@ export async function handleWebhook(req: any, res: Response) {
                 botWaMessageId,
                 storedMessageId: storedBotReply?.id || null,
                 buttonsCount: Array.isArray(buttons) ? buttons.length : 0,
+              });
+            } else if (flowResult.interactive?.type === "list") {
+              console.log(`🔘 Flow Engine sending native interactive list menu`);
+              const { body, buttonText, sections, footer } = flowResult.interactive;
+              const sendResult = await sendInteractiveList(
+                from,
+                body,
+                buttonText || "Select",
+                sections || [],
+                footer,
+                phone_number_id,
+              );
+              const botWaMessageId = sendResult?.messages?.[0]?.id || null;
+
+              const storedBotReply = await storeMessage({
+                organization_id,
+                contact_id: contact.id,
+                conversation_id: conv.id,
+                wa_message_id: botWaMessageId,
+                direction: "outbound",
+                type: "interactive",
+                content: {
+                  text: body,
+                  interactive: flowResult.interactive,
+                  is_flow: true,
+                },
+                status: "sent",
+                is_bot_reply: true,
+                sender_type: "ai_agent",
+                automation_source: "flow",
+                metadata: {
+                  flow_id: flowResult.flow_id,
+                  flow_version_id: flowResult.flow_version_id,
+                  flow_session_id: flowResult.flow_session_id,
+                  flow_run_id: flowResult.flow_run_id,
+                  flow_node_id: flowResult.flow_node_id,
+                  handoff: flowResult.handoff === true,
+                },
+              } as any);
+
+              io.emit("new_message", {
+                from: metadata?.display_phone_number || phone_number_id,
+                phone: from,
+                text: body,
+                sender: "agent",
+                conversation_id: conv.id,
+                contact_id: contact.id,
+                message_id: storedBotReply?.id || null,
+                wa_message_id: botWaMessageId,
+                created_at: storedBotReply?.created_at || new Date().toISOString(),
+                connectedAccount: metadata?.display_phone_number,
+                type: "interactive",
+                is_bot_reply: true,
+              });
+              webhookLog("flow.reply.list.sent", {
+                requestId,
+                botWaMessageId,
+                storedMessageId: storedBotReply?.id || null,
               });
             }
 

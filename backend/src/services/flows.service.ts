@@ -100,10 +100,12 @@ export type FlowEngineResult = {
     fileName?: string | null;
   }>;
   interactive?: {
-    type: 'button' | 'cta_url';
+    type: 'button' | 'cta_url' | 'list';
     body: string;
     footer?: string;
-    buttons: Array<{ id: string; text: string; type?: 'reply' | 'url' | 'phone'; url?: string; phone?: string }>;
+    buttons?: Array<{ id: string; text: string; type?: 'reply' | 'url' | 'phone'; url?: string; phone?: string }>;
+    buttonText?: string;
+    sections?: any[];
   };
   handoff?: boolean;
   flow_id?: string | null;
@@ -360,6 +362,110 @@ export function validateFlowDefinition(flow: any) {
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+function generateDateSections(slotsConfigStr: string = "") {
+  const sections = [];
+  const rows = [];
+  const slotsConfig = String(slotsConfigStr).toLowerCase();
+  const excludeWeekends = slotsConfig.includes("mon-fri") || slotsConfig.includes("weekday");
+
+  let count = 0;
+  let dayOffset = 0;
+  
+  while (count < 7 && dayOffset < 15) {
+    const d = new Date();
+    d.setDate(d.getDate() + dayOffset);
+    const dayOfWeek = d.getDay(); // 0 is Sunday, 6 is Saturday
+    
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    if (excludeWeekends && isWeekend) {
+      dayOffset++;
+      continue;
+    }
+
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const dayName = days[dayOfWeek];
+    const monthName = months[d.getMonth()];
+    
+    rows.push({
+      id: `date_${dateStr}`,
+      title: `${dayName.slice(0, 3)}, ${monthName} ${d.getDate()}`,
+      description: `Select ${dayName}`,
+    });
+
+    count++;
+    dayOffset++;
+  }
+
+  sections.push({
+    title: "Available Dates",
+    rows,
+  });
+
+  return sections;
+}
+
+function generateTimeSections(dateStr: string, slotsConfigStr: string = "") {
+  const rows = [];
+  const slotsConfig = String(slotsConfigStr).toLowerCase();
+
+  let startHour = 9;
+  let endHour = 17;
+
+  const timeRegex = /(\d+)\s*(am|pm)\s*-\s*(\d+)\s*(am|pm)/i;
+  const match = slotsConfig.match(timeRegex);
+  if (match) {
+    let sH = parseInt(match[1]);
+    const sM = match[2].toLowerCase();
+    let eH = parseInt(match[3]);
+    const eM = match[4].toLowerCase();
+    
+    if (sM === "pm" && sH < 12) sH += 12;
+    if (sM === "am" && sH === 12) sH = 0;
+    if (eM === "pm" && eH < 12) eH += 12;
+    if (eM === "am" && eH === 12) eH = 0;
+    
+    startHour = sH;
+    endHour = eH;
+  }
+
+  const selectedDate = new Date(dateStr + "T00:00:00");
+  const today = new Date();
+  const isToday = selectedDate.toDateString() === today.toDateString();
+
+  for (let hr = startHour; hr < endHour; hr++) {
+    if (isToday) {
+      const slotTime = new Date(dateStr + "T" + String(hr).padStart(2, "0") + ":00:00");
+      const minAllowed = new Date(today.getTime() + 30 * 60 * 1000);
+      if (slotTime < minAllowed) {
+        continue;
+      }
+    }
+
+    const hour24 = hr;
+    const ampm = hour24 >= 12 ? "PM" : "AM";
+    const displayHr = hour24 > 12 ? hour24 - 12 : hour24 === 0 ? 12 : hour24;
+    const timeStr = `${String(displayHr).padStart(2, "0")}:00 ${ampm}`;
+    const idStr = `${String(hour24).padStart(2, "0")}:00`;
+
+    rows.push({
+      id: `time_${idStr}`,
+      title: timeStr,
+      description: "Book this slot",
+    });
+  }
+
+  return [{
+    title: "Available Time Slots",
+    rows,
+  }];
 }
 
 export async function processFlowEngine(
@@ -648,14 +754,176 @@ export async function processFlowEngine(
     flow_run_id: run_id,
   };
 
-  // ----------------------------------------------------------------
-  // RESUMING: User ne button click kiya ya kuch type kiya
-  // Pehle current node ke edges check karo aur next node pe jao
-  // ----------------------------------------------------------------
+  let activeNode = nodes.find((n: any) => n.id === currentNodeId);
+  const outputText: string[] = [];
+  const mediaOutput: NonNullable<FlowEngineResult["media"]> = [];
+  let steps = 0;
+
   if (isResuming) {
     const currentNode = nodes.find((n: any) => n.id === currentNodeId);
 
-    if (currentNode?.type === "button" || currentNode?.type === "userInput") {
+    if (currentNode?.type === "appointment") {
+      let listReplyId = "";
+      if (triggerMessageId) {
+        const { data: triggerMsg } = await supabase
+          .from("w_messages")
+          .select("content")
+          .eq("id", triggerMessageId)
+          .maybeSingle();
+        listReplyId = triggerMsg?.content?.raw?.interactive?.list_reply?.id || "";
+      }
+
+      const appointmentStep = String(flowState?.appointment_step || "select_date");
+      const config = currentNode.data?.config || {};
+
+      if (appointmentStep === "select_date") {
+        if (!listReplyId || !listReplyId.startsWith("date_")) {
+          const sections = generateDateSections(config.slots);
+          const body = renderFlowTemplate(config.message || "Please select a date for your appointment:", flowState);
+          return {
+            consumed: true,
+            output: null,
+            ...flowMeta,
+            flow_node_id: currentNode.id,
+            interactive: {
+              type: "list",
+              body,
+              buttonText: "Select Date",
+              sections,
+            },
+          };
+        }
+
+        const selectedDate = listReplyId.replace("date_", "");
+        const nextState = {
+          ...flowState,
+          appointment_date: selectedDate,
+          appointment_step: "select_time",
+        };
+
+        await supabase
+          .from("w_flow_sessions")
+          .update({ state_data: nextState })
+          .eq("id", session_id);
+        flowState = nextState;
+
+        const timeSections = generateTimeSections(selectedDate, config.slots);
+        if (timeSections.length === 0 || timeSections[0].rows.length === 0) {
+          const resetState = {
+            ...nextState,
+            appointment_step: "select_date",
+          };
+          await supabase
+            .from("w_flow_sessions")
+            .update({ state_data: resetState })
+            .eq("id", session_id);
+          flowState = resetState;
+
+          const dateSections = generateDateSections(config.slots);
+          return {
+            consumed: true,
+            output: "No time slots are available for today. Please pick another date.",
+            ...flowMeta,
+            flow_node_id: currentNode.id,
+            interactive: {
+              type: "list",
+              body: renderFlowTemplate(config.message || "Please select a date for your appointment:", flowState),
+              buttonText: "Select Date",
+              sections: dateSections,
+            },
+          };
+        }
+
+        return {
+          consumed: true,
+          output: null,
+          ...flowMeta,
+          flow_node_id: currentNode.id,
+          interactive: {
+            type: "list",
+            body: `Choose a time slot for ${selectedDate}:`,
+            buttonText: "Select Time",
+            sections: timeSections,
+          },
+        };
+      }
+
+      else if (appointmentStep === "select_time") {
+        if (!listReplyId || !listReplyId.startsWith("time_")) {
+          const timeSections = generateTimeSections(flowState.appointment_date, config.slots);
+          return {
+            consumed: true,
+            output: null,
+            ...flowMeta,
+            flow_node_id: currentNode.id,
+            interactive: {
+              type: "list",
+              body: `Choose a time slot for ${flowState.appointment_date}:`,
+              buttonText: "Select Time",
+              sections: timeSections,
+            },
+          };
+        }
+
+        const selectedTimeRaw = listReplyId.replace("time_", "");
+        const [hoursStr, minutesStr] = selectedTimeRaw.split(":");
+        let hr = parseInt(hoursStr);
+        const ampm = hr >= 12 ? "PM" : "AM";
+        const displayHr = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+        const displayTime = `${displayHr}:${minutesStr} ${ampm}`;
+
+        const friendlyDateTime = `${flowState.appointment_date} at ${displayTime}`;
+        const nextState = {
+          ...flowState,
+          appointment_time: displayTime,
+          appointment_datetime: friendlyDateTime,
+          appointment_step: null,
+        };
+
+        await supabase
+          .from("w_flow_sessions")
+          .update({ state_data: nextState })
+          .eq("id", session_id);
+        flowState = nextState;
+
+        const confirmationText = renderFlowTemplate(
+          config.confirmationMessage || "Thanks {{name}}. Your appointment for {{appointment_datetime}} has been confirmed.",
+          flowState
+        );
+        outputText.push(confirmationText);
+
+        const outEdges = edges.filter((e: any) => e.source === currentNodeId);
+        const nextEdge = outEdges[0];
+        if (nextEdge) {
+          currentNodeId = nextEdge.target;
+          await supabase
+            .from("w_flow_sessions")
+            .update({ current_node_id: currentNodeId })
+            .eq("id", session_id);
+          
+          activeNode = nodes.find((n: any) => n.id === currentNodeId);
+          isResuming = false;
+          console.log(`➡️ Advancing to next node after appointment confirmation: ${currentNodeId}`);
+        } else {
+          await supabase
+            .from("w_flow_sessions")
+            .update({ status: "completed", completed_at: new Date().toISOString() })
+            .eq("id", session_id);
+          if (run_id) {
+            await supabase
+              .from("w_flow_runs")
+              .update({ status: "completed", ended_at: new Date().toISOString() })
+              .eq("id", run_id);
+          }
+          return {
+            consumed: true,
+            output: outputText.join("\n\n"),
+            ...flowMeta,
+            flow_node_id: currentNode.id,
+          };
+        }
+      }
+    } else if (currentNode?.type === "button" || currentNode?.type === "userInput") {
       if (currentNode.type === "userInput") {
         const saveToField = normalizeFlowVariableKey(
           currentNode.data?.config?.saveToField,
@@ -776,10 +1044,7 @@ export async function processFlowEngine(
   // ----------------------------------------------------------------
   // Node execution loop — current node se chalo
   // ----------------------------------------------------------------
-  let activeNode = nodes.find((n: any) => n.id === currentNodeId);
-  const outputText: string[] = [];
-  const mediaOutput: NonNullable<FlowEngineResult["media"]> = [];
-  let steps = 0;
+  activeNode = nodes.find((n: any) => n.id === currentNodeId);
 
   while (activeNode && steps < 15) {
     steps++;
@@ -1028,13 +1293,38 @@ export async function processFlowEngine(
         },
       );
     } else if (nodeType === "appointment") {
-      const message =
-        config.message ||
-        config.confirmationMessage ||
-        config.label ||
-        activeNode.data?.label ||
-        "";
-      if (message) outputText.push(renderFlowTemplate(message, flowState));
+      const inviteMsg = renderFlowTemplate(
+        config.message || "Please select a date for your appointment from the options below:",
+        flowState
+      );
+      const sections = generateDateSections(config.slots);
+
+      const nextState = {
+        ...flowState,
+        appointment_step: "select_date",
+      };
+
+      await supabase
+        .from("w_flow_sessions")
+        .update({
+          current_node_id: activeNode.id,
+          state_data: nextState,
+        })
+        .eq("id", session_id);
+
+      return {
+        consumed: true,
+        output: outputText.length > 0 ? outputText.join("\n\n") : null,
+        media: mediaOutput.length > 0 ? mediaOutput : undefined,
+        ...flowMeta,
+        flow_node_id: activeNode.id,
+        interactive: {
+          type: "list",
+          body: inviteMsg,
+          buttonText: "Select Date",
+          sections,
+        },
+      };
     } else if (nodeType === "product") {
       const productText =
         config.message ||

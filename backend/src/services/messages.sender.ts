@@ -388,3 +388,65 @@ export async function sendInteractiveButtons(
   }
   return data;
 }
+
+export async function sendInteractiveList(
+  to: string,
+  body: string,
+  buttonText: string,
+  sections: any[],
+  footer: string = "",
+  phone_number_id: string | null = null,
+) {
+  let token = ACCESS_TOKEN;
+  let fromId = PHONE_NUMBER_ID;
+
+  if (phone_number_id && supabase) {
+    const { data: accounts } = await supabase
+      .from("w_wa_accounts")
+      .select("access_token_encrypted")
+      .eq("phone_number_id", phone_number_id)
+      .order("status", { ascending: true })
+      .limit(1);
+    const data = accounts?.[0];
+    if (data?.access_token_encrypted) {
+      token = decryptToken(data.access_token_encrypted);
+      fromId = phone_number_id;
+    }
+  }
+
+  if (!fromId || !token) throw new Error("Missing WA creds for list send");
+
+  const url = `https://graph.facebook.com/v21.0/${fromId}/messages`;
+
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      body: { text: body },
+      ...(footer ? { footer: { text: footer } } : {}),
+      action: {
+        button: buttonText.slice(0, 20),
+        sections
+      }
+    }
+  };
+
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await r.json();
+  if (!r.ok) {
+    throw new Error(`Interactive list send failed: ${JSON.stringify(data)}`);
+  }
+  return data;
+}
+
