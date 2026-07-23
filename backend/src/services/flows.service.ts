@@ -2,7 +2,7 @@ import { supabase } from '../config/supabase.js';
 import { isUuid } from '../utils/format.js';
 import { getBotAgentReply } from './ai.service.js';
 import { encryptFormToken } from '../utils/crypto.js';
-import { fetchGoogleBusySlots, createGoogleCalendarEvent } from './googleCalendar.service.js';
+import { fetchGoogleBusySlots, createGoogleCalendarEvent, deleteGoogleCalendarEvent, getValidAccessToken } from './googleCalendar.service.js';
 import crypto from 'crypto';
 
 function extractFormSlug(urlStr: string): string {
@@ -68,7 +68,7 @@ function processButtonConfig(
         issued_at: new Date().toISOString(),
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
       };
-      
+
       const token = encryptFormToken(JSON.stringify(payload));
       btnUrl = appendFormToken(b.url || '', token);
       btnType = 'url';
@@ -373,12 +373,12 @@ function generateDateSections(slotsConfigStr: string = "") {
 
   let count = 0;
   let dayOffset = 0;
-  
+
   while (count < 7 && dayOffset < 15) {
     const d = new Date();
     d.setDate(d.getDate() + dayOffset);
     const dayOfWeek = d.getDay(); // 0 is Sunday, 6 is Saturday
-    
+
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     if (excludeWeekends && isWeekend) {
       dayOffset++;
@@ -394,7 +394,7 @@ function generateDateSections(slotsConfigStr: string = "") {
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const dayName = days[dayOfWeek];
     const monthName = months[d.getMonth()];
-    
+
     rows.push({
       id: `date_${dateStr}`,
       title: `${dayName.slice(0, 3)}, ${monthName} ${d.getDate()}`,
@@ -423,7 +423,7 @@ async function generateTimeSections(
   const slotsConfig = String(slotsConfigStr).toLowerCase();
 
   let startHour = 9;
-  let endHour = 17;
+  let endHour = 21;
 
   const timeRegex = /(\d+)\s*(am|pm)\s*-\s*(\d+)\s*(am|pm)/i;
   const match = slotsConfig.match(timeRegex);
@@ -432,75 +432,105 @@ async function generateTimeSections(
     const sM = match[2].toLowerCase();
     let eH = parseInt(match[3]);
     const eM = match[4].toLowerCase();
-    
+
     if (sM === "pm" && sH < 12) sH += 12;
     if (sM === "am" && sH === 12) sH = 0;
     if (eM === "pm" && eH < 12) eH += 12;
     if (eM === "am" && eH === 12) eH = 0;
-    
+
     startHour = sH;
     endHour = eH;
   }
 
+  // Fetch Database Booked Slots for this Organization on dateStr
+  const bookedSlotIds = new Set<string>();
+  if (organizationId) {
+    const { data: existingSessions } = await supabase
+      .from("w_flow_sessions")
+      .select("state_data")
+      .eq("organization_id", organizationId);
+
+    if (existingSessions) {
+      for (const sessionRecord of existingSessions) {
+        const sData = sessionRecord.state_data || {};
+        if (
+          sData.appointment_date === dateStr &&
+          (sData.appointment_time || sData.selected_time_raw) &&
+          sData.appointment_status !== "cancelled"
+        ) {
+          bookedSlotIds.add(sData.appointment_time || sData.selected_time_raw);
+        }
+      }
+    }
+  }
+
   // Fetch Google Busy Slots if enabled
   let busySlots: { start: string; end: string }[] = [];
-  if (organizationId && nodeConfig?.googleSyncEnabled) {
+  if (organizationId && (nodeConfig?.googleSyncEnabled === true || String(nodeConfig?.googleSyncEnabled) === "true")) {
     const timeMin = `${dateStr}T00:00:00Z`;
     const timeMax = `${dateStr}T23:59:59Z`;
     busySlots = await fetchGoogleBusySlots(organizationId, timeMin, timeMax);
   }
 
-  const bufferMinutes = parseInt(nodeConfig?.googleBufferMinutes || "30", 10) || 30;
-  const bufferMs = bufferMinutes * 60 * 1000;
-
   const selectedDate = new Date(dateStr + "T00:00:00");
   const today = new Date();
   const isToday = selectedDate.toDateString() === today.toDateString();
 
+  // 15-minute slot generation loop
+  const minutesList = [0, 15, 30, 45];
   for (let hr = startHour; hr < endHour; hr++) {
-    const slotStartTime = new Date(`${dateStr}T${String(hr).padStart(2, "0")}:00:00Z`).getTime();
-    const slotEndTime = slotStartTime + 60 * 60 * 1000;
+    for (let min of minutesList) {
+      const idStr = `${String(hr).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 
-    if (isToday) {
-      const slotTimeLocal = new Date(dateStr + "T" + String(hr).padStart(2, "0") + ":00:00");
-      const minAllowed = new Date(today.getTime() + 30 * 60 * 1000);
-      if (slotTimeLocal < minAllowed) {
+      // 1. Exclude if already booked by another user in Database
+      if (bookedSlotIds.has(idStr)) {
         continue;
       }
-    }
 
-    // Google Busy & Buffer Filter
-    if (busySlots.length > 0) {
-      const bufferedStart = slotStartTime - bufferMs;
-      const bufferedEnd = slotEndTime + bufferMs;
+      // Slot duration is 15 minutes
+      const slotStartTime = new Date(`${dateStr}T${idStr}:00Z`).getTime();
+      const slotEndTime = slotStartTime + 15 * 60 * 1000;
 
-      const hasConflict = busySlots.some((b) => {
-        const bStart = new Date(b.start).getTime();
-        const bEnd = new Date(b.end).getTime();
-        return bufferedStart < bEnd && bufferedEnd > bStart;
-      });
-
-      if (hasConflict) {
-        continue; // Exclude slot due to Google Calendar conflict or buffer overlap
+      if (isToday) {
+        const slotTimeLocal = new Date(`${dateStr}T${idStr}:00`);
+        const minAllowed = new Date(today.getTime() + 15 * 60 * 1000);
+        if (slotTimeLocal < minAllowed) {
+          continue;
+        }
       }
+
+      // 2. Exclude if Google Busy Conflict (overlaps ONLY this 15-min slot)
+      if (busySlots.length > 0) {
+        const hasConflict = busySlots.some((b) => {
+          const bStart = new Date(b.start).getTime();
+          const bEnd = new Date(b.end).getTime();
+          return slotStartTime < bEnd && slotEndTime > bStart;
+        });
+
+        if (hasConflict) {
+          continue;
+        }
+      }
+
+      const displayHr = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+      const ampm = hr >= 12 ? "PM" : "AM";
+      const minStr = String(min).padStart(2, "0");
+      const timeStr = `${String(displayHr).padStart(2, "0")}:${minStr} ${ampm}`;
+
+      rows.push({
+        id: `time_${idStr}`,
+        title: timeStr,
+        description: `15 min slot (${timeStr})`,
+      });
     }
-
-    const hour24 = hr;
-    const ampm = hour24 >= 12 ? "PM" : "AM";
-    const displayHr = hour24 > 12 ? hour24 - 12 : hour24 === 0 ? 12 : hour24;
-    const timeStr = `${String(displayHr).padStart(2, "0")}:00 ${ampm}`;
-    const idStr = `${String(hour24).padStart(2, "0")}:00`;
-
-    rows.push({
-      id: `time_${idStr}`,
-      title: timeStr,
-      description: "Book this slot",
-    });
   }
+
+  // Cap at 10 rows maximum to comply with WhatsApp Cloud API interactive list limits
+  const limitedRows = rows.slice(0, 10);
 
   return [{
     title: "Available Time Slots",
-    rows,
+    rows: limitedRows,
   }];
 }
 
@@ -911,29 +941,102 @@ export async function processFlowEngine(
         const friendlyDateTime = `${flowState.appointment_date} at ${displayTime}`;
         const nextState = {
           ...flowState,
+          selected_time_raw: selectedTimeRaw,
           appointment_time: displayTime,
           appointment_datetime: friendlyDateTime,
           appointment_step: null,
         };
 
-        // Create Google Calendar Event if enabled
-        if (config.googleSyncEnabled && organization_id) {
-          const startISO = `${flowState.appointment_date}T${selectedTimeRaw}:00Z`;
-          const endHourNum = (parseInt(hoursStr) + 1) % 24;
-          const endISO = `${flowState.appointment_date}T${String(endHourNum).padStart(2, "0")}:${minutesStr}:00Z`;
+        // Check Max 2 Slots limit per contact across organization using w_flow_sessions
+        if (organization_id && contact_id) {
+          const { data: existingSessions } = await supabase
+            .from("w_flow_sessions")
+            .select("id, state_data, created_at")
+            .eq("organization_id", organization_id)
+            .eq("contact_id", contact_id)
+            .order("created_at", { ascending: true });
 
-          createGoogleCalendarEvent(organization_id, {
-            summary: `${config.type || "Appointment"} Booking`,
-            description: `WhatsApp Booking Flow`,
+          const confirmedSessions = (existingSessions || []).filter((s: any) => {
+            const sd = s.state_data || {};
+            return sd.appointment_date && (sd.appointment_time || sd.selected_time_raw) && sd.appointment_status !== "cancelled";
+          });
+
+          if (confirmedSessions.length >= 2) {
+            const oldestSession = confirmedSessions[0];
+            const oldState = oldestSession.state_data || {};
+            const oldGEventId = oldState.google_event_id;
+
+            await supabase
+              .from("w_flow_sessions")
+              .update({
+                state_data: { ...oldState, appointment_status: "cancelled" },
+              })
+              .eq("id", oldestSession.id);
+
+            if (oldGEventId && organization_id) {
+              deleteGoogleCalendarEvent(organization_id, oldGEventId).catch((err: any) =>
+                console.error("Error deleting old Google Calendar event:", err)
+              );
+            }
+            console.log(`🗑️ Max 2 slots limit reached for contact ${contact_id}. Cancelled oldest flow session ${oldestSession.id}`);
+          }
+        }
+
+        // Create Google Calendar Event if enabled (15-minute slot)
+        let googleEventId: string | null = null;
+        const validGToken = await getValidAccessToken(organization_id).catch(() => null);
+        const isGoogleSyncOn = !!validGToken || config.googleSyncEnabled === true || String(config.googleSyncEnabled) === "true";
+        if (isGoogleSyncOn && organization_id) {
+          // 15-minute slot end time calculation
+          const totalMin = parseInt(hoursStr) * 60 + parseInt(minutesStr) + 15;
+          const endH = Math.floor(totalMin / 60) % 24;
+          const endM = totalMin % 60;
+          const endRaw = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+
+          const startISO = `${flowState.appointment_date}T${selectedTimeRaw}:00`;
+          const endISO = `${flowState.appointment_date}T${endRaw}:00`;
+
+          // Fetch contact name/phone if available
+          let cName = flowState.name || "";
+          let cPhone = flowState.phone || "";
+          if (contact_id && (!cName || !cPhone)) {
+            const { data: contactRow } = await supabase
+              .from("w_contacts")
+              .select("name, custom_name, phone, wa_id")
+              .eq("id", contact_id)
+              .maybeSingle();
+            if (contactRow) {
+              cName = cName || contactRow.custom_name || contactRow.name || "";
+              cPhone = cPhone || contactRow.phone || contactRow.wa_id || "";
+            }
+          }
+
+          const clientTitle = cName ? `${cName} (${cPhone})` : cPhone || "WhatsApp Client";
+
+          const gRes = await createGoogleCalendarEvent(organization_id, {
+            summary: `Appointment: ${clientTitle}`,
+            description: `WhatsApp Booking Flow\nClient: ${clientTitle}\nDate: ${flowState.appointment_date}\nTime: ${displayTime}`,
             startDateTimeISO: startISO,
             endDateTimeISO: endISO,
-          }).catch((err) => console.error("Google Calendar event creation background error:", err));
+          }).catch((err: any) => {
+            console.error("Google Calendar event creation error:", err);
+            return { success: false, eventId: undefined };
+          });
+
+          if (gRes && gRes.success && gRes.eventId) {
+            googleEventId = gRes.eventId;
+            console.log(`🗓️ Google Calendar Event created with ID: ${googleEventId}`);
+          }
         }
+
+        nextState.google_event_id = googleEventId || null;
+        nextState.appointment_status = "confirmed";
 
         await supabase
           .from("w_flow_sessions")
           .update({ state_data: nextState })
           .eq("id", session_id);
+
         flowState = nextState;
 
         const confirmationText = renderFlowTemplate(
@@ -950,7 +1053,7 @@ export async function processFlowEngine(
             .from("w_flow_sessions")
             .update({ current_node_id: currentNodeId })
             .eq("id", session_id);
-          
+
           activeNode = nodes.find((n: any) => n.id === currentNodeId);
           isResuming = false;
           console.log(`➡️ Advancing to next node after appointment confirmation: ${currentNodeId}`);

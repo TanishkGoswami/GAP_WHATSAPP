@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
@@ -29,6 +29,8 @@ import WhatsAppLinkGenerator from './pages/WhatsAppLinkGenerator'
 import WhatsAppRedirect from './pages/WhatsAppRedirect'
 import CookieConsent from './components/CookieConsent'
 import { loadFacebookSDK } from './services/facebookSdkLoader'
+
+const ScheduledMeetings = lazy(() => import('./pages/ScheduledMeetings'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -82,6 +84,7 @@ export default function App() {
                 <Route path="billing" element={<BillingPage />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="team-members" element={<TeamMembers />} />
+                <Route path="scheduled-meetings" element={<Suspense fallback={<div className="p-8 text-center text-xs font-semibold text-gray-500">Loading Scheduled Meetings...</div>}><ScheduledMeetings /></Suspense>} />
                 <Route path="help" element={<HelpCenter />} />
                 <Route path="wa-link-generator" element={<WhatsAppLinkGenerator />} />
               </Route>

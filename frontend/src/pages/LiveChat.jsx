@@ -1068,6 +1068,22 @@ export default function LiveChat() {
                     })
                 } else {
                     setChats(formatted);
+                    // Auto-select target conversation if opened from Scheduled Meetings
+                    try {
+                        const params = new URLSearchParams(window.location.search);
+                        const targetConvId = params.get('conversationId');
+                        const targetPhone = params.get('phone');
+                        if ((targetConvId || targetPhone) && formatted.length > 0) {
+                            const found = formatted.find(c =>
+                                (targetConvId && idsEqual(c.id, targetConvId)) ||
+                                (targetPhone && (c.phone === targetPhone || c.contact?.phone === targetPhone || c.contact?.whatsapp_number === targetPhone))
+                            );
+                            if (found) {
+                                setSelectedChat(found);
+                                window.history.replaceState({}, document.title, window.location.pathname);
+                            }
+                        }
+                    } catch (e) {}
                 }
                 setNextConversationCursor(data?.next_cursor || null)
                 setChatsLoadState('success')

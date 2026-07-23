@@ -19,6 +19,7 @@ import waRoutes from './routes/wa.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
 import webhookRoutes from './routes/webhook.routes.js';
 import googleAuthRoutes from './routes/googleAuth.routes.js';
+import appointmentsRoutes from './routes/appointments.routes.js';
 
 dotenv.config({ path: "./.env" });
 
@@ -33,8 +34,11 @@ const publicBaseUrl = process.env.PUBLIC_BASE_URL ? String(process.env.PUBLIC_BA
 
 export const corsOrigins = [
     "http://localhost:3000",
+    "https://localhost:3000",
     "http://localhost:5173",
+    "https://localhost:5173",
     "http://localhost:3001",
+    "https://localhost:3001",
     ...(publicBaseUrl ? [publicBaseUrl] : []),
     "https://w.getaipilot.in",
     "https://wb.getaipilot.in",
@@ -51,7 +55,13 @@ export const corsAllowedHeaders = [
 ];
 
 app.use(cors({
-    origin: corsOrigins,
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (corsOrigins.includes(origin) || origin.startsWith("http://localhost:") || origin.startsWith("https://localhost:") || origin.endsWith(".ngrok-free.dev") || origin.endsWith(".vercel.app")) {
+            return callback(null, true);
+        }
+        return callback(null, true);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: corsAllowedHeaders
@@ -114,6 +124,7 @@ app.use('/api/twilio', twilioRoutes);
 app.use('/api', waRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/integrations/google', googleAuthRoutes);
+app.use('/api/appointments', appointmentsRoutes);
 app.use(webhookRoutes); // Root level /webhook
 
 export default app;
