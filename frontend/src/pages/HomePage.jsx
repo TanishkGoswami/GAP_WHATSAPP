@@ -387,6 +387,7 @@ export default function HomePage() {
             </div>
             <div className="hp-footer__col">
               <h4 className="hp-footer__col-title">Compliance & Legal</h4>
+              <Link to="/terms">Terms of Service</Link>
               <Link to="/privacy-policy">Privacy Policy</Link>
               <a href={`mailto:${SUPPORT_EMAIL}`}>Support Inquiry ({SUPPORT_EMAIL})</a>
             </div>

@@ -29,6 +29,7 @@ import WhatsAppLinkGenerator from './pages/WhatsAppLinkGenerator'
 import WhatsAppRedirect from './pages/WhatsAppRedirect'
 import CookieConsent from './components/CookieConsent'
 import HomePage from './pages/HomePage'
+import TermsOfService from './pages/TermsOfService'
 import { loadFacebookSDK } from './services/facebookSdkLoader'
 
 const ScheduledMeetings = lazy(() => import('./pages/ScheduledMeetings'))
@@ -62,6 +63,7 @@ export default function App() {
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<HomePage />} />
+              <Route path="/terms" element={<TermsOfService />} />
               <Route path="/login" element={<Login />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/agent-login" element={<AgentLogin />} />
