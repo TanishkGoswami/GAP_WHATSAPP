@@ -106,7 +106,7 @@ export async function handleGoogleOAuthCallback(code: string, organizationId: st
 /**
  * Refresh access token using stored encrypted refresh token.
  */
-async function getValidAccessToken(organizationId: string): Promise<string | null> {
+export async function getValidAccessToken(organizationId: string): Promise<string | null> {
   const { data: record } = await supabase
     .from("w_integrations")
     .select("*")
@@ -218,35 +218,137 @@ export async function fetchGoogleBusySlots(
 }
 
 /**
- * Create a new event on Google Calendar upon WhatsApp appointment confirmation.
+ * Fetch Primary Calendar TimeZone for Google Calendar user.
+ */
+export async function getGooglePrimaryTimeZone(organizationId: string): Promise<string> {
+  try {
+    const accessToken = await getValidAccessToken(organizationId);
+    if (!accessToken) return "Asia/Kolkata";
+
+    const res = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.timeZone) {
+        return data.timeZone;
+      }
+    }
+  } catch (err) {
+    console.error("Error fetching Google Calendar timezone:", err);
+  }
+  return "Asia/Kolkata";
+}
+
+/**
+ * Format local ISO string with exact timezone offset for Google Calendar API.
+ * Prevents UTC offset shift (e.g. 11:00 AM shifting to 4:30 PM).
+ */
+export function formatIsoWithTimezone(localIsoStr: string, timeZoneStr: string): string {
+  try {
+    const rawIso = localIsoStr.split("+")[0].split("Z")[0];
+    const parts = rawIso.split("T");
+    const datePart = parts[0];
+    const timePart = parts[1] || "09:00:00";
+    if (!datePart) return localIsoStr;
+
+    const [h, m] = timePart.split(":");
+    const cleanTime = `${String(h || "09").padStart(2, "0")}:${String(m || "00").padStart(2, "0")}:00`;
+
+    let targetTz = timeZoneStr || "Asia/Kolkata";
+    // If the calendar timezone is UTC/GMT/Z, default to India Standard Time (Asia/Kolkata)
+    if (
+      targetTz.toUpperCase() === "UTC" ||
+      targetTz.toUpperCase() === "GMT" ||
+      targetTz === "Z"
+    ) {
+      targetTz = "Asia/Kolkata";
+    }
+
+    // Construct a reference date at noon on the selected date to measure timezone offset
+    const refDate = new Date(`${datePart}T12:00:00Z`);
+
+    // Robust parsing using Intl.DateTimeFormat parts (never relies on new Date(toLocaleString) parsing)
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: targetTz,
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+      hourCycle: "h23",
+    });
+
+    const fmtParts = formatter.formatToParts(refDate);
+    const partMap: Record<string, string> = {};
+    for (const p of fmtParts) {
+      partMap[p.type] = p.value;
+    }
+
+    const year = parseInt(partMap.year, 10);
+    const month = parseInt(partMap.month, 10) - 1;
+    const day = parseInt(partMap.day, 10);
+    const hour = parseInt(partMap.hour, 10);
+    const minute = parseInt(partMap.minute, 10);
+    const second = parseInt(partMap.second || "0", 10);
+
+    const tzUtcTime = Date.UTC(year, month, day, hour, minute, second);
+    const diffMinutes = Math.round((tzUtcTime - refDate.getTime()) / 60000);
+
+    const sign = diffMinutes >= 0 ? "+" : "-";
+    const absMinutes = Math.abs(diffMinutes);
+    const offsetHours = String(Math.floor(absMinutes / 60)).padStart(2, "0");
+    const offsetMins = String(absMinutes % 60).padStart(2, "0");
+    const offsetStr = `${sign}${offsetHours}:${offsetMins}`;
+
+    return `${datePart}T${cleanTime}${offsetStr}`;
+  } catch (err) {
+    console.error("Error formatting ISO with timezone offset:", err);
+    return `${localIsoStr.split("+")[0].split("Z")[0]}+05:30`;
+  }
+}
+
+/**
+ * Create a new event on user's Primary Google Calendar.
  */
 export async function createGoogleCalendarEvent(
   organizationId: string,
-  summaryOrOptions: string | { summary: string; description?: string; startDateTimeISO: string; endDateTimeISO: string },
+  summaryOrOptions: string | { summary: string; description?: string; startDateTimeISO: string; endDateTimeISO: string; timeZone?: string },
   startIso?: string,
   endIso?: string,
   description?: string
-): Promise<boolean> {
+): Promise<{ success: boolean; eventId?: string }> {
   try {
     const accessToken = await getValidAccessToken(organizationId);
-    if (!accessToken) return false;
+    if (!accessToken) return { success: false };
 
     let summary = "";
     let finalStart = "";
     let finalEnd = "";
     let finalDesc = "";
+    let timeZone = "";
 
     if (typeof summaryOrOptions === "object") {
       summary = summaryOrOptions.summary;
       finalStart = summaryOrOptions.startDateTimeISO;
       finalEnd = summaryOrOptions.endDateTimeISO;
       finalDesc = summaryOrOptions.description || "Booked via WhatsApp Automation Flow";
+      timeZone = summaryOrOptions.timeZone || "";
     } else {
       summary = summaryOrOptions;
       finalStart = startIso || "";
       finalEnd = endIso || "";
       finalDesc = description || "Booked via WhatsApp Automation Flow";
     }
+
+    if (!timeZone) {
+      timeZone = await getGooglePrimaryTimeZone(organizationId);
+    }
+
+    const formattedStart = formatIsoWithTimezone(finalStart, timeZone);
+    const formattedEnd = formatIsoWithTimezone(finalEnd, timeZone);
 
     const res = await fetch(
       "https://www.googleapis.com/calendar/v3/calendars/primary/events",
@@ -259,20 +361,96 @@ export async function createGoogleCalendarEvent(
         body: JSON.stringify({
           summary,
           description: finalDesc,
-          start: { dateTime: finalStart },
-          end: { dateTime: finalEnd },
+          start: { dateTime: formattedStart, timeZone },
+          end: { dateTime: formattedEnd, timeZone },
         }),
       }
     );
 
     if (!res.ok) {
       console.error("Failed to create Google Calendar Event:", await res.text());
+      return { success: false };
+    }
+
+    const data = await res.json().catch(() => ({}));
+    return {
+      success: true,
+      eventId: data?.id || undefined,
+    };
+  } catch (error) {
+    console.error("Error in createGoogleCalendarEvent:", error);
+    return { success: false };
+  }
+}
+
+/**
+ * Delete an event from Google Calendar by Event ID.
+ */
+export async function deleteGoogleCalendarEvent(
+  organizationId: string,
+  eventId: string
+): Promise<boolean> {
+  try {
+    const accessToken = await getValidAccessToken(organizationId);
+    if (!accessToken || !eventId) return false;
+
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 410) {
+        console.log(`ℹ️ Google Calendar event ${eventId} already deleted or not found (status ${res.status})`);
+        return true;
+      }
+      console.error("Failed to delete Google Calendar Event:", await res.text());
       return false;
     }
 
     return true;
   } catch (error) {
-    console.error("Error in createGoogleCalendarEvent:", error);
+    console.error("Error in deleteGoogleCalendarEvent:", error);
     return false;
+  }
+}
+
+/**
+ * List real Google Calendar events directly from Google's API in real time.
+ */
+export async function listGoogleCalendarEvents(
+  organizationId: string,
+  timeMinIso?: string
+): Promise<any[]> {
+  try {
+    const accessToken = await getValidAccessToken(organizationId);
+    if (!accessToken) return [];
+
+    const nowIso = timeMinIso || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
+    url.searchParams.append("timeMin", nowIso);
+    url.searchParams.append("orderBy", "startTime");
+    url.searchParams.append("singleEvents", "true");
+    url.searchParams.append("maxResults", "200");
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!res.ok) {
+      console.error("Failed to list Google Calendar events:", await res.text());
+      return [];
+    }
+
+    const data = await res.json();
+    return data.items || [];
+  } catch (error) {
+    console.error("Error in listGoogleCalendarEvents:", error);
+    return [];
   }
 }
