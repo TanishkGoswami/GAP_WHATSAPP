@@ -1,6 +1,7 @@
 import { createElement, useEffect, useMemo, useState } from 'react'
 import {
     Blocks,
+    Calendar,
     ChevronDown,
     ChevronsUpDown,
     Briefcase,
@@ -30,6 +31,7 @@ const navigation = [
     { name: 'Accounts', href: '/whatsapp-connect', icon: Smartphone },
     { name: 'New Number', href: '#', icon: PhoneCall, badge: 'Coming soon' },
     { name: 'Chats', href: '/live-chat', icon: MessageSquareText, badge: 'LIVE' },
+    { name: 'Scheduled Meetings', href: '/scheduled-meetings', icon: Calendar },
     { name: 'Contacts', href: '/contacts', icon: Users },
     { name: 'AI Agents', href: '/bot-agents', icon: Briefcase },
     { name: 'Team Members', href: '/team-members', icon: Users },
