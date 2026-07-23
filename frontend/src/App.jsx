@@ -28,6 +28,7 @@ import WhatsAppNumberPage from './pages/WhatsAppNumberPage'
 import WhatsAppLinkGenerator from './pages/WhatsAppLinkGenerator'
 import WhatsAppRedirect from './pages/WhatsAppRedirect'
 import CookieConsent from './components/CookieConsent'
+import HomePage from './pages/HomePage'
 import { loadFacebookSDK } from './services/facebookSdkLoader'
 
 const ScheduledMeetings = lazy(() => import('./pages/ScheduledMeetings'))
@@ -60,6 +61,7 @@ export default function App() {
         <AuthProvider>
           <BrowserRouter>
             <Routes>
+              <Route path="/" element={<HomePage />} />
               <Route path="/login" element={<Login />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/agent-login" element={<AgentLogin />} />
@@ -68,8 +70,7 @@ export default function App() {
               <Route path="/sso" element={<SSOLogin />} />
               <Route path="/payment-success" element={<PaymentSuccessPage />} />
               <Route path="/wa/:data" element={<WhatsAppRedirect />} />
-              <Route path="/" element={<Layout />}>
-                <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route element={<Layout />}>
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="whatsapp-connect" element={<WhatsAppConnect />} />
                 <Route path="whatsapp-number" element={<WhatsAppNumberPage />} />
