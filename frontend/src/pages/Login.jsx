@@ -19,7 +19,7 @@ export default function Login() {
         try {
             const { error } = await signIn({ email, password }, 'owner')
             if (error) throw error
-            navigate('/', { replace: true })
+            navigate('/dashboard', { replace: true })
         } catch (err) {
             setError(err.message)
         } finally {
